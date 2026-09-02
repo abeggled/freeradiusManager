@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Gebaute Oberflaeche (wird vom Build erzeugt)
+backend/static/
+
+# Lokale Konfiguration
+.env
+backend/.env

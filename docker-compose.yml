@@ -1,0 +1,72 @@
+# Evaluierungsumgebung (Spezifikation NFR-3).
+#
+# Enthaelt neben Manager und Datenbank auch einen FreeRADIUS-Container, der
+# dieselbe Datenbank ueber rlm_sql liest – damit laesst sich die Wirkung von
+# Aenderungen unmittelbar mit radtest pruefen.
+#
+# Fuer den Produktivbetrieb: FRM_SECRET_KEY und FRM_COA_SECRET_KEY setzen,
+# Datenbankpasswoerter ersetzen und den Manager hinter einen TLS-Reverse-Proxy
+# stellen (Abschnitt 6).
+
+name: freeradius-manager
+
+services:
+  db:
+    image: mariadb:11.4
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      MARIADB_DATABASE: ${DB_NAME:-radius}
+      MARIADB_USER: ${DB_USER:-radmgr}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-radmgr}
+    volumes:
+      - db-data:/var/lib/mysql
+      # Legt das RADIUS-Schema beim ersten Start an. In einer bestehenden
+      # Installation entfaellt dieser Mount.
+      - ./docker/radius-schema.sql:/docker-entrypoint-initdb.d/10-radius-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    ports:
+      - "127.0.0.1:${DB_PORT:-13306}:3306"
+
+  manager:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      FRM_DB_HOST: db
+      FRM_DB_NAME: ${DB_NAME:-radius}
+      FRM_DB_USER: ${DB_USER:-radmgr}
+      FRM_DB_PASSWORD: ${DB_PASSWORD:-radmgr}
+      FRM_SECRET_KEY: ${FRM_SECRET_KEY:-bitte-in-produktion-ersetzen-mindestens-32-zeichen}
+      FRM_COA_SECRET_KEY: ${FRM_COA_SECRET_KEY:-bitte-in-produktion-ersetzen-mindestens-32-zeichen}
+      # Ohne TLS-Terminierung davor muss das Session-Cookie unsicher gesetzt werden.
+      FRM_COOKIE_SECURE: ${FRM_COOKIE_SECURE:-false}
+      FRM_ENVIRONMENT: ${FRM_ENVIRONMENT:-development}
+      FRM_BOOTSTRAP_ADMIN_USERNAME: ${FRM_BOOTSTRAP_ADMIN_USERNAME:-admin}
+      FRM_BOOTSTRAP_ADMIN_PASSWORD: ${FRM_BOOTSTRAP_ADMIN_PASSWORD:-}
+      FRM_DEFAULT_MAC_FORMAT: ${FRM_DEFAULT_MAC_FORMAT:-colon_lower}
+    ports:
+      - "${MANAGER_PORT:-8000}:8000"
+
+  freeradius:
+    image: freeradius/freeradius-server:3.2.7
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["radiusd", "-f", "-l", "stdout"]
+    volumes:
+      - ./docker/freeradius/mods-enabled-sql:/etc/raddb/mods-enabled/sql:ro
+    ports:
+      - "${RADIUS_AUTH_PORT:-1812}:1812/udp"
+      - "${RADIUS_ACCT_PORT:-1813}:1813/udp"
+
+volumes:
+  db-data:

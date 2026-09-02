@@ -1,0 +1,93 @@
+"""Schemas fuer Manager-Konten, Anmeldung und Audit (FR-9, FR-10)."""
+
+from __future__ import annotations
+
+import datetime as dt
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.models.mgr import Role
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
+    totp_code: str | None = Field(default=None, max_length=10)
+
+
+class TotpLoginRequest(BaseModel):
+    challenge: str
+    totp_code: str = Field(min_length=6, max_length=10)
+
+
+class LoginResponse(BaseModel):
+    status: str = "authenticated"
+    challenge: str | None = None
+    account: AccountOut | None = None
+
+
+class AccountOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    email: str | None = None
+    display_name: str | None = None
+    role: Role
+    is_active: bool
+    totp_enabled: bool
+    language: str
+    last_login_at: dt.datetime | None = None
+    created_at: dt.datetime | None = None
+
+
+class AccountCreate(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=12, max_length=256)
+    role: Role = Role.AUDITOR
+    email: str | None = None
+    display_name: str | None = None
+    language: str = "de"
+
+
+class AccountUpdate(BaseModel):
+    email: str | None = None
+    display_name: str | None = None
+    role: Role | None = None
+    is_active: bool | None = None
+    language: str | None = None
+    reset_totp: bool = False
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=12, max_length=256)
+
+
+class TotpSetupResponse(BaseModel):
+    secret: str
+    provisioning_uri: str
+
+
+class TotpActivate(BaseModel):
+    code: str = Field(min_length=6, max_length=10)
+
+
+class AuditItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    ts: dt.datetime
+    actor_name: str
+    actor_ip: str | None = None
+    action: str
+    object_type: str
+    object_id: str | None = None
+    result: str
+    message: str | None = None
+    before: dict[str, Any] | list[Any] | None = None
+    after: dict[str, Any] | list[Any] | None = None
+
+
+LoginResponse.model_rebuild()

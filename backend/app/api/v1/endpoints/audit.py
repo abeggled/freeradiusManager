@@ -1,0 +1,69 @@
+"""Audit-Log (FR-9). Nur lesend – ueber die API gibt es kein Loeschen."""
+
+from __future__ import annotations
+
+import datetime as dt
+import json
+from typing import Any
+
+from fastapi import APIRouter
+
+from app.api.deps import ReaderUser, SessionDep
+from app.core.pagination import clamp_limit
+from app.repositories.mgr.audit import AuditRepository
+from app.schemas.accounts import AuditItem
+from app.schemas.common import PagedResponse, PageMeta
+
+router = APIRouter(prefix="/audit", tags=["audit"])
+
+
+def _load(raw: str | None) -> Any:
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+
+@router.get("", response_model=PagedResponse[AuditItem])
+async def list_audit(
+    session: SessionDep,
+    _: ReaderUser,
+    actor: str | None = None,
+    action: str | None = None,
+    object_type: str | None = None,
+    object_id: str | None = None,
+    date_from: dt.datetime | None = None,
+    date_to: dt.datetime | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> PagedResponse[AuditItem]:
+    limit = clamp_limit(limit)
+    rows, total = await AuditRepository(session).search(
+        actor=actor,
+        action=action,
+        object_type=object_type,
+        object_id=object_id,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+        offset=offset,
+    )
+    items = [
+        AuditItem(
+            id=row.id,
+            ts=row.ts,
+            actor_name=row.actor_name,
+            actor_ip=row.actor_ip,
+            action=row.action,
+            object_type=row.object_type,
+            object_id=row.object_id,
+            result=row.result.value,
+            message=row.message,
+            before=_load(row.before_json),
+            after=_load(row.after_json),
+        )
+        for row in rows
+    ]
+    return PagedResponse(items=items, meta=PageMeta(total=total, limit=limit, offset=offset))

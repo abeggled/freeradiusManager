@@ -1,0 +1,372 @@
+/* Oberflaeche: Desktop als primaerer Anwendungsfall, responsiv bis Tablet (NFR-4). */
+
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --border: #d6d9e0;
+  --text: #1b1f27;
+  --muted: #5c6472;
+  --accent: #1f5fa8;
+  --accent-text: #ffffff;
+  --danger: #a4262c;
+  --warning-bg: #fff4e0;
+  --warning-border: #e0a54a;
+  --info-bg: #e8f1fb;
+  --info-border: #7fa8d8;
+  --error-bg: #fdecec;
+  --error-border: #d98a8a;
+  --success-bg: #e9f6ec;
+  --success-border: #7fbf8c;
+  --radius: 6px;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171d;
+    --surface: #1c2029;
+    --border: #333a47;
+    --text: #e8eaee;
+    --muted: #9aa3b2;
+    --accent: #5c9ce6;
+    --accent-text: #0d1117;
+    --danger: #e88b8f;
+    --warning-bg: #3a2f1a;
+    --warning-border: #8a6d2f;
+    --info-bg: #1b2a3c;
+    --info-border: #3f6d9e;
+    --error-bg: #3a1f22;
+    --error-border: #8c4a4f;
+    --success-bg: #1d3325;
+    --success-border: #4a8058;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 15px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+h1 { font-size: 1.5rem; margin: 0 0 0.5rem; }
+h2 { font-size: 1.1rem; margin: 1.25rem 0 0.5rem; }
+code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 0.9em; }
+pre { overflow-x: auto; background: var(--bg); padding: 0.5rem; border-radius: var(--radius); }
+
+.muted { color: var(--muted); }
+.hint { color: var(--muted); font-size: 0.85rem; margin: 0.25rem 0 0; }
+
+/* --- Layout ------------------------------------------------------------ */
+
+.layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+}
+
+aside {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  gap: 1rem;
+}
+
+.brand { display: flex; flex-direction: column; }
+.brand small { color: var(--muted); }
+
+aside nav { display: flex; flex-direction: column; gap: 0.15rem; }
+
+aside nav a {
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+}
+aside nav a:hover { background: var(--bg); }
+aside nav a.active { background: var(--accent); color: var(--accent-text); }
+
+.sidebar-footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+.sidebar-footer a { color: var(--accent); }
+.account { display: flex; flex-direction: column; }
+.account small { color: var(--muted); }
+.language { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+
+main { padding: 1.5rem 2rem; max-width: 1400px; }
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.page-header .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+/* --- Formularelemente --------------------------------------------------- */
+
+button, .button {
+  font: inherit;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+button:hover, .button:hover { background: var(--bg); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+button.danger { color: var(--danger); }
+button.link, button.icon {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 0 0.25rem;
+  text-decoration: underline;
+}
+button.icon { font-size: 1.2rem; text-decoration: none; }
+
+input, select, textarea {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  width: 100%;
+}
+textarea { min-height: 4rem; }
+input[type="checkbox"] { width: auto; }
+
+.field { margin-bottom: 0.75rem; }
+.field label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.2rem; }
+.checkbox { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; }
+
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+}
+legend { font-weight: 600; padding: 0 0.3rem; }
+
+.filters {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.filters input, .filters select { width: auto; min-width: 12rem; }
+
+.attribute-row {
+  display: grid;
+  grid-template-columns: 2fr 80px 2fr auto;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+
+/* --- Tabellen ----------------------------------------------------------- */
+
+.table-wrapper {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--border); }
+th { background: var(--bg); font-size: 0.85rem; }
+th.sortable { cursor: pointer; user-select: none; }
+tbody tr:last-child td { border-bottom: none; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: var(--bg); }
+tr.row-error td { background: var(--error-bg); }
+.row-actions { display: flex; gap: 0.35rem; white-space: nowrap; }
+.audit-details { max-width: 40rem; }
+
+.pagination {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+}
+
+/* --- Bausteine ---------------------------------------------------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem; margin: 0 0 1rem; }
+dt { font-weight: 600; color: var(--muted); }
+dd { margin: 0; }
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+}
+.badge-active { background: var(--success-bg); border-color: var(--success-border); }
+.badge-disabled { background: var(--error-bg); border-color: var(--error-border); }
+.badge-expired { background: var(--warning-bg); border-color: var(--warning-border); }
+.badge-no_credentials { background: var(--info-bg); border-color: var(--info-border); }
+
+.alert {
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  margin: 0.5rem 0;
+}
+.alert-info, .alert-success { background: var(--info-bg); border-color: var(--info-border); }
+.alert-success { background: var(--success-bg); border-color: var(--success-border); }
+.alert-warning { background: var(--warning-bg); border-color: var(--warning-border); }
+.alert-error { background: var(--error-bg); border-color: var(--error-border); }
+
+.warnings, .hints { list-style: none; padding: 0; margin: 0; }
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+}
+.tile-value { font-size: 1.6rem; font-weight: 600; }
+.tile-label { color: var(--muted); font-size: 0.85rem; }
+
+.ranking { list-style: none; padding: 0; margin: 0; }
+.ranking li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.bulkbar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  background: var(--info-bg);
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.bulkbar select, .bulkbar input[type="datetime-local"] { width: auto; }
+
+.copyable { display: inline-flex; gap: 0.4rem; align-items: center; }
+
+/* --- Modal -------------------------------------------------------------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 45%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 10;
+}
+.modal {
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  width: min(680px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal header, .modal footer {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.modal header { justify-content: space-between; }
+.modal header h2 { margin: 0; }
+.modal footer { border-bottom: none; border-top: 1px solid var(--border); justify-content: flex-end; gap: 0.5rem; }
+.modal-body { padding: 1rem; overflow-y: auto; }
+
+/* --- Anmeldung ---------------------------------------------------------- */
+
+.login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2rem;
+  width: min(420px, 100%);
+}
+.login-card button[type="submit"] { width: 100%; margin-top: 0.5rem; }
+.login-card .oidc { display: block; margin-top: 1rem; text-align: center; color: var(--accent); }
+.totp-setup { background: var(--bg); padding: 0.75rem; border-radius: var(--radius); }
+.totp-setup .hint { word-break: break-all; }
+
+/* --- Tablet ------------------------------------------------------------- */
+
+@media (max-width: 1024px) {
+  .layout { grid-template-columns: 1fr; }
+  aside {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  aside nav { flex-direction: row; flex-wrap: wrap; }
+  .sidebar-footer {
+    margin-top: 0;
+    flex-direction: row;
+    align-items: center;
+    border-top: none;
+    padding-top: 0;
+  }
+  main { padding: 1rem; }
+}
