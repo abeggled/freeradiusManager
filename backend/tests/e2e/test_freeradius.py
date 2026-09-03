@@ -90,6 +90,13 @@ def radius_stack() -> Iterator[tuple[str, object]]:
     radius = (
         container_cls(RADIUS_IMAGE)
         .with_volume_mapping(str(SQL_MODULE), "/etc/raddb/mods-enabled/sql", "ro")
+        # Die Modulkonfiguration liest die Zugangsdaten aus der Umgebung, damit
+        # sie nicht doppelt gepflegt werden muessen (siehe docker-compose.yml).
+        .with_env("FRM_DB_HOST", "db")
+        .with_env("FRM_DB_PORT", "3306")
+        .with_env("FRM_DB_NAME", "radius")
+        .with_env("FRM_DB_USER", "radmgr")
+        .with_env("FRM_DB_PASSWORD", "radmgr")
         .with_network(network)
         .with_command("radiusd -f -l stdout")
     )

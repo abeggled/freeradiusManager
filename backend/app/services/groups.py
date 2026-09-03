@@ -19,9 +19,10 @@ from app.schemas.groups import (
     GroupUpdate,
     MembershipChange,
 )
-from app.schemas.users import AttributeOut
+from app.schemas.users import AttributeIn
 from app.services.attributes import validate_triple, vlan_triples
 from app.services.audit import AuditService
+from app.services.masking import mask_attributes
 
 VLAN_ATTRIBUTE = "tunnel-private-group-id"
 
@@ -55,8 +56,10 @@ class GroupService:
             groupname=groupname,
             members=await self.repo.member_count(groupname),
             vlan=vlan,
-            check_attributes=[AttributeOut.model_validate(r) for r in checks],
-            reply_attributes=[AttributeOut.model_validate(r) for r in replies],
+            # Der Expertenmodus laesst auch Passwort-Attribute zu; sie duerfen
+            # ebenso wenig im Klartext ausgeliefert werden wie bei Benutzern.
+            check_attributes=mask_attributes(checks),
+            reply_attributes=mask_attributes(replies),
         )
 
     async def create(
@@ -69,7 +72,21 @@ class GroupService:
     ) -> GroupDetail:
         if await self.repo.exists(payload.groupname):
             raise ConflictError(code="error.group_exists", details={"groupname": payload.groupname})
-        warnings = await self._write_attributes(payload, language=language)
+        if not payload.vlan and not payload.check_attributes and not payload.reply_attributes:
+            # Ohne Attribut entstuende keine einzige Zeile in den RADIUS-Tabellen;
+            # die Gruppe waere anschliessend nicht auffindbar (das anschliessende
+            # get() liefe in ein 404, obwohl der Audit-Eintrag Erfolg meldete).
+            raise ValidationError(
+                code="error.group_empty", details={"groupname": payload.groupname}
+            )
+        warnings = await self._write_attributes(
+            payload.groupname,
+            vlan=payload.vlan,
+            clear_vlan=payload.clear_vlan,
+            checks=payload.check_attributes,
+            replies=payload.reply_attributes,
+            language=language,
+        )
         await self.audit.log(
             action="group.create",
             object_type="group",
@@ -101,15 +118,14 @@ class GroupService:
             await self.repo.rename_group(groupname, payload.groupname)
             groupname = payload.groupname
 
+        # Jede Sammlung wird einzeln betrachtet: eine ausgelassene bleibt
+        # unveraendert, statt beim Setzen der anderen mitgeloescht zu werden.
         warnings = await self._write_attributes(
-            GroupCreate(
-                groupname=groupname,
-                vlan=payload.vlan,
-                clear_vlan=payload.clear_vlan,
-                check_attributes=payload.check_attributes or [],
-                reply_attributes=payload.reply_attributes or [],
-            ),
-            keep_existing=payload.check_attributes is None and payload.reply_attributes is None,
+            groupname,
+            vlan=payload.vlan,
+            clear_vlan=payload.clear_vlan,
+            checks=payload.check_attributes,
+            replies=payload.reply_attributes,
             language=language,
         )
         await self.audit.log(
@@ -178,43 +194,53 @@ class GroupService:
         return changed
 
     async def _write_attributes(
-        self, payload: GroupCreate, *, keep_existing: bool = False, language: str = "de"
+        self,
+        groupname: str,
+        *,
+        vlan: str | None,
+        clear_vlan: bool,
+        checks: list[AttributeIn] | None,
+        replies: list[AttributeIn] | None,
+        language: str = "de",
     ) -> list[ApiWarning]:
+        """Schreibt Check- und Reply-Attribute einer Gruppe.
+
+        ``None`` bedeutet "nicht angefasst" und erhaelt den Bestand; eine leere
+        Liste loescht die jeweilige Sammlung bewusst.
+        """
         warnings: list[ApiWarning] = []
-        if keep_existing:
-            checks = [
-                (r.attribute, r.op, r.value)
-                for r in await self.repo.check_attributes(payload.groupname)
-            ]
-            replies = [
-                (r.attribute, r.op, r.value)
-                for r in await self.repo.reply_attributes(payload.groupname)
+
+        def convert(items: list[AttributeIn], table: str) -> list[tuple[str, str, str]]:
+            rows: list[tuple[str, str, str]] = []
+            for item in items:
+                for w in validate_triple(
+                    item.attribute, item.op, item.value, table=table, language=language
+                ):
+                    warnings.append(
+                        ApiWarning(code=w.code, message=w.message, attribute=w.attribute)
+                    )
+                rows.append((item.attribute, item.op, item.value))
+            return rows
+
+        if checks is None:
+            check_rows = [
+                (r.attribute, r.op, r.value) for r in await self.repo.check_attributes(groupname)
             ]
         else:
-            checks = []
-            replies = []
-            for item in payload.check_attributes:
-                for w in validate_triple(
-                    item.attribute, item.op, item.value, table="radgroupcheck", language=language
-                ):
-                    warnings.append(
-                        ApiWarning(code=w.code, message=w.message, attribute=w.attribute)
-                    )
-                checks.append((item.attribute, item.op, item.value))
-            for item in payload.reply_attributes:
-                for w in validate_triple(
-                    item.attribute, item.op, item.value, table="radgroupreply", language=language
-                ):
-                    warnings.append(
-                        ApiWarning(code=w.code, message=w.message, attribute=w.attribute)
-                    )
-                replies.append((item.attribute, item.op, item.value))
+            check_rows = convert(checks, "radgroupcheck")
+
+        if replies is None:
+            reply_rows = [
+                (r.attribute, r.op, r.value) for r in await self.repo.reply_attributes(groupname)
+            ]
+        else:
+            reply_rows = convert(replies, "radgroupreply")
 
         vlan_names = {"tunnel-type", "tunnel-medium-type", VLAN_ATTRIBUTE}
-        if payload.vlan is not None or payload.clear_vlan:
-            replies = [r for r in replies if r[0].lower() not in vlan_names]
-        if payload.vlan:
-            replies.extend((t.attribute, t.op, t.value) for t in vlan_triples(payload.vlan))
+        if vlan is not None or clear_vlan:
+            reply_rows = [r for r in reply_rows if r[0].lower() not in vlan_names]
+        if vlan:
+            reply_rows.extend((t.attribute, t.op, t.value) for t in vlan_triples(vlan))
 
-        await self.repo.replace_attributes(payload.groupname, checks, replies)
+        await self.repo.replace_attributes(groupname, check_rows, reply_rows)
         return warnings

@@ -6,6 +6,8 @@ Administratoren vorbehalten und erzeugt einen Audit-Eintrag.
 
 from __future__ import annotations
 
+import ipaddress
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings as app_settings
@@ -13,6 +15,7 @@ from app.core.crypto import SecretBox
 from app.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from app.core.i18n import translate
 from app.core.security import Principal
+from app.models.mgr import MgrNasExtra
 from app.repositories.mgr.nas_extra import NasExtraRepository
 from app.repositories.radius.nas import NasRepository
 from app.schemas.common import ApiWarning
@@ -122,10 +125,15 @@ class NasService:
             row.nasname = payload.nasname
             await self.extra.rename(old_name, payload.nasname)
 
-        for field in ("shortname", "type", "ports", "secret", "server", "community", "description"):
-            value = getattr(payload, field)
-            if value is not None:
-                setattr(row, field, value)
+        # ``model_fields_set`` unterscheidet "nicht gesendet" von "ausdruecklich
+        # auf null gesetzt" - sonst liessen sich optionale Felder zwar setzen,
+        # aber nie wieder leeren.
+        supplied = payload.model_fields_set
+        for field in ("shortname", "type", "ports", "server", "community", "description"):
+            if field in supplied:
+                setattr(row, field, getattr(payload, field))
+        if payload.secret:
+            row.secret = payload.secret
 
         secret_enc: str | None = None
         if payload.clear_coa_secret:
@@ -195,9 +203,39 @@ class NasService:
         await self.session.commit()
         return SecretReveal(nasname=row.nasname, secret=row.secret)
 
-    async def coa_target(self, nasname: str) -> tuple[str, int, str] | None:
-        """Liefert (Host, CoA-Port, CoA-Secret) fuer ein NAS, sofern konfiguriert."""
-        extra = await self.extra.get(nasname)
+    async def coa_target(self, nas_ip_address: str) -> tuple[str, int, str] | None:
+        """Liefert (Host, CoA-Port, CoA-Secret) fuer die NAS-IP einer Session.
+
+        NAS-Clients duerfen als Netz eingetragen sein (z. B. ``192.0.2.0/24``).
+        Das Secret wird dann ueber das passende Netz gefunden, das Paket aber an
+        die konkrete IP der Session gesendet - ein Netz ist kein gueltiges
+        UDP-Ziel (FR-7).
+        """
+        extra = await self.extra.get(nas_ip_address)
+        if extra is None:
+            extra = await self._extra_by_network(nas_ip_address)
         if extra is None or not extra.coa_enabled or not extra.coa_secret_enc:
             return None
-        return nasname, extra.coa_port, self._box().decrypt(extra.coa_secret_enc)
+        return nas_ip_address, extra.coa_port, self._box().decrypt(extra.coa_secret_enc)
+
+    async def _extra_by_network(self, nas_ip_address: str) -> MgrNasExtra | None:
+        """Sucht den NAS-Eintrag, dessen Netz die angegebene Adresse enthaelt."""
+        try:
+            address = ipaddress.ip_address(nas_ip_address)
+        except ValueError:
+            return None
+        candidates = await self.extra.with_coa()
+        matches: list[tuple[int, MgrNasExtra]] = []
+        for candidate in candidates:
+            if "/" not in candidate.nasname:
+                continue
+            try:
+                network = ipaddress.ip_network(candidate.nasname, strict=False)
+            except ValueError:
+                continue
+            if address in network:
+                matches.append((network.prefixlen, candidate))
+        if not matches:
+            return None
+        # Das spezifischste Netz gewinnt.
+        return max(matches, key=lambda item: item[0])[1]

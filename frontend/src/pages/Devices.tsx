@@ -2,7 +2,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { download } from "@/api/client";
+import { buildQuery, download } from "@/api/client";
 import { useCreateDevice, useDevices, useGroups, useMacFormats } from "@/api/hooks";
 import type { UserListItem } from "@/api/types";
 import { DataTable } from "@/components/DataTable";
@@ -25,13 +25,14 @@ export function DevicesPage() {
   const [showImport, setShowImport] = useState(false);
 
   const formats = useMacFormats();
-  const { data, isLoading, error } = useDevices({
+  // Ein Filterobjekt fuer Liste und Export – der Export muss genau die
+  // angezeigte Menge liefern (FR-8).
+  const filters = {
     search: search || undefined,
     location: location || undefined,
     device_type: deviceType || undefined,
-    limit: LIMIT,
-    offset,
-  });
+  };
+  const { data, isLoading, error } = useDevices({ ...filters, limit: LIMIT, offset });
 
   const columns = useMemo<ColumnDef<UserListItem, unknown>[]>(
     () => [
@@ -85,7 +86,9 @@ export function DevicesPage() {
           </button>
           <button
             type="button"
-            onClick={() => void download("/devices/export", "geraete.csv")}
+            onClick={() =>
+              void download(`/devices/export${buildQuery(filters)}`, "geraete.csv")
+            }
           >
             {t("common.export")}
           </button>

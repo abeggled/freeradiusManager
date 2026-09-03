@@ -2,7 +2,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { download } from "@/api/client";
+import { buildQuery, download } from "@/api/client";
 import {
   useBulkAction,
   useCreateUser,
@@ -56,14 +56,15 @@ export function UsersPage() {
   const [bulkAll, setBulkAll] = useState(false);
   const [confirmBulk, setConfirmBulk] = useState(false);
 
-  const query = {
+  // Ein Filterobjekt fuer Liste, Export und Bulk – so treffen Sammelaktionen
+  // nie mehr Objekte als angezeigt (FR-8, NFR-4).
+  const filters = {
     search: search || undefined,
     group: group || undefined,
     status: status || undefined,
     include_devices: includeDevices,
-    limit: LIMIT,
-    offset,
   };
+  const query = { ...filters, limit: LIMIT, offset };
 
   const { data, isLoading, error } = useUsers(query);
   const groups = useGroups();
@@ -134,11 +135,7 @@ export function UsersPage() {
           groupname: bulkGroup || null,
           expires_at: bulk === "set_expiry" ? toIso(bulkExpiry) : null,
         },
-        query: {
-          search: search || undefined,
-          group: group || undefined,
-          status: status || undefined,
-        },
+        query: filters,
       },
       {
         onSuccess: () => {
@@ -159,12 +156,7 @@ export function UsersPage() {
           </button>
           <button
             type="button"
-            onClick={() =>
-              void download(
-                `/users/export?search=${encodeURIComponent(search)}&group=${encodeURIComponent(group)}&status=${status}&include_devices=${includeDevices}`,
-                "benutzer.csv",
-              )
-            }
+            onClick={() => void download(`/users/export${buildQuery(filters)}`, "benutzer.csv")}
           >
             {t("common.export")}
           </button>

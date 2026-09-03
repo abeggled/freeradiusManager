@@ -35,8 +35,22 @@ class UserAttributeRepository:
         return list((await self.session.scalars(stmt)).all())
 
     async def exists(self, username: str) -> bool:
+        """Ob der Benutzer Check-Attribute besitzt."""
         stmt = select(func.count()).select_from(RadCheck).where(RadCheck.username == username)
         return bool(await self.session.scalar(stmt))
+
+    async def exists_anywhere(self, username: str) -> bool:
+        """Ob der Name in irgendeiner RADIUS-Tabelle vorkommt.
+
+        In einer Bestandsinstallation kann ein Name auch nur Antwortattribute
+        oder Gruppenzuordnungen besitzen. Ein Neuanlegen wuerde diese sonst
+        stillschweigend ueberschreiben.
+        """
+        for model in (RadCheck, RadReply, RadUserGroup):
+            stmt = select(func.count()).select_from(model).where(model.username == username)
+            if await self.session.scalar(stmt):
+                return True
+        return False
 
     async def find_check(self, username: str, attribute: str) -> RadCheck | None:
         stmt = select(RadCheck).where(

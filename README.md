@@ -83,7 +83,9 @@ docker compose exec freeradius radtest BENUTZER PASSWORT 127.0.0.1 0 testing123
    das RADIUS-Schema; bei Abweichungen verweigert er den Betrieb mit einer
    klaren Meldung (Abschnitt 4.2).
 3. Den Manager hinter einen TLS-Reverse-Proxy stellen und `FRM_COOKIE_SECURE=true`
-   belassen.
+   belassen. Damit Audit-Log und Rate-Limits die echte Client-Adresse sehen, das
+   Netz des Proxys in `FRM_TRUSTED_PROXIES` eintragen – nur von dort wird
+   `X-Forwarded-For` ausgewertet.
 
 ### Bekannte betriebliche Einschränkungen
 
@@ -98,6 +100,11 @@ docker compose exec freeradius radtest BENUTZER PASSWORT 127.0.0.1 0 testing123
 * **Rate Limiting** zählt prozesslokal. Bei mehreren Instanzen begrenzt jede
   Instanz für sich; ein gemeinsames Backend (Redis) ist als Ausbaustufe
   vorgesehen.
+* **TOTP zurücksetzen** kann nur ein Administrator (`reset_totp` in der
+  Kontenverwaltung). Ein bereits eingerichteter zweiter Faktor lässt sich weder
+  über die Anmeldung noch über das eigene Profil ersetzen.
+* **Aufbewahrung des Audit-Logs** setzt ein Hintergrundjob durch; das Intervall
+  steuert `FRM_AUDIT_PURGE_INTERVAL_SECONDS` (Vorgabe: alle sechs Stunden).
 
 ## Entwicklung
 

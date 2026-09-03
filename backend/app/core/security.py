@@ -78,16 +78,29 @@ def create_session_token(
     return token, idle_ts
 
 
+TOTP_SCOPE = "totp"
+TOTP_ENROLL_SCOPE = "totp_enroll"
+
+
 def create_totp_challenge_token(
-    account_id: int, *, config: Settings | None = None, minutes: int = 5
+    account_id: int,
+    *,
+    scope: str = TOTP_SCOPE,
+    config: Settings | None = None,
+    minutes: int = 5,
 ) -> str:
-    """Kurzlebiges Token zwischen Passwort- und TOTP-Schritt."""
+    """Kurzlebiges Token zwischen Passwort- und TOTP-Schritt.
+
+    Die Ersteinrichtung nutzt einen eigenen Scope: ein Challenge-Token aus einer
+    normalen Anmeldung darf niemals eine bereits eingerichtete zweite Stufe
+    ersetzen koennen (FR-10).
+    """
     config = config or settings
     now = _now()
     payload = {
         "iss": ISSUER,
         "sub": str(account_id),
-        "scope": "totp",
+        "scope": scope,
         "iat": int(now.timestamp()),
         "exp": int((now + dt.timedelta(minutes=minutes)).timestamp()),
     }

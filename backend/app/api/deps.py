@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
 from collections.abc import Callable
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, Request, Response
@@ -15,6 +17,7 @@ from app.core.i18n import normalise_language
 from app.core.ratelimit import RateLimiter
 from app.core.security import Principal, create_session_token, principal_from_token
 from app.models.mgr import Role
+from app.repositories.mgr.accounts import AccountRepository
 
 login_limiter = RateLimiter(settings.login_rate_limit, settings.login_rate_window_seconds)
 coa_limiter = RateLimiter(settings.coa_rate_limit, settings.coa_rate_window_seconds)
@@ -22,11 +25,48 @@ coa_limiter = RateLimiter(settings.coa_rate_limit, settings.coa_rate_window_seco
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
+@lru_cache
+def _trusted_networks() -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    networks = []
+    for entry in settings.trusted_proxies:
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            continue
+    return tuple(networks)
+
+
+def _is_trusted(peer: str | None) -> bool:
+    if not peer or not _trusted_networks():
+        return False
+    try:
+        address = ipaddress.ip_address(peer)
+    except ValueError:
+        return False
+    return any(address in network for network in _trusted_networks())
+
+
 def client_ip(request: Request) -> str | None:
+    """Aufrufer-Adresse fuer Audit-Log und Rate-Limits.
+
+    ``X-Forwarded-For`` wird nur ausgewertet, wenn die direkte Gegenstelle in
+    ``FRM_TRUSTED_PROXIES`` steht - sonst koennte ein Aufrufer den Header
+    faelschen und die Rate-Limits umgehen (NFR-1). Ohne konfigurierte Proxys
+    zaehlt ausschliesslich die Peer-Adresse.
+    """
+    peer = request.client.host if request.client else None
+    if not _is_trusted(peer):
+        return peer
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else None
+    if not forwarded:
+        return peer
+    # Von rechts nach links: der erste Wert, der nicht aus einem Proxynetz
+    # stammt, ist die aeusserste nicht selbst gesetzte Adresse.
+    candidates = [part.strip() for part in forwarded.split(",") if part.strip()]
+    for candidate in reversed(candidates):
+        if not _is_trusted(candidate):
+            return candidate
+    return candidates[0] if candidates else peer
 
 
 ClientIp = Annotated[str | None, Depends(client_ip)]
@@ -63,12 +103,31 @@ def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(settings.cookie_name, domain=settings.cookie_domain, path="/")
 
 
-async def current_principal(request: Request, response: Response) -> Principal:
-    """Liest das Session-Cookie und verlaengert es gleitend (Idle-Timeout)."""
+async def current_principal(request: Request, response: Response, session: SessionDep) -> Principal:
+    """Liest das Session-Cookie und verlaengert es gleitend (Idle-Timeout).
+
+    Rolle und Aktivstatus stammen bewusst aus der Datenbank und nicht aus dem
+    Token: sonst behielte ein bereits ausgestelltes Token seine alten Rechte,
+    bis die absolute Gueltigkeit ablaeuft - auch wenn das Konto zwischenzeitlich
+    deaktiviert, geloescht oder herabgestuft wurde.
+    """
     token = request.cookies.get(settings.cookie_name)
     if not token:
         raise AuthenticationError(code="error.unauthenticated")
-    principal = principal_from_token(token)
+    claims = principal_from_token(token)
+
+    account = await AccountRepository(session).get(claims.account_id)
+    if account is None or not account.is_active:
+        raise AuthenticationError(code="error.unauthenticated")
+
+    principal = Principal(
+        account_id=account.id,
+        username=account.username,
+        role=account.role,
+        language=account.language,
+        session_id=claims.session_id,
+        absolute_expiry=claims.absolute_expiry,
+    )
     request.state.principal = principal
     refreshed, _ = create_session_token(
         principal.account_id,

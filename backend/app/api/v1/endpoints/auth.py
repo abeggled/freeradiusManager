@@ -18,7 +18,7 @@ from app.api.deps import (
 from app.core.config import settings
 from app.core.crypto import hash_password
 from app.core.errors import AuthenticationError, ValidationError
-from app.core.security import create_session_token
+from app.core.security import TOTP_ENROLL_SCOPE, create_session_token
 from app.models.mgr import MgrAccount, Role
 from app.schemas.accounts import (
     AccountOut,
@@ -55,9 +55,13 @@ async def login(
     if service.requires_totp(account):
         if not payload.totp_code:
             return LoginResponse(status="totp_required", challenge=service.challenge_for(account))
-        await service.verify_totp_code(account, payload.totp_code)
+        await service.verify_totp_code(account, payload.totp_code, actor_ip=actor_ip)
     elif service.requires_totp_enrollment(account):
-        return LoginResponse(status="totp_setup_required", challenge=service.challenge_for(account))
+        # Eigener Scope: dieses Token darf ausschliesslich die Ersteinrichtung
+        # freischalten, nie einen bereits aktiven Faktor ersetzen.
+        return LoginResponse(
+            status="totp_setup_required", challenge=service.enrollment_challenge_for(account)
+        )
 
     await service.mark_login(account, actor_ip)
     login_limiter.reset(f"{actor_ip}:{payload.username}")
@@ -75,7 +79,7 @@ async def login_totp(
     login_limiter.check(f"totp:{actor_ip}")
     service = AccountService(session)
     account = await service.account_from_challenge(payload.challenge)
-    await service.verify_totp_code(account, payload.totp_code)
+    await service.verify_totp_code(account, payload.totp_code, actor_ip=actor_ip)
     await service.mark_login(account, actor_ip)
     _issue_session(response, account)
     return LoginResponse(status="authenticated", account=AccountOut.model_validate(account))
@@ -87,7 +91,7 @@ async def enroll_totp(session: SessionDep, challenge: str | None = None) -> Totp
     if not challenge:
         raise ValidationError(code="error.validation", details={"field": "challenge"})
     service = AccountService(session)
-    account = await service.account_from_challenge(challenge)
+    account = await service.account_from_challenge(challenge, scope=TOTP_ENROLL_SCOPE)
     return await service.start_totp_enrollment(account)
 
 
@@ -99,7 +103,7 @@ async def confirm_totp(
     actor_ip: ClientIp,
 ) -> LoginResponse:
     service = AccountService(session)
-    account = await service.account_from_challenge(payload.challenge)
+    account = await service.account_from_challenge(payload.challenge, scope=TOTP_ENROLL_SCOPE)
     await service.confirm_totp(account, payload.totp_code, actor_ip=actor_ip)
     await service.mark_login(account, actor_ip)
     _issue_session(response, account)
@@ -193,6 +197,9 @@ async def oidc_callback(
             await service.repo.add(account)
         else:
             account.oidc_subject = subject
+    if not account.is_active:
+        # Ein deaktiviertes Konto darf sich auch ueber OIDC nicht neu anmelden.
+        raise AuthenticationError(code="error.account_disabled")
     account.role = Role(mapped)
     await service.mark_login(account, actor_ip)
 

@@ -160,10 +160,18 @@ async def bulk_action(
     group: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
     owner: str | None = None,
+    include_devices: bool = False,
 ) -> BulkResult:
     """Bulk-Aktionen (FR-8). ``filter_all`` wendet die Aktion auf die gesamte
-    Filtermenge an – die betroffene Anzahl wird zurueckgemeldet (NFR-4)."""
-    flt = _filter(search, group, status_filter, owner, None)
+    Filtermenge an – die betroffene Anzahl wird zurueckgemeldet (NFR-4).
+
+    Der Filter entspricht dem der Listenansicht: ohne ``include_devices`` sind
+    MAB-Geraete ausgenommen, damit eine Sammelaktion nie mehr Objekte trifft als
+    zuvor angezeigt wurden.
+    """
+    flt = _filter(
+        search, group, status_filter, owner, None if include_devices else SubjectType.USER
+    )
     requested, succeeded, errors = await ImportExportService(session).bulk(
         payload, flt, actor=actor, actor_ip=actor_ip
     )

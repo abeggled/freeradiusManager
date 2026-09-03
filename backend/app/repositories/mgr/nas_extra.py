@@ -26,6 +26,13 @@ class NasExtraRepository:
         )
         return {row.nasname: row for row in rows.all()}
 
+    async def with_coa(self) -> list[MgrNasExtra]:
+        """Alle Eintraege mit aktivem CoA - Basis fuer die Netzsuche (FR-7)."""
+        rows = await self.session.scalars(
+            select(MgrNasExtra).where(MgrNasExtra.coa_enabled.is_(True))
+        )
+        return list(rows.all())
+
     async def upsert(
         self,
         nasname: str,

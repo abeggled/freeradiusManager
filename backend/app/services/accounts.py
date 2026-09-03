@@ -17,6 +17,8 @@ from app.core.errors import (
     ValidationError,
 )
 from app.core.security import (
+    TOTP_ENROLL_SCOPE,
+    TOTP_SCOPE,
     Principal,
     create_totp_challenge_token,
     decode_token,
@@ -97,21 +99,47 @@ class AccountService:
         )
 
     def challenge_for(self, account: MgrAccount) -> str:
-        return create_totp_challenge_token(account.id)
+        """Challenge fuer den zweiten Faktor eines bereits eingerichteten Kontos."""
+        return create_totp_challenge_token(account.id, scope=TOTP_SCOPE)
 
-    async def account_from_challenge(self, challenge: str) -> MgrAccount:
-        payload = decode_token(challenge, scope="totp")
+    def enrollment_challenge_for(self, account: MgrAccount) -> str:
+        """Challenge fuer die Ersteinrichtung - nur ohne aktives TOTP."""
+        return create_totp_challenge_token(account.id, scope=TOTP_ENROLL_SCOPE)
+
+    async def account_from_challenge(
+        self, challenge: str, *, scope: str = TOTP_SCOPE
+    ) -> MgrAccount:
+        payload = decode_token(challenge, scope=scope)
         account = await self.repo.get(int(payload["sub"]))
         if account is None or not account.is_active:
             raise AuthenticationError(code="error.unauthenticated")
         return account
 
-    async def verify_totp_code(self, account: MgrAccount, code: str) -> None:
+    async def verify_totp_code(
+        self, account: MgrAccount, code: str, *, actor_ip: str | None = None
+    ) -> None:
         if not account.totp_secret_enc:
             raise AuthenticationError(code="error.totp_required")
         secret = _box().decrypt(account.totp_secret_enc)
         if not verify_totp(secret, code):
+            # Fehlversuche am zweiten Faktor zaehlen auf dieselbe Sperre ein wie
+            # falsche Passwoerter - sonst waere der TOTP-Schritt frei ratbar.
+            account.failed_logins += 1
+            if account.failed_logins >= LOCKOUT_THRESHOLD:
+                account.locked_until = utcnow() + dt.timedelta(minutes=LOCKOUT_MINUTES)
+            await self.audit.log(
+                action="auth.totp",
+                object_type="account",
+                object_id=account.username,
+                actor_ip=actor_ip,
+                result=AuditResult.FAILURE,
+                message="invalid totp code",
+            )
+            await self.session.commit()
             raise AuthenticationError(code="error.totp_invalid")
+        account.failed_logins = 0
+        account.locked_until = None
+        await self.session.commit()
 
     async def mark_login(self, account: MgrAccount, actor_ip: str | None = None) -> None:
         account.last_login_at = utcnow()
@@ -127,6 +155,14 @@ class AccountService:
     # --- TOTP ------------------------------------------------------------
 
     async def start_totp_enrollment(self, account: MgrAccount) -> TotpSetupResponse:
+        """Legt ein neues TOTP-Geheimnis an.
+
+        Fuer ein Konto mit bereits aktivem TOTP ist das verboten: sonst koennte
+        wer nur das Passwort kennt die zweite Stufe durch eine eigene ersetzen.
+        Das Zuruecksetzen erfolgt ausschliesslich durch einen Administrator.
+        """
+        if account.totp_enabled:
+            raise ConflictError(code="error.totp_already_enrolled")
         secret = generate_totp_secret()
         account.totp_secret_enc = _box().encrypt(secret)
         account.totp_enabled = False

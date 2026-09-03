@@ -62,6 +62,14 @@ services:
       db:
         condition: service_healthy
     command: ["radiusd", "-f", "-l", "stdout"]
+    environment:
+      # Dieselben Zugangsdaten wie fuer db und manager; die Modulkonfiguration
+      # liest sie ueber $$ENV{...}.
+      FRM_DB_HOST: db
+      FRM_DB_PORT: "3306"
+      FRM_DB_NAME: ${DB_NAME:-radius}
+      FRM_DB_USER: ${DB_USER:-radmgr}
+      FRM_DB_PASSWORD: ${DB_PASSWORD:-radmgr}
     volumes:
       - ./docker/freeradius/mods-enabled-sql:/etc/raddb/mods-enabled/sql:ro
     ports:

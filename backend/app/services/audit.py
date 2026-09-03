@@ -12,9 +12,12 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import get_logger
 from app.core.security import Principal
 from app.models.mgr import AuditResult, MgrAudit
 from app.repositories.mgr.audit import AuditRepository
+
+log = get_logger("audit")
 
 REDACTED = "<geaendert>"
 

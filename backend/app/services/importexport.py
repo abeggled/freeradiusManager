@@ -21,7 +21,15 @@ from app.core.mac import format_mac, is_mac
 from app.core.security import Principal
 from app.models.mgr import CredentialType, SubjectType
 from app.repositories.directory import SubjectFilter
-from app.schemas.users import BulkAction, DeviceCreate, MembershipIn, SubjectMeta, UserCreate
+from app.schemas.users import (
+    BulkAction,
+    DeviceCreate,
+    MembershipIn,
+    PasswordSet,
+    SubjectMeta,
+    UserCreate,
+    UserUpdate,
+)
 from app.services.audit import AuditService
 from app.services.devices import DeviceService
 from app.services.users import UserService
@@ -100,6 +108,30 @@ def _parse_groups(value: str | None) -> list[MembershipIn]:
 
 
 @dataclass
+class ParsedRow:
+    """Eine CSV-Zeile, uebersetzt in die Schemas der Services."""
+
+    username: str
+    groups: list[MembershipIn]
+    expires_at: dt.datetime | None
+    vlan: str | None
+    password: str | None
+    credential_type: CredentialType | None
+    disabled: bool
+    meta: SubjectMeta
+    supplied: set[str]
+
+    def summary(self) -> dict[str, Any]:
+        return {
+            "username": self.username,
+            "groups": [g.groupname for g in self.groups],
+            "vlan": self.vlan,
+            "expires_at": self.expires_at,
+            "disabled": self.disabled if "disabled" in self.supplied else None,
+        }
+
+
+@dataclass
 class ImportRow:
     line: int
     action: Literal["create", "update", "skip", "error"]
@@ -116,6 +148,44 @@ class ImportReport:
     to_update: int = 0
     errors: int = 0
     rows: list[ImportRow] = field(default_factory=list)
+
+
+def _parse_row(row: dict[str, str], *, username: str, require_password: bool) -> ParsedRow:
+    """Uebersetzt eine CSV-Zeile in die Schemas der Services.
+
+    Wird sowohl im Dry-Run als auch beim Schreiben aufgerufen, damit die
+    Vorschau dieselben Validierungsfehler meldet wie der spaetere Import.
+    """
+    credential_raw = (row.get("credential_type") or "").lower()
+    if credential_raw and credential_raw not in {c.value for c in CredentialType}:
+        raise ValidationError(
+            code="error.validation",
+            details={"field": "credential_type", "value": credential_raw},
+        )
+    password = row.get("password") or None
+    if require_password and not password:
+        # Ohne Passwort schluege das spaetere Anlegen fehl; das muss schon die
+        # Vorschau zeigen und nicht erst der Schreibvorgang.
+        raise ValidationError(code="error.password_required", details={"username": username})
+
+    return ParsedRow(
+        username=username,
+        groups=_parse_groups(row.get("groups")),
+        expires_at=_parse_date(row.get("expires_at")),
+        vlan=row.get("vlan") or None,
+        password=password,
+        credential_type=CredentialType(credential_raw) if credential_raw else None,
+        disabled=_parse_bool(row.get("disabled")),
+        meta=SubjectMeta(
+            display_name=row.get("display_name") or None,
+            note=row.get("note") or None,
+            owner=row.get("owner") or None,
+            device_type=row.get("device_type") or None,
+            location=row.get("location") or None,
+            inventory_no=row.get("inventory_no") or None,
+        ),
+        supplied={key for key, value in row.items() if value},
+    )
 
 
 class ImportExportService:
@@ -166,15 +236,16 @@ class ImportExportService:
                             code="error.validation", details={"field": "username"}
                         )
 
-                exists = await self.users.attrs.exists(username) or bool(
+                exists = await self.users.attrs.exists_anywhere(username) or bool(
                     await self.users.subjects.get(username)
                 )
-                values: dict[str, Any] = {
-                    "username": username,
-                    "groups": [g.groupname for g in _parse_groups(row.get("groups"))],
-                    "vlan": row.get("vlan") or None,
-                    "expires_at": _parse_date(row.get("expires_at")),
-                }
+                # Das Uebersetzen validiert bereits; beim Dry-Run passiert damit
+                # dasselbe wie beim Schreiben, nur ohne Schreibzugriff.
+                parsed = _parse_row(
+                    row,
+                    username=username,
+                    require_password=not exists and kind == "user",
+                )
                 if exists:
                     report.to_update += 1
                 else:
@@ -184,12 +255,12 @@ class ImportExportService:
                         line=index,
                         action="update" if exists else "create",
                         username=username,
-                        values=values,
+                        values=parsed.summary(),
                     )
                 )
 
                 if not dry_run:
-                    await self._write_row(kind, row, username, exists, actor, actor_ip, language)
+                    await self._write_row(parsed, kind, exists, actor, actor_ip, language)
             except Exception as exc:  # noqa: BLE001 - jede Zeile wird einzeln gemeldet
                 report.errors += 1
                 report.rows.append(
@@ -219,52 +290,69 @@ class ImportExportService:
 
     async def _write_row(
         self,
+        parsed: ParsedRow,
         kind: Literal["user", "device"],
-        row: dict[str, str],
-        username: str,
         exists: bool,
         actor: Principal,
         actor_ip: str | None,
         language: str,
     ) -> None:
-        groups = _parse_groups(row.get("groups"))
-        expires = _parse_date(row.get("expires_at"))
-        meta = SubjectMeta(
-            display_name=row.get("display_name") or None,
-            note=row.get("note") or None,
-            owner=row.get("owner") or None,
-            device_type=row.get("device_type") or None,
-            location=row.get("location") or None,
-            inventory_no=row.get("inventory_no") or None,
-        )
-        if exists:
-            subject = await self.users.subjects.ensure(
-                username, SubjectType.DEVICE if kind == "device" else SubjectType.USER
-            )
-            for key, value in meta.model_dump(exclude_none=True).items():
-                setattr(subject, key, value)
-            if groups:
-                await self.users.groups.set_memberships(
-                    username, [(g.groupname, g.priority) for g in groups]
-                )
-            if expires:
-                subject.expires_at = expires
-                await self.users.attrs.set_check(
-                    username, "Expiration", ":=", to_expiration(expires)
-                )
-            await self.session.commit()
+        """Schreibt eine Zeile ueber die regulaeren Service-Operationen.
+
+        Aktualisierungen laufen bewusst durch ``update``/``set_password``/
+        ``set_disabled`` statt an den Services vorbei - sonst blieben Spalten wie
+        ``password``, ``vlan`` oder ``disabled`` bei bestehenden Datensaetzen
+        wirkungslos, obwohl der Bericht die Zeile als aktualisiert meldet.
+        """
+        if not exists:
+            await self._create_row(parsed, kind, actor, actor_ip, language)
             return
 
+        subject_type = SubjectType.DEVICE if kind == "device" else SubjectType.USER
+        await self.users.subjects.ensure(parsed.username, subject_type)
+        await self.users.update(
+            parsed.username,
+            UserUpdate(
+                expires_at=parsed.expires_at,
+                groups=parsed.groups or None,
+                vlan=parsed.vlan,
+                meta=parsed.meta,
+            ),
+            actor=actor,
+            actor_ip=actor_ip,
+            language=language,
+        )
+        if parsed.password:
+            await self.users.set_password(
+                parsed.username,
+                PasswordSet(password=parsed.password, credential_type=parsed.credential_type),
+                actor=actor,
+                actor_ip=actor_ip,
+            )
+        if "disabled" in parsed.supplied:
+            await self.users.set_disabled(
+                parsed.username, parsed.disabled, actor=actor, actor_ip=actor_ip
+            )
+
+    async def _create_row(
+        self,
+        parsed: ParsedRow,
+        kind: Literal["user", "device"],
+        actor: Principal,
+        actor_ip: str | None,
+        language: str,
+    ) -> None:
         if kind == "device":
             await self.devices.create(
                 DeviceCreate(
-                    mac=username,
-                    use_mac_as_password=True,
-                    expires_at=expires,
-                    groups=groups,
-                    vlan=row.get("vlan") or None,
-                    meta=meta,
-                    disabled=_parse_bool(row.get("disabled")),
+                    mac=parsed.username,
+                    use_mac_as_password=parsed.password is None,
+                    password=parsed.password,
+                    expires_at=parsed.expires_at,
+                    groups=parsed.groups,
+                    vlan=parsed.vlan,
+                    meta=parsed.meta,
+                    disabled=parsed.disabled,
                 ),
                 actor=actor,
                 actor_ip=actor_ip,
@@ -272,22 +360,16 @@ class ImportExportService:
             )
             return
 
-        credential_raw = (row.get("credential_type") or "").lower()
-        credential = (
-            CredentialType(credential_raw)
-            if credential_raw in {c.value for c in CredentialType}
-            else None
-        )
         await self.users.create(
             UserCreate(
-                username=username,
-                password=row.get("password") or None,
-                credential_type=credential,
-                expires_at=expires,
-                groups=groups,
-                vlan=row.get("vlan") or None,
-                meta=meta,
-                disabled=_parse_bool(row.get("disabled")),
+                username=parsed.username,
+                password=parsed.password,
+                credential_type=parsed.credential_type,
+                expires_at=parsed.expires_at,
+                groups=parsed.groups,
+                vlan=parsed.vlan,
+                meta=parsed.meta,
+                disabled=parsed.disabled,
             ),
             actor=actor,
             actor_ip=actor_ip,

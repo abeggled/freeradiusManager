@@ -7,6 +7,7 @@ import datetime as dt
 from fastapi import APIRouter
 
 from app.api.deps import Language, ReaderUser, SessionDep
+from app.core.pagination import clamp_limit
 from app.repositories.radius.postauth import AuthLogFilter
 from app.schemas.common import CursorMeta, CursorResponse
 from app.schemas.sessions import AuthLogItem, Diagnosis
@@ -42,5 +43,11 @@ async def list_authlog(
 async def diagnose(
     subject: str, session: SessionDep, _: ReaderUser, language: Language, attempts: int = 20
 ) -> Diagnosis:
-    """Klartext-Hinweise zu einem Benutzer oder einer MAC-Adresse (FR-6)."""
-    return await AuthLogService(session).diagnose(subject, language=language, attempts=attempts)
+    """Klartext-Hinweise zu einem Benutzer oder einer MAC-Adresse (FR-6).
+
+    ``attempts`` geht direkt in ein ``LIMIT`` auf ``radpostauth`` und wird
+    deshalb auf die uebliche Seitengroesse begrenzt (NFR-2).
+    """
+    return await AuthLogService(session).diagnose(
+        subject, language=language, attempts=clamp_limit(attempts)
+    )

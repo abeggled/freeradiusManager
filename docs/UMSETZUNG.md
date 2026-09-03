@@ -73,6 +73,52 @@ Konfigurations-Reload von FreeRADIUS. `mgr_nas_extra` und der Freigabe-Workflow
 für unbekannte Geräte sind datenseitig vorbereitet
 (`PostAuthRepository.unknown_subjects`), aber ohne eigene Oberfläche.
 
+## Nachträge aus dem Code-Review
+
+Ein automatisierter Review am ersten Commit meldete 19 Befunde; alle sind
+behoben und mit Regressionstests abgesichert
+(`tests/integration/test_security_fixes.py`, `tests/integration/test_review_fixes.py`).
+
+Sicherheitsrelevant und daher hervorgehoben:
+
+1. **Sitzungen folgen dem Kontozustand.** Rolle und Aktivstatus stammen bei jedem
+   Request aus `mgr_account`, nicht aus dem JWT. Deaktivieren, Löschen oder
+   Herabstufen wirkt sofort, statt erst nach Ablauf der absoluten Gültigkeit.
+2. **Zweiter Faktor ist nicht übernehmbar.** Die Challenge der Ersteinrichtung
+   hat einen eigenen Scope; ein Token aus der normalen Anmeldung kann einen
+   aktiven Faktor nicht mehr ersetzen. Zurücksetzen bleibt Administratoren
+   vorbehalten. Fehlversuche am zweiten Faktor zählen auf dieselbe Kontosperre
+   ein wie falsche Passwörter.
+3. **`X-Forwarded-For` wird nur vertrauenswürdigen Proxys geglaubt**
+   (`FRM_TRUSTED_PROXIES`). Vorher liess sich das Rate-Limit mit einem
+   gefälschten Header umgehen.
+4. **OIDC prüft `is_active`.** Ein deaktiviertes Konto konnte sich zuvor über
+   einen erneuten OIDC-Callback sofort neu anmelden.
+5. **Passwort-Attribute an Gruppen werden maskiert.** Der Expertenmodus lässt sie
+   zu; ausgeliefert wurden sie bis dahin im Klartext.
+
+Fachlich ebenso wichtig:
+
+* Ein PATCH auf eine Gruppe löscht die jeweils nicht gesendete Attributsammlung
+  nicht mehr mit; eine Gruppe ohne jedes Attribut wird abgelehnt, statt scheinbar
+  angelegt zu werden.
+* Beim Anlegen eines Benutzers wird über alle drei RADIUS-Tabellen geprüft, damit
+  Bestandsnamen mit nur Antwortattributen oder Gruppen nicht überschrieben werden.
+* Sammelaktionen über die Filtermenge schliessen MAB-Geräte aus, solange die
+  Liste sie nicht anzeigt.
+* Der Statusfilter wertet `Auth-Type := Reject` in `radcheck` aus statt nur
+  `mgr_subject.disabled_at`.
+* Beim Umbenennen eines MAB-Geräts zieht das MAC-Passwort mit.
+* Der CSV-Dry-Run durchläuft dieselbe Validierung wie der Import; bestehende
+  Datensätze übernehmen jetzt auch `password`, `vlan` und `disabled`.
+* NAS-Felder lassen sich wieder leeren; CoA findet das Secret auch bei
+  Netz-Einträgen (`192.0.2.0/24`) und sendet an die konkrete Session-IP.
+* Die Aufbewahrungsfrist des Audit-Logs setzt ein Hintergrundjob durch.
+* `attempts` der Diagnose ist begrenzt; CSV-Exporte folgen den aktiven Filtern.
+* Die FreeRADIUS-Modulkonfiguration liest die Zugangsdaten aus der Umgebung,
+  sodass ein geändertes `DB_PASSWORD` den mitgelieferten Server nicht mehr
+  abhängt.
+
 ## Prüfschritte
 
 ```bash

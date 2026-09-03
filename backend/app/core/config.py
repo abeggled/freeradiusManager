@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     cookie_domain: str | None = None
     require_totp_for_admin: bool = True
 
+    trusted_proxies: list[str] = Field(default_factory=list)
+    """Netze, deren ``X-Forwarded-For`` vertraut wird (z. B. ``10.0.0.0/8``).
+
+    Leer bedeutet: der Header wird ignoriert und die Peer-Adresse verwendet.
+    Andernfalls koennte ein Aufrufer die Rate-Limits durch gefaelschte
+    Adressen umgehen (NFR-1).
+    """
+
     login_rate_limit: int = 10
     login_rate_window_seconds: int = 300
     coa_rate_limit: int = 30
@@ -79,10 +87,11 @@ class Settings(BaseSettings):
     # --- Betrieb ---------------------------------------------------------
     schema_check_on_startup: bool = True
     stats_refresh_seconds: int = 300
+    audit_purge_interval_seconds: int = 6 * 3600
     coa_timeout_seconds: float = 5.0
     coa_retries: int = 2
 
-    @field_validator("cors_origins", mode="before")
+    @field_validator("cors_origins", "trusted_proxies", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
         if isinstance(value, str):

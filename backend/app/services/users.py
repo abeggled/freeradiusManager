@@ -21,7 +21,7 @@ from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.i18n import translate
 from app.core.security import Principal
 from app.models.mgr import CredentialType, MgrSubject, SubjectType
-from app.models.radius import RadCheck, RadReply
+from app.models.radius import RadCheck
 from app.repositories.directory import DirectoryRepository, SubjectFilter
 from app.repositories.mgr.subjects import SubjectRepository
 from app.repositories.radius.acct import AccountingRepository
@@ -30,9 +30,7 @@ from app.repositories.radius.postauth import ACCEPT_VALUES, PostAuthRepository
 from app.repositories.radius.users import UserAttributeRepository
 from app.schemas.common import ApiWarning
 from app.schemas.users import (
-    MASKED,
     AttributeIn,
-    AttributeOut,
     MembershipIn,
     MembershipOut,
     PasswordSet,
@@ -45,6 +43,7 @@ from app.schemas.users import (
 )
 from app.services.attributes import validate_triple, vlan_triples
 from app.services.audit import AuditService
+from app.services.masking import mask_attributes
 from app.services.settings_service import SettingsService
 
 AUTH_TYPE = "Auth-Type"
@@ -56,15 +55,6 @@ CREDENTIAL_ATTRIBUTES = {
     CredentialType.NT: ("NT-Password",),
     CredentialType.BOTH: ("Cleartext-Password", "NT-Password"),
 }
-
-
-def mask(rows: Sequence[RadCheck] | Sequence[RadReply]) -> list[AttributeOut]:
-    """Maskiert Passwortwerte, bevor sie die Anwendung verlassen."""
-    out: list[AttributeOut] = []
-    for row in rows:
-        value = MASKED if radius_dict.is_password_attribute(row.attribute) else row.value
-        out.append(AttributeOut(id=row.id, attribute=row.attribute, op=row.op, value=value))
-    return out
 
 
 class UserService:
@@ -167,8 +157,8 @@ class UserService:
             expires_at=self._expiry(checks, subject),
             credential_type=subject.credential_type if subject else None,
             has_metadata=subject is not None,
-            check_attributes=mask(checks),
-            reply_attributes=mask(replies),
+            check_attributes=mask_attributes(checks),
+            reply_attributes=mask_attributes(replies),
             memberships=[
                 MembershipOut(groupname=m.groupname, priority=m.priority) for m in memberships
             ],
@@ -194,7 +184,12 @@ class UserService:
         subject_type: SubjectType = SubjectType.USER,
         language: str = "de",
     ) -> UserDetail:
-        if await self.attrs.exists(payload.username) or await self.subjects.get(payload.username):
+        # Geprueft wird ueber alle RADIUS-Tabellen: in einer Bestandsinstallation
+        # kann ein Name auch nur Antwortattribute oder Gruppen besitzen, die
+        # sonst beim Anlegen ueberschrieben wuerden.
+        if await self.attrs.exists_anywhere(payload.username) or await self.subjects.get(
+            payload.username
+        ):
             raise ConflictError(code="error.user_exists", details={"username": payload.username})
 
         credential_type = payload.credential_type or await self.settings.default_credential_type()
@@ -392,11 +387,31 @@ class UserService:
     # ------------------------------------------------------------------
 
     async def _rename(self, old: str, new: str) -> None:
-        """Umbenennung fasst beide Seiten in einer Transaktion an (Abschnitt 4.1)."""
-        if await self.attrs.exists(new) or await self.subjects.get(new):
+        """Umbenennung fasst beide Seiten in einer Transaktion an (Abschnitt 4.1).
+
+        Bei MAB-Geraeten ist die MAC ueblicherweise zugleich das Passwort (FR-3).
+        Bleibt der alte Wert stehen, scheitert die Anmeldung sofort, weil das NAS
+        die neue MAC als Kennung *und* Passwort sendet - deshalb wird das
+        Credential hier im selben Vorgang mitgezogen.
+        """
+        if await self.attrs.exists_anywhere(new) or await self.subjects.get(new):
             raise ConflictError(code="error.user_exists", details={"username": new})
+
+        subject = await self.subjects.get(old)
+        cleartext = await self.attrs.find_check(old, "Cleartext-Password")
+        mac_is_password = (
+            subject is not None
+            and subject.subject_type is SubjectType.DEVICE
+            and cleartext is not None
+            and cleartext.value == old
+        )
+
         await self.attrs.rename(old, new)
         await self.subjects.rename(old, new)
+
+        if mac_is_password:
+            credential_type = subject.credential_type if subject else CredentialType.CLEARTEXT
+            await self._write_credentials(new, new, credential_type)
 
     async def _write_credentials(
         self, username: str, password: str, credential_type: CredentialType

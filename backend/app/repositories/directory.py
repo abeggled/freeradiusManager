@@ -19,6 +19,9 @@ from sqlalchemy.sql import Subquery
 from app.models.mgr import MgrSubject, SubjectType
 from app.models.radius import RadCheck, RadUserGroup
 
+AUTH_TYPE = "Auth-Type"
+REJECT = "Reject"
+
 
 @dataclass(slots=True)
 class SubjectFilter:
@@ -78,10 +81,19 @@ class DirectoryRepository:
             conditions.append(MgrSubject.location == flt.location)
         if flt.device_type:
             conditions.append(MgrSubject.device_type == flt.device_type)
-        if flt.disabled is True:
-            conditions.append(MgrSubject.disabled_at.is_not(None))
-        elif flt.disabled is False:
-            conditions.append(MgrSubject.disabled_at.is_(None))
+        if flt.disabled is not None:
+            # Massgeblich ist der Zustand in radcheck, nicht die Manager-Notiz:
+            # Bestandsbenutzer ohne mgr_subject und direkt in der Datenbank
+            # geaenderte Eintraege wuerden sonst falsch einsortiert - und eine
+            # Sammelaktion traefe Objekte ausserhalb der angezeigten Menge.
+            blocked = exists(
+                select(RadCheck.id).where(
+                    RadCheck.username == names.c.username,
+                    RadCheck.attribute == AUTH_TYPE,
+                    RadCheck.value == REJECT,
+                )
+            )
+            conditions.append(blocked if flt.disabled else ~blocked)
         if flt.expiring_before:
             conditions.append(
                 and_(
