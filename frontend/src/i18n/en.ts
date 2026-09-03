@@ -106,6 +106,7 @@ export const en: Record<TranslationKey, string> = {
   "users.replyAttributes": "Reply attributes (radreply)",
   "users.activeSessions": "Active sessions",
   "users.lastAuth": "Last authentication",
+  "users.groupsHint": "Multi-select with Ctrl or Cmd; the selection replaces all previous groups.",
   "users.vlan": "VLAN",
   "users.diagnose": "Diagnose",
   "users.deleteConfirm": "Permanently delete user “{name}”?",

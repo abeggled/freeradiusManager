@@ -44,8 +44,10 @@ services:
       FRM_DB_NAME: ${DB_NAME:-radius}
       FRM_DB_USER: ${DB_USER:-radmgr}
       FRM_DB_PASSWORD: ${DB_PASSWORD:-radmgr}
-      FRM_SECRET_KEY: ${FRM_SECRET_KEY:-bitte-in-produktion-ersetzen-mindestens-32-zeichen}
-      FRM_COA_SECRET_KEY: ${FRM_COA_SECRET_KEY:-bitte-in-produktion-ersetzen-mindestens-32-zeichen}
+      # Ohne Vorgabewerte: fehlende Schluessel fuehren zu einem klaren
+      # Startfehler statt zu oeffentlich bekannten Konstanten.
+      FRM_SECRET_KEY: ${FRM_SECRET_KEY:?bitte in .env setzen}
+      FRM_COA_SECRET_KEY: ${FRM_COA_SECRET_KEY:?bitte in .env setzen}
       # Ohne TLS-Terminierung davor muss das Session-Cookie unsicher gesetzt werden.
       FRM_COOKIE_SECURE: ${FRM_COOKIE_SECURE:-false}
       FRM_ENVIRONMENT: ${FRM_ENVIRONMENT:-development}

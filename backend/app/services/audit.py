@@ -6,11 +6,12 @@ erscheinen ausschliesslich als Marker ``"<geaendert>"`` – nie im Klartext (NFR
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import json
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core import radius_dict
 from app.core.logging import get_logger
@@ -110,3 +111,28 @@ class AuditService:
     async def purge(self, retention_days: int) -> int:
         cutoff = dt.datetime.now(tz=dt.UTC).replace(tzinfo=None) - dt.timedelta(days=retention_days)
         return await self.repo.purge_older_than(cutoff)
+
+
+async def retention_worker(
+    sessionmaker: async_sessionmaker[AsyncSession], interval_seconds: int
+) -> None:
+    """Setzt die konfigurierte Aufbewahrungsfrist regelmaessig durch (FR-9).
+
+    Ohne diesen Job waere die Einstellung folgenlos und ``mgr_audit`` wuechse
+    unbegrenzt.
+    """
+    from app.services.settings_service import KEY_AUDIT_RETENTION, SettingsService
+
+    while True:
+        try:
+            async with sessionmaker() as session:
+                retention = int(await SettingsService(session).get(KEY_AUDIT_RETENTION))
+                removed = await AuditService(session).purge(retention)
+                await session.commit()
+            if removed:
+                log.info("audit_purged", removed=removed, retention_days=retention)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - der Job darf den Prozess nie beenden
+            log.warning("audit_purge_failed", error=str(exc))
+        await asyncio.sleep(interval_seconds)

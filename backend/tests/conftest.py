@@ -10,6 +10,10 @@ frische Async-Engine samt geleerter Tabellen bereitgestellt.
 from __future__ import annotations
 
 import os
+
+# Muss vor dem ersten Import von app.core.config gesetzt sein: im
+# Produktivbetrieb verlangt die Konfiguration eigenstaendige Schluessel.
+os.environ.setdefault("FRM_ENVIRONMENT", "test")
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 

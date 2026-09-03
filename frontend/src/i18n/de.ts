@@ -104,6 +104,7 @@ export const de = {
   "users.replyAttributes": "Antwortattribute (radreply)",
   "users.activeSessions": "Laufende Sessions",
   "users.lastAuth": "Letzte Anmeldung",
+  "users.groupsHint": "Mehrfachauswahl mit Strg bzw. Cmd; die Auswahl ersetzt alle bisherigen Gruppen.",
   "users.vlan": "VLAN",
   "users.diagnose": "Diagnose",
   "users.deleteConfirm": "Benutzer „{name}“ endgültig löschen?",

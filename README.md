@@ -31,8 +31,9 @@ Voraussetzungen: Docker und Docker Compose.
 cp .env.example .env
 ```
 
-In der `.env` mindestens `FRM_SECRET_KEY`, `FRM_COA_SECRET_KEY` und
-`FRM_BOOTSTRAP_ADMIN_PASSWORD` setzen. Schlüssel erzeugen:
+In der `.env` `FRM_SECRET_KEY`, `FRM_COA_SECRET_KEY` und
+`FRM_BOOTSTRAP_ADMIN_PASSWORD` setzen – ohne die beiden Schlüssel startet der
+Stapel bewusst nicht. Schlüssel erzeugen:
 
 ```bash
 python3 -c "import base64,os; print(base64.urlsafe_b64encode(os.urandom(32)).decode().rstrip('='))"

@@ -21,8 +21,12 @@ if config.config_file_name is not None:
 
 # Eine bereits gesetzte URL (alembic.ini oder programmatischer Aufruf) hat Vorrang;
 # sonst gilt die Konfiguration aus der Umgebung (12-Factor, NFR-3).
+#
+# ``set_main_option`` schickt den Wert durch die ConfigParser-Interpolation;
+# prozentkodierte Zugangsdaten (etwa ``%40`` fuer ein ``@``) muessen deshalb
+# verdoppelt werden, sonst scheitert schon der Aufruf von ``alembic upgrade``.
 if not config.get_main_option("sqlalchemy.url", None):
-    config.set_main_option("sqlalchemy.url", settings.sync_database_url)
+    config.set_main_option("sqlalchemy.url", settings.sync_database_url.replace("%", "%%"))
 target_metadata = Base.metadata
 
 

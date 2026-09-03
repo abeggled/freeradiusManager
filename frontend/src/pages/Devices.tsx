@@ -7,6 +7,7 @@ import { useCreateDevice, useDevices, useGroups, useMacFormats, useSettings } fr
 import type { UserListItem } from "@/api/types";
 import { DataTable } from "@/components/DataTable";
 import { ErrorBox, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n";
 import { formatDateTime, toIso } from "@/lib/format";
 
@@ -17,6 +18,7 @@ const LIMIT = 50;
 export function DevicesPage() {
   const { t, language } = useI18n();
   const navigate = useNavigate();
+  const { canWrite } = usePermissions();
   const [search, setSearch] = useState("");
   const [location, setLocation] = useState("");
   const [deviceType, setDeviceType] = useState("");
@@ -83,9 +85,11 @@ export function DevicesPage() {
           </p>
         </div>
         <div className="actions">
-          <button type="button" onClick={() => setShowImport(true)}>
-            {t("common.import")}
-          </button>
+          {canWrite ? (
+            <button type="button" onClick={() => setShowImport(true)}>
+              {t("common.import")}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() =>
@@ -94,9 +98,11 @@ export function DevicesPage() {
           >
             {t("common.export")}
           </button>
-          <button type="button" className="primary" onClick={() => setShowCreate(true)}>
-            {t("devices.new")}
-          </button>
+          {canWrite ? (
+            <button type="button" className="primary" onClick={() => setShowCreate(true)}>
+              {t("devices.new")}
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -114,12 +120,18 @@ export function DevicesPage() {
         <input
           placeholder={t("common.location")}
           value={location}
-          onChange={(event) => setLocation(event.target.value)}
+          onChange={(event) => {
+            setLocation(event.target.value);
+            setOffset(0);
+          }}
         />
         <input
           placeholder={t("devices.type")}
           value={deviceType}
-          onChange={(event) => setDeviceType(event.target.value)}
+          onChange={(event) => {
+            setDeviceType(event.target.value);
+            setOffset(0);
+          }}
         />
       </div>
 

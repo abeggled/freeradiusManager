@@ -18,6 +18,8 @@ KEY_AUDIT_RETENTION = "audit_retention_days"
 KEY_ACCT_RETENTION_HINT = "accounting_retention_days"
 KEY_MAB_WARNING = "show_mab_warning"
 
+FALLBACK_MAC_FORMAT = "colon_lower"
+
 DEFAULTS: dict[str, Any] = {
     KEY_MAC_FORMAT: app_settings.default_mac_format,
     KEY_DEFAULT_CREDENTIAL: app_settings.default_credential_type,
@@ -40,8 +42,17 @@ class SettingsService:
         return DEFAULTS.get(key) if value is None else value
 
     async def mac_format(self) -> str:
+        """Gespeichertes Format, sonst der Instanz-Default.
+
+        Der Rueckfall muss selbst gueltig sein: ein unsinniger Wert in
+        ``FRM_DEFAULT_MAC_FORMAT`` legte sonst jede Geraetefunktion lahm.
+        """
         value = await self.get(KEY_MAC_FORMAT)
-        return value if value in MAC_FORMATS else app_settings.default_mac_format
+        if value in MAC_FORMATS:
+            return str(value)
+        if app_settings.default_mac_format in MAC_FORMATS:
+            return app_settings.default_mac_format
+        return FALLBACK_MAC_FORMAT
 
     async def show_mab_warning(self) -> bool:
         return bool(await self.get(KEY_MAB_WARNING))

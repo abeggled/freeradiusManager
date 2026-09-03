@@ -164,6 +164,23 @@ def _meta_from(row: dict[str, str]) -> SubjectMeta:
     return SubjectMeta(**present)
 
 
+def _normalise_row(raw: dict[str | None, Any]) -> dict[str, str]:
+    """Vereinheitlicht Spaltennamen und Werte einer CSV-Zeile."""
+    row: dict[str, str] = {}
+    for key, value in raw.items():
+        if key is None:
+            # Ueberzaehlige Felder ohne Kopfzeile: klarer Fehler statt Absturz.
+            raise ValidationError(
+                code="error.import_invalid", details={"reason": "zu viele Spalten"}
+            )
+        if isinstance(value, list):
+            raise ValidationError(
+                code="error.import_invalid", details={"reason": "zu viele Spalten"}
+            )
+        row[key.strip().lower()] = (value or "").strip()
+    return row
+
+
 def _parse_row(row: dict[str, str], *, username: str, require_password: bool) -> ParsedRow:
     """Uebersetzt eine CSV-Zeile in die Schemas der Services.
 
@@ -225,9 +242,14 @@ class ImportExportService:
         report = ImportReport(dry_run=dry_run)
 
         for index, raw in enumerate(reader, start=2):
-            row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items()}
             report.total += 1
+            row: dict[str, str] = {}
             try:
+                # Auch das Normalisieren gehoert in den Fehlerzweig: eine Zeile
+                # mit ueberzaehligen Feldern legt sie unter dem Schluessel None
+                # als Liste ab und liesse den ganzen Request abbrechen, nachdem
+                # vorherige Zeilen bereits geschrieben wurden.
+                row = _normalise_row(raw)
                 if kind == "device":
                     identifier = row.get("mac") or row.get("username") or ""
                     if not is_mac(identifier):
@@ -244,9 +266,21 @@ class ImportExportService:
                             code="error.validation", details={"field": "username"}
                         )
 
-                exists = await self.users.attrs.exists_anywhere(username) or bool(
-                    await self.users.subjects.get(username)
-                )
+                subject = await self.users.subjects.get(username)
+                expected_type = SubjectType.DEVICE if kind == "device" else SubjectType.USER
+                if subject is not None and subject.subject_type is not expected_type:
+                    # Schon in der Vorschau melden: sonst hiesse die Zeile
+                    # "aktualisiert" und das Objekt bliebe in der Liste der
+                    # importierten Art trotzdem unsichtbar.
+                    raise ValidationError(
+                        code="error.subject_type_mismatch",
+                        details={
+                            "username": username,
+                            "expected": expected_type.value,
+                            "actual": subject.subject_type.value,
+                        },
+                    )
+                exists = await self.users.attrs.exists_anywhere(username) or subject is not None
                 # Das Uebersetzen validiert bereits; beim Dry-Run passiert damit
                 # dasselbe wie beim Schreiben, nur ohne Schreibzugriff.
                 parsed = _parse_row(
@@ -404,21 +438,32 @@ class ImportExportService:
         for item in items:
             writer.writerow(
                 {
-                    "username": item.username,
+                    "username": self._safe(item.username),
                     "subject_type": item.subject_type.value,
                     "status": item.status,
-                    "groups": ",".join(item.groups),
-                    "display_name": item.display_name or "",
-                    "owner": item.owner or "",
-                    "device_type": item.device_type or "",
-                    "location": item.location or "",
-                    "inventory_no": item.inventory_no or "",
-                    "note": (item.note or "").replace("\n", " "),
+                    "groups": self._safe(",".join(item.groups)),
+                    "display_name": self._safe(item.display_name or ""),
+                    "owner": self._safe(item.owner or ""),
+                    "device_type": self._safe(item.device_type or ""),
+                    "location": self._safe(item.location or ""),
+                    "inventory_no": self._safe(item.inventory_no or ""),
+                    "note": self._safe((item.note or "").replace("\n", " ")),
                     "expires_at": item.expires_at.isoformat() if item.expires_at else "",
                     "credential_type": item.credential_type.value if item.credential_type else "",
                 }
             )
         return buffer.getvalue()
+
+    @staticmethod
+    def _safe(value: str) -> str:
+        """Entschaerft Werte, die eine Tabellenkalkulation als Formel liest.
+
+        Benutzernamen und Notizen sind frei waehlbar; ein fuehrendes ``=`` wuerde
+        beim Oeffnen des Exports auf einem fremden Arbeitsplatz ausgewertet.
+        """
+        if value and value[0] in ("=", "+", "-", "@", "\t", "\r"):
+            return "'" + value
+        return value
 
     @staticmethod
     def template(kind: Literal["user", "device"]) -> str:

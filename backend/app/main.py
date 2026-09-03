@@ -24,6 +24,7 @@ from app.core.db import dispose, get_engine, get_sessionmaker
 from app.core.logging import configure_logging, get_logger
 from app.repositories.radius.schema import inspect_schema
 from app.services.accounts import AccountService
+from app.services.audit import retention_worker
 from app.services.stats import stats_worker
 
 log = get_logger("main")
@@ -60,14 +61,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.schema_check_on_startup:
         await check_schema()
     await bootstrap_admin()
-    task = asyncio.create_task(stats_worker(get_sessionmaker(), settings.stats_refresh_seconds))
+    tasks = [
+        asyncio.create_task(stats_worker(get_sessionmaker(), settings.stats_refresh_seconds)),
+        # Ohne diesen Job bliebe die konfigurierte Aufbewahrungsfrist folgenlos
+        # und mgr_audit wuechse unbegrenzt (FR-9).
+        asyncio.create_task(
+            retention_worker(get_sessionmaker(), settings.audit_purge_interval_seconds)
+        ),
+    ]
     log.info("started", environment=settings.environment)
     try:
         yield
     finally:
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         await dispose()
 
 

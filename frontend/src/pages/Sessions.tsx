@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useCoA, useSessions, useTerminateCauses } from "@/api/hooks";
 import type { SessionItem } from "@/api/types";
 import { ConfirmDialog, ErrorBox, Field, Modal, Spinner } from "@/components/ui";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n";
 import { formatBytes, formatDateTime, formatDuration } from "@/lib/format";
 
@@ -10,6 +11,7 @@ const LIMIT = 50;
 
 export function SessionsPage() {
   const { t, language } = useI18n();
+  const { canWrite } = usePermissions();
   const [username, setUsername] = useState("");
   const [mac, setMac] = useState("");
   const [nas, setNas] = useState("");
@@ -143,7 +145,7 @@ export function SessionsPage() {
                     </td>
                     <td>{session.acctterminatecause || "–"}</td>
                     <td className="row-actions">
-                      {session.active ? (
+                      {session.active && canWrite ? (
                         <>
                           <button type="button" onClick={() => setDisconnecting(session)}>
                             {t("sessions.disconnect")}

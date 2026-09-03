@@ -75,10 +75,16 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Drei Runden eines automatisierten Reviews meldeten 19, 14 und 13 Befunde; alle
-sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`,
-`test_review_fixes.py`, `test_review_fixes_2.py`, `test_review_fixes_3.py`
-unter `backend/tests/integration/`).
+Vier Runden eines automatisierten Reviews meldeten 19, 14, 13 und 13 Befunde;
+alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
+sowie `test_review_fixes.py` bis `test_review_fixes_4.py` unter
+`backend/tests/integration/`).
+
+Drei Befunde der vierten Runde betrafen unvollständige Korrekturen aus früheren
+Runden – der Hintergrundjob für die Aufbewahrungsfrist war nie gestartet worden,
+das neue IP-Limit hob sich nach jeder erfolgreichen Anmeldung selbst auf, und die
+strukturierte Datenbank-URL scheiterte an der Interpolation von Alembic. Das ist
+in den Tests jetzt jeweils direkt abgesichert.
 
 Sicherheitsrelevant und daher hervorgehoben:
 
@@ -172,6 +178,29 @@ Die dritte Runde betraf vor allem die Anmeldung:
   bearbeitbar; Exporte oberhalb der Obergrenze werden abgelehnt statt gekürzt;
   die Dashboard-Zahlen stammen aus derselben Menge wie die Listen; Mitgliederlisten
   und Kontofelder verhalten sich wie die übrigen Endpunkte.
+
+Die vierte Runde:
+
+* **Keine Schlüssel-Vorgabewerte mehr.** `docker-compose.yml` verlangt
+  `FRM_SECRET_KEY` und `FRM_COA_SECRET_KEY`; im Produktivbetrieb verweigert auch
+  die Anwendung selbst den Start ohne eigenständige Schlüssel. Zuvor hätte der
+  dokumentierte Schnellstart mit öffentlich bekannten Konstanten laufen können.
+* **Alembic verträgt jetzt Sonderzeichen in den Zugangsdaten.** Die strukturierte
+  URL enthält Prozentzeichen, die für die Interpolation von `ConfigParser`
+  verdoppelt werden müssen – sonst scheiterte `alembic upgrade head` genau bei
+  den Zugangsdaten, für die die vorherige Runde die Kodierung eingeführt hatte.
+* **Der Aufbewahrungsjob läuft tatsächlich.** Er war in Runde 1 geschrieben, aber
+  nie in die Lifespan eingehängt worden; ein Test prüft das nun direkt.
+* **Fehlversuche am zweiten Faktor bleiben erhalten**, auch wenn eine neue
+  Challenge angefordert wird, und eine eigene erfolgreiche Anmeldung leert nicht
+  mehr das IP-weite Kontingent.
+* Fehlerhafte CSV-Zeilen brechen den Import nicht mehr ab, Typkollisionen werden
+  schon in der Vorschau gemeldet, und Exportwerte, die eine Tabellenkalkulation
+  als Formel lesen würde, werden entschärft.
+* Die Diagnose erkennt NAS-Netzeinträge; ein ungültiges MAC-Format fällt auf
+  einen gültigen Wert zurück; die Detailseiten erhalten alle Gruppenmitgliedschaften.
+* Auditoren bekommen keine Schaltflächen mehr angeboten, die zwangsläufig mit
+  403 enden – die Durchsetzung bleibt unverändert im Backend.
 
 ## Prüfschritte
 

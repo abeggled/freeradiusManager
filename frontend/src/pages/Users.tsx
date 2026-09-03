@@ -21,6 +21,7 @@ import {
   StatusBadge,
   WarningList,
 } from "@/components/ui";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n, type TranslationKey } from "@/i18n";
 import { formatDateTime, toIso } from "@/lib/format";
 
@@ -41,6 +42,7 @@ type BulkActionName = (typeof BULK_ACTIONS)[number];
 export function UsersPage() {
   const { t, language } = useI18n();
   const navigate = useNavigate();
+  const { canWrite } = usePermissions();
 
   const [search, setSearch] = useState("");
   const [group, setGroup] = useState("");
@@ -72,6 +74,8 @@ export function UsersPage() {
 
   const columns = useMemo<ColumnDef<UserListItem, unknown>[]>(
     () => [
+      ...(canWrite
+        ? [
       {
         id: "select",
         header: () => null,
@@ -91,7 +95,9 @@ export function UsersPage() {
           />
         ),
         enableSorting: false,
-      },
+      } as ColumnDef<UserListItem, unknown>,
+          ]
+        : []),
       { accessorKey: "username", header: () => t("users.username") },
       {
         accessorKey: "display_name",
@@ -119,7 +125,7 @@ export function UsersPage() {
         cell: ({ getValue }) => formatDateTime(getValue() as string | null, language),
       },
     ],
-    [language, selected, t],
+    [canWrite, language, selected, t],
   );
 
   const affected = bulkAll ? (data?.meta.total ?? 0) : selected.length;
@@ -151,18 +157,22 @@ export function UsersPage() {
       <header className="page-header">
         <h1>{t("users.title")}</h1>
         <div className="actions">
-          <button type="button" onClick={() => setShowImport(true)}>
-            {t("common.import")}
-          </button>
+          {canWrite ? (
+            <button type="button" onClick={() => setShowImport(true)}>
+              {t("common.import")}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => void download(`/users/export${buildQuery(filters)}`, "benutzer.csv")}
           >
             {t("common.export")}
           </button>
-          <button type="button" className="primary" onClick={() => setShowCreate(true)}>
-            {t("users.new")}
-          </button>
+          {canWrite ? (
+            <button type="button" className="primary" onClick={() => setShowCreate(true)}>
+              {t("users.new")}
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -222,7 +232,7 @@ export function UsersPage() {
         </button>
       </div>
 
-      {(selected.length > 0 || bulkAll) && (
+      {canWrite && (selected.length > 0 || bulkAll) && (
         <div className="bulkbar">
           <span>{t("common.selected", { count: affected })}</span>
           <select value={bulk} onChange={(event) => setBulk(event.target.value as BulkActionName)}>

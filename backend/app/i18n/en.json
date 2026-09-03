@@ -33,6 +33,7 @@
   "error.totp_setup_required": "Administrators must set up TOTP.",
   "error.totp_already_enrolled": "A second factor is already set up for this account. Resetting it is done by an administrator.",
   "error.import_invalid": "The import file could not be processed.",
+  "error.subject_type_mismatch": "An object of a different kind already exists for this name ({actual} instead of {expected}).",
   "diag.no_attempts": "No authentication attempts are recorded for {subject}.",
   "diag.user_unknown": "The user {subject} does not exist in radcheck.",
   "diag.auth_type_reject": "\"Auth-Type := Reject\" is set for {subject} – access is blocked.",

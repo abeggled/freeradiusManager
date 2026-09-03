@@ -9,12 +9,14 @@ import {
 } from "@/api/hooks";
 import type { NasItem } from "@/api/types";
 import { ConfirmDialog, Copyable, ErrorBox, Field, Modal, Pagination, Spinner } from "@/components/ui";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n";
 
 const LIMIT = 50;
 
 export function NasPage() {
   const { t } = useI18n();
+  const { canManageNas } = usePermissions();
   const [search, setSearch] = useState("");
   const [offset, setOffset] = useState(0);
   const [editing, setEditing] = useState<NasItem | null>(null);
@@ -34,9 +36,11 @@ export function NasPage() {
     <section>
       <header className="page-header">
         <h1>{t("nas.title")}</h1>
-        <button type="button" className="primary" onClick={() => setCreating(true)}>
-          {t("nas.new")}
-        </button>
+        {canManageNas ? (
+          <button type="button" className="primary" onClick={() => setCreating(true)}>
+            {t("nas.new")}
+          </button>
+        ) : null}
       </header>
 
       <p className="alert alert-info">{t("nas.reloadHint")}</p>
@@ -81,15 +85,17 @@ export function NasPage() {
                       ) : (
                         <>
                           <code>••••••••</code>{" "}
-                          <button
-                            type="button"
-                            className="link"
-                            onClick={() =>
-                              reveal.mutate(nas.id, { onSuccess: (data) => setRevealed(data) })
-                            }
-                          >
-                            {t("nas.showSecret")}
-                          </button>
+                          {canManageNas ? (
+                            <button
+                              type="button"
+                              className="link"
+                              onClick={() =>
+                                reveal.mutate(nas.id, { onSuccess: (data) => setRevealed(data) })
+                              }
+                            >
+                              {t("nas.showSecret")}
+                            </button>
+                          ) : null}
                         </>
                       )}
                     </td>
@@ -99,12 +105,20 @@ export function NasPage() {
                         : t("common.no")}
                     </td>
                     <td className="row-actions">
-                      <button type="button" onClick={() => setEditing(nas)}>
-                        {t("common.edit")}
-                      </button>
-                      <button type="button" className="danger" onClick={() => setConfirmDelete(nas)}>
-                        {t("common.delete")}
-                      </button>
+                      {canManageNas ? (
+                        <>
+                          <button type="button" onClick={() => setEditing(nas)}>
+                            {t("common.edit")}
+                          </button>
+                          <button
+                            type="button"
+                            className="danger"
+                            onClick={() => setConfirmDelete(nas)}
+                          >
+                            {t("common.delete")}
+                          </button>
+                        </>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

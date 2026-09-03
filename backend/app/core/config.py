@@ -6,7 +6,7 @@ import secrets
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -40,6 +40,11 @@ class Settings(BaseSettings):
 
     # --- Sicherheit ------------------------------------------------------
     secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(48))
+    """Signierschluessel der Session-Tokens.
+
+    Ohne Vorgabe wird fuer Entwicklung und Tests ein Zufallswert erzeugt; im
+    Produktivbetrieb ist ein gesetzter Wert Pflicht (siehe Validierung unten).
+    """
     coa_secret_key: str = ""
     """Fernet-/AES-GCM-Schluessel (base64, 32 Byte) fuer CoA-Secrets (NFR-1)."""
 
@@ -97,6 +102,31 @@ class Settings(BaseSettings):
     audit_purge_interval_seconds: int = 6 * 3600
     coa_timeout_seconds: float = 5.0
     coa_retries: int = 2
+
+    @model_validator(mode="after")
+    def _require_production_keys(self) -> Settings:
+        """Im Produktivbetrieb muessen die Schluessel gesetzt und eigenstaendig sein.
+
+        Ein zufaellig erzeugter ``secret_key`` waere bei mehreren Instanzen oder
+        nach einem Neustart wertlos, ein aus dem Repository bekannter Wert
+        waere schlicht kein Geheimnis (NFR-1).
+        """
+        if self.environment != "production":
+            return self
+        missing: list[str] = []
+        # Ein per default_factory erzeugter Zufallswert zaehlt nicht als gesetzt:
+        # er waere nach jedem Neustart ein anderer.
+        if "secret_key" not in self.model_fields_set or len(self.secret_key) < 32:
+            missing.append("FRM_SECRET_KEY")
+        if len(self.coa_secret_key) < 32:
+            missing.append("FRM_COA_SECRET_KEY")
+        if missing:
+            raise ValueError(
+                "Im Produktivbetrieb muessen "
+                + " und ".join(missing)
+                + " gesetzt sein (mindestens 32 Zeichen)."
+            )
+        return self
 
     @field_validator("cors_origins", "trusted_proxies", mode="before")
     @classmethod

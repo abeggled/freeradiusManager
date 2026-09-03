@@ -9,6 +9,7 @@ import {
   useUpdateDevice,
 } from "@/api/hooks";
 import { ConfirmDialog, ErrorBox, Field, Spinner, StatusBadge, WarningList } from "@/components/ui";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n";
 import { formatDateTime, toIso, toLocalInput } from "@/lib/format";
 
@@ -17,6 +18,7 @@ export function DeviceDetailPage() {
   const { mac = "" } = useParams();
   const { t, language } = useI18n();
   const navigate = useNavigate();
+  const { canWrite } = usePermissions();
 
   const { data, isLoading, error } = useDevice(mac);
   const update = useUpdateDevice(mac);
@@ -25,6 +27,7 @@ export function DeviceDetailPage() {
   const groups = useGroups();
 
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [memberships, setMemberships] = useState<string[] | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (isLoading) return <Spinner />;
@@ -42,12 +45,16 @@ export function DeviceDetailPage() {
         clear_vlan: draft.vlan === "",
         expires_at: draft.expires_at ? toIso(draft.expires_at) : undefined,
         clear_expiry: draft.expires_at === "",
+        // Vollständige Sammlung senden; eine Einzelauswahl würde die übrigen
+        // Mitgliedschaften löschen.
         groups:
-          draft.group === undefined
+          memberships === null
             ? undefined
-            : draft.group
-              ? [{ groupname: draft.group, priority: 1 }]
-              : [],
+            : memberships.map((groupname) => ({
+                groupname,
+                priority:
+                  data.memberships.find((m) => m.groupname === groupname)?.priority ?? 1,
+              })),
         meta: {
           device_type: draft.device_type ?? undefined,
           location: draft.location ?? undefined,
@@ -59,6 +66,7 @@ export function DeviceDetailPage() {
       {
         onSuccess: (updated) => {
           setDraft({});
+          setMemberships(null);
           if (updated.username !== data.username) {
             navigate(`/devices/${encodeURIComponent(updated.username)}`, { replace: true });
           }
@@ -82,6 +90,8 @@ export function DeviceDetailPage() {
           <Link className="button" to={`/diagnose?subject=${encodeURIComponent(data.username)}`}>
             {t("users.diagnose")}
           </Link>
+          {canWrite ? (
+            <>
           <button
             type="button"
             onClick={() =>
@@ -93,6 +103,8 @@ export function DeviceDetailPage() {
           <button type="button" className="danger" onClick={() => setConfirmDelete(true)}>
             {t("common.delete")}
           </button>
+            </>
+          ) : null}
         </div>
       </header>
 
@@ -167,14 +179,19 @@ export function DeviceDetailPage() {
 
         <div className="card">
           <h2>{t("users.groups")}</h2>
-          <Field label={t("groups.name")}>
+          <Field label={t("groups.name")} hint={t("users.groupsHint")}>
             {(id) => (
               <select
                 id={id}
-                value={value("group", data.groups[0])}
-                onChange={(event) => setDraft({ ...draft, group: event.target.value })}
+                multiple
+                size={Math.min(6, Math.max(3, (groups.data ?? []).length))}
+                value={memberships ?? data.groups}
+                onChange={(event) =>
+                  setMemberships(
+                    Array.from(event.target.selectedOptions).map((option) => option.value),
+                  )
+                }
               >
-                <option value="">{t("common.none")}</option>
                 {(groups.data ?? []).map((entry) => (
                   <option key={entry.groupname} value={entry.groupname}>
                     {entry.groupname}
@@ -202,9 +219,11 @@ export function DeviceDetailPage() {
               />
             )}
           </Field>
-          <button type="button" className="primary" onClick={save} disabled={update.isPending}>
-            {t("common.save")}
-          </button>
+          {canWrite ? (
+            <button type="button" className="primary" onClick={save} disabled={update.isPending}>
+              {t("common.save")}
+            </button>
+          ) : null}
         </div>
       </div>
 

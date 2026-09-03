@@ -60,10 +60,9 @@ async def login(
 
     if service.requires_totp(account):
         if not payload.totp_code:
-            # Der Zaehler bleibt bis zum vollstaendigen Abschluss stehen, damit
-            # der zweite Faktor nicht mit jedem neuen Passwortversuch von vorn
-            # geraten werden kann.
-            await service.clear_failures(account)
+            # Der Zaehler bleibt stehen: eine neue Challenge anzufordern darf die
+            # bisherigen Fehlversuche am zweiten Faktor nicht loeschen, sonst
+            # waere die Kontosperre durch wiederholtes Neuanfordern umgehbar.
             return LoginResponse(status="totp_required", challenge=service.challenge_for(account))
         await service.verify_totp_code(account, payload.totp_code, actor_ip=actor_ip)
     elif service.requires_totp_enrollment(account):
@@ -75,8 +74,10 @@ async def login(
 
     await service.clear_failures(account)
     await service.mark_login(account, actor_ip)
+    # Nur das Kontingent des eigenen Kontos wird freigegeben. Das IP-weite
+    # Kontingent bleibt bestehen: sonst genuegte eine eigene gueltige Kennung,
+    # um nach jedem Erfolg wieder beliebig viele fremde Namen zu probieren.
     login_limiter.reset(f"{actor_ip}:{payload.username}")
-    login_ip_limiter.reset(str(actor_ip))
     _issue_session(response, account)
     return LoginResponse(status="authenticated", account=AccountOut.model_validate(account))
 

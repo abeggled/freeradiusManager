@@ -18,6 +18,7 @@ import {
   StatusBadge,
   WarningList,
 } from "@/components/ui";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n";
 import { formatDateTime, toIso, toLocalInput } from "@/lib/format";
 
@@ -25,6 +26,7 @@ export function UserDetailPage() {
   const { username = "" } = useParams();
   const { t, language } = useI18n();
   const navigate = useNavigate();
+  const { canWrite } = usePermissions();
 
   const { data, isLoading, error } = useUser(username);
   const update = useUpdateUser(username);
@@ -40,7 +42,7 @@ export function UserDetailPage() {
   const [expires, setExpires] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [owner, setOwner] = useState<string | null>(null);
-  const [group, setGroup] = useState<string | null>(null);
+  const [memberships, setMemberships] = useState<string[] | null>(null);
 
   if (isLoading) return <Spinner />;
   if (error) return <ErrorBox error={error} />;
@@ -52,12 +54,15 @@ export function UserDetailPage() {
       clear_vlan: vlan === "",
       expires_at: expires ? toIso(expires) : undefined,
       clear_expiry: expires === "",
+      // Alle Mitgliedschaften werden gemeinsam gesendet: das Backend ersetzt die
+      // Sammlung vollständig, eine einzelne Auswahl würde die übrigen löschen.
       groups:
-        group === null
+        memberships === null
           ? undefined
-          : group
-            ? [{ groupname: group, priority: 1 }]
-            : [],
+          : memberships.map((groupname) => ({
+              groupname,
+              priority: data.memberships.find((m) => m.groupname === groupname)?.priority ?? 1,
+            })),
       meta: {
         note: note ?? undefined,
         owner: owner ?? undefined,
@@ -81,6 +86,8 @@ export function UserDetailPage() {
           <Link className="button" to={`/diagnose?subject=${encodeURIComponent(data.username)}`}>
             {t("users.diagnose")}
           </Link>
+          {canWrite ? (
+            <>
           <button type="button" onClick={() => setShowPassword(true)}>
             {t("users.setPassword")}
           </button>
@@ -95,6 +102,8 @@ export function UserDetailPage() {
           <button type="button" className="danger" onClick={() => setConfirmDelete(true)}>
             {t("common.delete")}
           </button>
+            </>
+          ) : null}
         </div>
       </header>
 
@@ -125,14 +134,19 @@ export function UserDetailPage() {
               />
             )}
           </Field>
-          <Field label={t("users.groups")}>
+          <Field label={t("users.groups")} hint={t("users.groupsHint")}>
             {(id) => (
               <select
                 id={id}
-                value={group ?? data.groups[0] ?? ""}
-                onChange={(event) => setGroup(event.target.value)}
+                multiple
+                size={Math.min(6, Math.max(3, (groups.data ?? []).length))}
+                value={memberships ?? data.groups}
+                onChange={(event) =>
+                  setMemberships(
+                    Array.from(event.target.selectedOptions).map((option) => option.value),
+                  )
+                }
               >
-                <option value="">{t("common.none")}</option>
                 {(groups.data ?? []).map((entry) => (
                   <option key={entry.groupname} value={entry.groupname}>
                     {entry.groupname}
@@ -169,9 +183,11 @@ export function UserDetailPage() {
               />
             )}
           </Field>
-          <button type="button" className="primary" onClick={save} disabled={update.isPending}>
-            {t("common.save")}
-          </button>
+          {canWrite ? (
+            <button type="button" className="primary" onClick={save} disabled={update.isPending}>
+              {t("common.save")}
+            </button>
+          ) : null}
         </div>
 
         <div className="card">

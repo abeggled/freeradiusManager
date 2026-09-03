@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 from collections.abc import Sequence
 
 from sqlalchemy import delete, func, or_, select
@@ -39,6 +40,29 @@ class NasRepository:
         items = (await self.session.scalars(stmt)).all()
         total = int(await self.session.scalar(count_stmt) or 0)
         return items, total
+
+    async def find_for_address(self, address: str) -> Nas | None:
+        """NAS zu einer konkreten IP - exakt oder ueber das passende Netz.
+
+        Bei mehreren passenden Netzen gewinnt das spezifischste.
+        """
+        exact = await self.get_by_name(address)
+        if exact is not None:
+            return exact
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError:
+            return None
+        rows = await self.session.scalars(select(Nas).where(Nas.nasname.like("%/%")))
+        best: tuple[int, Nas] | None = None
+        for row in rows.all():
+            try:
+                network = ipaddress.ip_network(row.nasname, strict=False)
+            except ValueError:
+                continue
+            if ip in network and (best is None or network.prefixlen > best[0]):
+                best = (network.prefixlen, row)
+        return best[1] if best else None
 
     async def shortnames_for(self, nasnames: Sequence[str]) -> dict[str, str | None]:
         """Kurznamen mehrerer NAS in einer Abfrage - eine Runde je Adresse waere

@@ -155,7 +155,9 @@ class AuthLogService:
         # Bekanntheit des NAS aus der letzten Session pruefen (FR-6).
         last_session_row = await self.acct.last_session(subject)
         if last_session_row is not None:
-            known_nas = await self.nas.get_by_name(last_session_row.nasipaddress)
+            # NAS duerfen als Netz eingetragen sein; ein reiner Namensvergleich
+            # meldete solche Eintraege faelschlich als unbekannt (FR-4).
+            known_nas = await self.nas.find_for_address(last_session_row.nasipaddress)
             if known_nas is None:
                 hints.append(
                     DiagnosisHint(

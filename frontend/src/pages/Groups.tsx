@@ -11,10 +11,12 @@ import {
 import { MASKED } from "@/api/types";
 import type { AttributeInput } from "@/api/types";
 import { ConfirmDialog, ErrorBox, Field, Modal, Spinner, WarningList } from "@/components/ui";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n";
 
 export function GroupsPage() {
   const { t } = useI18n();
+  const { canWrite } = usePermissions();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -29,9 +31,11 @@ export function GroupsPage() {
     <section>
       <header className="page-header">
         <h1>{t("groups.title")}</h1>
-        <button type="button" className="primary" onClick={() => setShowCreate(true)}>
-          {t("groups.new")}
-        </button>
+        {canWrite ? (
+          <button type="button" className="primary" onClick={() => setShowCreate(true)}>
+            {t("groups.new")}
+          </button>
+        ) : null}
       </header>
 
       <div className="filters">
@@ -63,18 +67,22 @@ export function GroupsPage() {
                   <td>{group.vlan ?? "–"}</td>
                   <td>{group.members}</td>
                   <td className="row-actions">
-                    <button type="button" onClick={() => setSelected(group.groupname)}>
-                      {t("common.edit")}
-                    </button>
-                    <button
-                      type="button"
-                      className="danger"
-                      onClick={() =>
-                        setConfirmDelete({ name: group.groupname, members: group.members })
-                      }
-                    >
-                      {t("common.delete")}
-                    </button>
+                    {canWrite ? (
+                      <>
+                        <button type="button" onClick={() => setSelected(group.groupname)}>
+                          {t("common.edit")}
+                        </button>
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() =>
+                            setConfirmDelete({ name: group.groupname, members: group.members })
+                          }
+                        >
+                          {t("common.delete")}
+                        </button>
+                      </>
+                    ) : null}
                   </td>
                 </tr>
               ))}
