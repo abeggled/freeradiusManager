@@ -21,6 +21,7 @@ class NasListItem(BaseModel):
     coa_enabled: bool = False
     coa_port: int = 3799
     has_coa_secret: bool = False
+    note: str | None = None
 
 
 class NasCreate(BaseModel):

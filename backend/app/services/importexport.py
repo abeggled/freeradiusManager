@@ -16,7 +16,7 @@ from typing import Any, Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dates import from_expiration, to_expiration
-from app.core.errors import ValidationError
+from app.core.errors import NotFoundError, ValidationError
 from app.core.mac import is_mac
 from app.core.security import Principal
 from app.models.mgr import CredentialType, SubjectType
@@ -126,6 +126,7 @@ class ParsedRow:
 
     username: str
     groups: list[MembershipIn]
+    groups_supplied: bool
     expires_at: dt.datetime | None
     vlan: str | None
     password: str | None
@@ -227,6 +228,9 @@ def _parse_row(row: dict[str, str], *, username: str, require_password: bool) ->
     return ParsedRow(
         username=username,
         groups=_parse_groups(row.get("groups")),
+        # Eine vorhandene, aber leere Spalte bedeutet "alle entfernen"; eine
+        # fehlende Spalte laesst die Mitgliedschaften unangetastet.
+        groups_supplied="groups" in row,
         expires_at=_parse_date(row.get("expires_at")),
         vlan=row.get("vlan") or None,
         password=password,
@@ -403,7 +407,7 @@ class ImportExportService:
         payloads: list[object] = [
             UserUpdate(
                 expires_at=parsed.expires_at,
-                groups=parsed.groups or None,
+                groups=parsed.groups if parsed.groups_supplied else None,
                 vlan=parsed.vlan,
                 meta=parsed.meta,
             )
@@ -440,7 +444,7 @@ class ImportExportService:
             parsed.username,
             UserUpdate(
                 expires_at=parsed.expires_at,
-                groups=parsed.groups or None,
+                groups=parsed.groups if parsed.groups_supplied else None,
                 vlan=parsed.vlan,
                 meta=parsed.meta,
             ),
@@ -633,6 +637,14 @@ class ImportExportService:
         elif payload.action in ("assign_group", "remove_group"):
             groupname = str(payload.groupname)
             if payload.action == "assign_group":
+                # Ohne diese Pruefung entstuenden aus einem Tippfehler ein
+                # Phantom-Benutzer und eine Phantom-Gruppe, beide ohne Inhalt.
+                if not await self.users.attrs.exists_anywhere(
+                    username
+                ) and not await self.users.subjects.get(username):
+                    raise NotFoundError(code="error.not_found", details={"username": username})
+                if not await self.users.groups.exists(groupname):
+                    raise NotFoundError(code="error.not_found", details={"groupname": groupname})
                 await self.users.groups.add_membership(username, groupname, payload.priority)
             else:
                 await self.users.groups.remove_membership(username, groupname)

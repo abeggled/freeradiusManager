@@ -9,6 +9,7 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConflictError, NotFoundError, ValidationError
+from app.core.locking import named_lock
 from app.core.security import Principal
 from app.repositories.radius.groups import GroupRepository
 from app.schemas.common import ApiWarning
@@ -39,10 +40,17 @@ class GroupService:
             needle = query.lower()
             names = [n for n in names if needle in n.lower()]
         counts = await self.repo.member_counts()
+        replies_by_group = await self.repo.reply_attributes_for(names)
         items: list[GroupListItem] = []
         for name in names:
-            replies = await self.repo.reply_attributes(name)
-            vlan = next((r.value for r in replies if r.attribute.lower() == VLAN_ATTRIBUTE), None)
+            vlan = next(
+                (
+                    r.value
+                    for r in replies_by_group.get(name, [])
+                    if r.attribute.lower() == VLAN_ATTRIBUTE
+                ),
+                None,
+            )
             items.append(GroupListItem(groupname=name, members=counts.get(name, 0), vlan=vlan))
         return items
 
@@ -69,6 +77,22 @@ class GroupService:
         actor: Principal,
         actor_ip: str | None = None,
         language: str = "de",
+    ) -> GroupDetail:
+        # Die RADIUS-Gruppentabellen kennen keine Eindeutigkeit ueber den Namen.
+        # Ohne diese benannte Sperre koennten zwei gleichzeitige Anlagen beide
+        # die Existenzpruefung passieren und doppelte Attribute hinterlassen.
+        async with named_lock(self.session, f"group:{payload.groupname}"):
+            return await self._create_locked(
+                payload, actor=actor, actor_ip=actor_ip, language=language
+            )
+
+    async def _create_locked(
+        self,
+        payload: GroupCreate,
+        *,
+        actor: Principal,
+        actor_ip: str | None,
+        language: str,
     ) -> GroupDetail:
         if await self.repo.exists(payload.groupname):
             raise ConflictError(code="error.group_exists", details={"groupname": payload.groupname})

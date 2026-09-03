@@ -47,6 +47,7 @@ class NasService:
             coa_enabled=bool(getattr(extra, "coa_enabled", False)),
             coa_port=int(getattr(extra, "coa_port", 3799) or 3799),
             has_coa_secret=bool(getattr(extra, "coa_secret_enc", None)),
+            note=getattr(extra, "note", None),
         )
 
     async def search(

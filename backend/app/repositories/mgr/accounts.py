@@ -17,8 +17,20 @@ class AccountRepository:
     async def get(self, account_id: int) -> MgrAccount | None:
         return await self.session.get(MgrAccount, account_id)
 
-    async def get_by_username(self, username: str) -> MgrAccount | None:
+    async def get_by_username(self, username: str, *, lock: bool = False) -> MgrAccount | None:
+        """Konto nach Benutzername.
+
+        ``lock=True`` sperrt die Zeile bis zum Ende der Transaktion. Ohne diese
+        Sperre koennten gleichzeitige Fehlversuche denselben Zaehlerstand lesen
+        und schreiben - die Kontosperre waere nie erreichbar.
+        """
         stmt = select(MgrAccount).where(MgrAccount.username == username)
+        if lock:
+            stmt = stmt.with_for_update()
+        return await self.session.scalar(stmt)
+
+    async def get_for_update(self, account_id: int) -> MgrAccount | None:
+        stmt = select(MgrAccount).where(MgrAccount.id == account_id).with_for_update()
         return await self.session.scalar(stmt)
 
     async def get_by_oidc_subject(self, subject: str) -> MgrAccount | None:

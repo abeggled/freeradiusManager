@@ -75,12 +75,13 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Neun Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11, 12,
-11 und 10 Befunde;
+Zehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11, 12,
+11, 10 und 10 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
-dabei von 9 auf 1 zurück.
+dabei von 9 auf 1 bis 2 je Runde zurück; die späteren Runden betreffen
+zunehmend Nebenpfade und Nebenläufigkeit.
 
 Drei Befunde der vierten Runde betrafen unvollständige Korrekturen aus früheren
 Runden – der Hintergrundjob für die Aufbewahrungsfrist war nie gestartet worden,
@@ -311,6 +312,25 @@ Die neunte Runde:
   beim Import wieder entfernt.
 * Sessions lassen sich über den angezeigten NAS-Kurznamen filtern; NAS-Netze
   werden beim Aufbau einer Seite gesammelt aufgelöst statt einzeln abgefragt.
+
+Die zehnte Runde:
+
+* **Fehlversuche werden unter einer Zeilensperre gezählt.** Gleichzeitige
+  Versuche hätten denselben Zählerstand gelesen und geschrieben – die Sperre
+  wäre bei verteilten Quellen nie erreicht worden. Dasselbe gilt für den
+  zweiten Faktor.
+* **Ein Passwortwechsel entfernt Duplikate.** `radcheck` erzwingt keine
+  Eindeutigkeit; eine zweite `Cleartext-Password`-Zeile aus einer Altinstallation
+  hätte das alte Passwort weiter gültig gelassen.
+* Gruppennamen dürfen keine CSV-Trennzeichen mehr enthalten, damit
+  `gruppe:priorität` eindeutig bleibt; die Gruppenanlage ist über eine benannte
+  Sperre serialisiert, da die RADIUS-Tabellen keine Eindeutigkeit kennen.
+* Die Gruppenliste lädt die Antwortattribute in einer Abfrage statt je Gruppe.
+* Eine geleerte `groups`-Spalte entfernt die Mitgliedschaften, statt sie
+  stillschweigend zu behalten; Sammelaktionen prüfen Benutzer und Gruppe, statt
+  aus einem Tippfehler Phantom-Objekte zu erzeugen.
+* Anmeldeversuche gegen gesperrte oder deaktivierte Konten stehen im Audit-Log;
+  überlange OIDC-Benutzernamen werden abgewiesen; die NAS-Notiz wird ausgeliefert.
 
 ## Prüfschritte
 

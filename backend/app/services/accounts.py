@@ -72,7 +72,9 @@ class AccountService:
         Sperre auf dem kombinierten Weg (Passwort und TOTP in einem Aufruf) nie
         erreichbar.
         """
-        account = await self.repo.get_by_username(username)
+        # Zeilensperre: gleichzeitige Fehlversuche muessen den Zaehler
+        # nacheinander erhoehen, sonst bliebe die Sperre wirkungslos.
+        account = await self.repo.get_by_username(username, lock=True)
         if account is None:
             # Gleicher Aufwand wie bei einem vorhandenen Konto.
             verify_password(password, _DUMMY_HASH)
@@ -92,8 +94,10 @@ class AccountService:
             raise AuthenticationError(code="error.invalid_credentials")
 
         if not account.is_active:
+            await self._log_failed_login(account, actor_ip, "account disabled")
             raise AuthenticationError(code="error.account_disabled")
         if account.locked_until is not None and account.locked_until > utcnow():
+            await self._log_failed_login(account, actor_ip, "account locked")
             raise AuthenticationError(
                 code="error.account_locked",
                 details={"until": account.locked_until.isoformat()},
@@ -134,6 +138,21 @@ class AccountService:
             actor_ip=actor_ip,
             before={"role": previous.value},
             after={"role": role.value, "source": "oidc"},
+        )
+        await self.session.commit()
+
+    async def _log_failed_login(
+        self, account: MgrAccount, actor_ip: str | None, reason: str
+    ) -> None:
+        """Auch ein richtiges Passwort gegen ein gesperrtes Konto gehoert ins
+        Protokoll - sonst bliebe der Versuch unsichtbar (FR-9)."""
+        await self.audit.log(
+            action="auth.login",
+            object_type="account",
+            object_id=account.username,
+            actor_ip=actor_ip,
+            result=AuditResult.FAILURE,
+            message=reason,
         )
         await self.session.commit()
 
@@ -194,6 +213,11 @@ class AccountService:
     async def verify_totp_code(
         self, account: MgrAccount, code: str, *, actor_ip: str | None = None
     ) -> None:
+        # Wie bei der Passwortpruefung: der Zaehler wird unter Zeilensperre
+        # fortgeschrieben, damit parallele Versuche sich nicht ueberschreiben.
+        locked = await self.repo.get_for_update(account.id)
+        if locked is not None:
+            account = locked
         if not account.totp_secret_enc:
             raise AuthenticationError(code="error.totp_required")
         secret = _box().decrypt(account.totp_secret_enc)

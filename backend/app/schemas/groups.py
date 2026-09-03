@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.common import ApiWarning
-from app.schemas.users import AttributeIn, AttributeOut, validate_identifier
+from app.schemas.users import AttributeIn, AttributeOut, validate_groupname
 
 
 class GroupListItem(BaseModel):
@@ -28,7 +28,7 @@ class GroupCreate(BaseModel):
     @field_validator("groupname")
     @classmethod
     def _check(cls, value: str) -> str:
-        return validate_identifier(value, "groupname")
+        return validate_groupname(value)
 
     vlan: str | None = Field(default=None, max_length=64)
     clear_vlan: bool = False
@@ -42,7 +42,7 @@ class GroupUpdate(BaseModel):
     @field_validator("groupname")
     @classmethod
     def _check(cls, value: str | None) -> str | None:
-        return None if value is None else validate_identifier(value, "groupname")
+        return None if value is None else validate_groupname(value)
 
     vlan: str | None = None
     clear_vlan: bool = False

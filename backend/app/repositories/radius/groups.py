@@ -50,6 +50,26 @@ class GroupRepository:
         )
         return (await self.session.scalars(stmt)).all()
 
+    async def reply_attributes_for(
+        self, groupnames: Sequence[str]
+    ) -> dict[str, list[RadGroupReply]]:
+        """Antwortattribute mehrerer Gruppen in einer Abfrage.
+
+        Eine Abfrage je Gruppe waere bei mehreren hundert Gruppen der teuerste
+        Teil des Seitenaufbaus (NFR-2).
+        """
+        if not groupnames:
+            return {}
+        rows = await self.session.scalars(
+            select(RadGroupReply)
+            .where(RadGroupReply.groupname.in_(set(groupnames)))
+            .order_by(RadGroupReply.id)
+        )
+        grouped: dict[str, list[RadGroupReply]] = {}
+        for row in rows.all():
+            grouped.setdefault(row.groupname, []).append(row)
+        return grouped
+
     async def member_counts(self) -> dict[str, int]:
         stmt = select(RadUserGroup.groupname, func.count()).group_by(RadUserGroup.groupname)
         rows = (await self.session.execute(stmt)).all()

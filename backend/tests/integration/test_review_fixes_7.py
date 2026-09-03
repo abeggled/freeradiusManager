@@ -393,3 +393,118 @@ async def test_negative_offset_is_a_validation_error(session, client) -> None:
     response = await client.get("/api/v1/users?offset=-1")
     assert response.status_code == 422
     assert response.json()["code"] == "error.validation"
+
+
+# --- Zehnte Runde ----------------------------------------------------------
+
+
+async def test_set_password_removes_duplicate_credential_rows(session, admin_principal) -> None:
+    """radcheck kennt keine Eindeutigkeit; ein Duplikat bliebe sonst gültig."""
+    from app.schemas.users import PasswordSet
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="alt"), actor=admin_principal)
+    await users.attrs.add_check("anna", "Cleartext-Password", ":=", "auch-alt")
+    await session.commit()
+
+    await users.set_password("anna", PasswordSet(password="neu"), actor=admin_principal)
+    rows = (
+        await session.scalars(
+            select(RadCheck).where(
+                RadCheck.username == "anna", RadCheck.attribute == "Cleartext-Password"
+            )
+        )
+    ).all()
+    assert [r.value for r in rows] == ["neu"]
+
+
+async def test_group_names_reject_csv_delimiters() -> None:
+    """Sonst liesse sich ``gruppe:prioritaet`` beim Import nicht mehr lesen."""
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.schemas.groups import GroupCreate
+
+    for name in ("staff:west", "a,b", "a;b"):
+        with pytest.raises(PydanticValidationError):
+            GroupCreate(groupname=name, vlan="10")
+
+
+async def test_empty_groups_column_clears_memberships(session, admin_principal) -> None:
+    """Eine geleerte Spalte im Export bedeutet: alle Mitgliedschaften entfernen."""
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    await GroupService(session).create(
+        GroupCreate(groupname="g1", vlan="10"), actor=admin_principal
+    )
+    users = UserService(session)
+    await users.create(
+        UserCreate(
+            username="anna", password="geheim123", groups=[{"groupname": "g1", "priority": 1}]
+        ),
+        actor=admin_principal,
+    )
+    assert (await users.get("anna")).groups == ["g1"]
+
+    await ImportExportService(session).import_csv(
+        "username,groups\nanna,\n", kind="user", dry_run=False, actor=admin_principal
+    )
+    assert (await users.get("anna")).groups == []
+
+
+async def test_bulk_assign_rejects_unknown_targets(session, admin_principal) -> None:
+    """Ein Tippfehler darf keine Phantom-Objekte erzeugen."""
+    from app.repositories.directory import SubjectFilter
+    from app.schemas.users import BulkAction
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+
+    _, succeeded, errors = await ImportExportService(session).bulk(
+        BulkAction(action="assign_group", usernames=["anna"], groupname="gibtsnicht"),
+        SubjectFilter(),
+        actor=admin_principal,
+    )
+    assert succeeded == 0 and len(errors) == 1
+
+    _, total = await users.search(SubjectFilter())
+    assert total == 1
+
+
+async def test_disabled_account_login_is_audited(session) -> None:
+    """Ein richtiges Passwort gegen ein gesperrtes Konto gehört ins Protokoll."""
+    from app.core.errors import AuthenticationError
+    from app.models.mgr import MgrAudit
+    from app.services.accounts import AccountService
+
+    account, _ = await _account(session, "operator", Role.OPERATOR)
+    account.is_active = False
+    await session.commit()
+
+    with pytest.raises(AuthenticationError):
+        await AccountService(session).authenticate("operator", "ein-sicheres-passwort")
+
+    entries = (await session.scalars(select(MgrAudit).where(MgrAudit.action == "auth.login"))).all()
+    assert any("disabled" in (e.message or "") for e in entries)
+
+
+async def test_nas_note_is_returned(session, admin_principal) -> None:
+    item, _ = await NasService(session).create(
+        NasCreate(nasname="10.0.0.1", secret="s", note="Etage 3, Schrank B"),
+        actor=admin_principal,
+    )
+    assert item.note == "Etage 3, Schrank B"
+    assert (await NasService(session).get(item.id)).note == "Etage 3, Schrank B"
+
+
+async def test_group_listing_uses_batched_queries(session, admin_principal) -> None:
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    service = GroupService(session)
+    for index in range(5):
+        await service.create(
+            GroupCreate(groupname=f"g{index}", vlan=str(10 + index)), actor=admin_principal
+        )
+    items = await service.search()
+    assert [i.vlan for i in items] == ["10", "11", "12", "13", "14"]

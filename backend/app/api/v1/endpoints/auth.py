@@ -215,6 +215,12 @@ async def oidc_callback(
     account = await service.repo.get_by_oidc_subject(subject)
     if account is None:
         username = str(claims.get("preferred_username") or claims.get("email") or subject)
+        if len(username) > 64:
+            # mgr_account.username fasst 64 Zeichen; ein laengerer Wert waere
+            # ein Datenbankfehler statt einer klaren Meldung.
+            raise AuthenticationError(
+                code="error.unauthenticated", details={"stage": "username_too_long"}
+            )
         existing = await service.repo.get_by_username(username)
         if existing is not None:
             # Ein vorhandenes lokales Konto wird nicht stillschweigend an eine

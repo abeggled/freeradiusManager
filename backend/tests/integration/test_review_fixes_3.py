@@ -233,9 +233,15 @@ async def test_bulk_expiry_requires_a_date(session, admin_principal) -> None:
 
 
 async def test_bulk_audit_records_affected_usernames(session, admin_principal) -> None:
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
     users = UserService(session)
     for name in ("anna", "bruno"):
         await users.create(UserCreate(username=name, password="geheim123"), actor=admin_principal)
+    await GroupService(session).create(
+        GroupCreate(groupname="g1", vlan="10"), actor=admin_principal
+    )
 
     await ImportExportService(session).bulk(
         BulkAction(action="assign_group", usernames=["anna", "bruno"], groupname="g1"),

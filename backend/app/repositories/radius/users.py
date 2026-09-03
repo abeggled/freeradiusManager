@@ -65,14 +65,18 @@ class UserAttributeRepository:
     # --- Schreiben -------------------------------------------------------
 
     async def set_check(self, username: str, attribute: str, op: str, value: str) -> RadCheck:
-        """Setzt genau ein Check-Attribut (idempotent)."""
-        row = await self.find_check(username, attribute)
-        if row is None:
-            row = RadCheck(username=username, attribute=attribute, op=op, value=value)
-            self.session.add(row)
-        else:
-            row.op = op
-            row.value = value
+        """Setzt genau ein Check-Attribut (idempotent).
+
+        ``radcheck`` kennt keine Eindeutigkeit ueber (username, attribute);
+        Bestandsdaten koennen mehrere Zeilen desselben Attributs enthalten.
+        Deshalb werden alle Duplikate entfernt und genau eine Zeile geschrieben -
+        sonst bliebe etwa ein altes Passwort weiter gueltig.
+        """
+        await self.session.execute(
+            delete(RadCheck).where(RadCheck.username == username, RadCheck.attribute == attribute)
+        )
+        row = RadCheck(username=username, attribute=attribute, op=op, value=value)
+        self.session.add(row)
         await self.session.flush()
         return row
 

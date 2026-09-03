@@ -28,6 +28,20 @@ def validate_identifier(value: str, field: str) -> str:
     return value
 
 
+def validate_groupname(value: str) -> str:
+    """Gruppennamen zusaetzlich ohne CSV-Trennzeichen.
+
+    Der Import kodiert Mitgliedschaften als ``gruppe:prioritaet``, getrennt durch
+    Komma oder Semikolon. Ein Name mit diesen Zeichen liesse sich nicht mehr
+    eindeutig lesen (FR-8).
+    """
+    value = validate_identifier(value, "groupname")
+    for character in (":", ",", ";"):
+        if character in value:
+            raise ValueError(f"groupname darf kein '{character}' enthalten")
+    return value
+
+
 UserStatus = Literal["active", "disabled", "expired", "no_credentials"]
 
 
@@ -49,6 +63,11 @@ class AttributeOut(BaseModel):
 class MembershipIn(BaseModel):
     groupname: str = Field(min_length=1, max_length=64)
     priority: int = Field(default=1, ge=0, le=10_000)
+
+    @field_validator("groupname")
+    @classmethod
+    def _check(cls, value: str) -> str:
+        return validate_groupname(value)
 
 
 class MembershipOut(BaseModel):
