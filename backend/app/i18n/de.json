@@ -20,6 +20,7 @@
   "error.subject_exists": "Für diesen Namen bestehen bereits RADIUS-Einträge.",
   "error.group_exists": "Eine Gruppe mit diesem Namen existiert bereits.",
   "error.group_empty": "Eine Gruppe braucht mindestens ein Attribut – etwa eine VLAN-Zuweisung.",
+  "error.selection_too_large": "Die Auswahl ist zu gross ({cap} Objekte). Bitte den Filter enger fassen.",
   "error.nas_exists": "Ein NAS mit diesem Namen existiert bereits.",
   "error.invalid_mac": "Die MAC-Adresse ist ungültig.",
   "error.invalid_operator": "Der Operator ist für diese Tabelle nicht zulässig.",

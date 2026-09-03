@@ -113,6 +113,13 @@ class AccountService:
         account = await self.repo.get(int(payload["sub"]))
         if account is None or not account.is_active:
             raise AuthenticationError(code="error.unauthenticated")
+        # Die Sperre muss auch hier greifen: sonst liesse sich der zweite Faktor
+        # mit derselben Challenge unbegrenzt weiterraten, und ein spaeter
+        # richtiger Code haette die Sperre sogar wieder aufgehoben.
+        if account.locked_until is not None and account.locked_until > utcnow():
+            raise AuthenticationError(
+                code="error.account_locked", details={"until": account.locked_until.isoformat()}
+            )
         return account
 
     async def verify_totp_code(

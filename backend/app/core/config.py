@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy import URL
 
 CredentialType = Literal["cleartext", "nt", "both"]
 
@@ -98,19 +99,30 @@ class Settings(BaseSettings):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
+    def _url(self, driver: str) -> str:
+        """Baut die Verbindungs-URL ueber SQLAlchemy.
+
+        Zusammengesetzte Zeichenketten scheitern, sobald Benutzername oder
+        Passwort ein ``@``, ``/``, ``#`` oder ``%`` enthalten - genau das kommt
+        bei generierten Datenbankpasswoertern regelmaessig vor.
+        """
+        return URL.create(
+            drivername=driver,
+            username=self.db_user,
+            password=self.db_password,
+            host=self.db_host,
+            port=self.db_port,
+            database=self.db_name,
+            query={"charset": "utf8mb4"},
+        ).render_as_string(hide_password=False)
+
     @property
     def database_url(self) -> str:
-        return (
-            f"mysql+aiomysql://{self.db_user}:{self.db_password}"
-            f"@{self.db_host}:{self.db_port}/{self.db_name}?charset=utf8mb4"
-        )
+        return self._url("mysql+aiomysql")
 
     @property
     def sync_database_url(self) -> str:
-        return (
-            f"mysql+pymysql://{self.db_user}:{self.db_password}"
-            f"@{self.db_host}:{self.db_port}/{self.db_name}?charset=utf8mb4"
-        )
+        return self._url("mysql+pymysql")
 
 
 @lru_cache

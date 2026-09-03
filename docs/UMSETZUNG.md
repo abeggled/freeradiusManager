@@ -75,9 +75,10 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Ein automatisierter Review am ersten Commit meldete 19 Befunde; alle sind
-behoben und mit Regressionstests abgesichert
-(`tests/integration/test_security_fixes.py`, `tests/integration/test_review_fixes.py`).
+Zwei Runden eines automatisierten Reviews meldeten 19 und danach 14 Befunde;
+alle sind behoben und mit Regressionstests abgesichert
+(`tests/integration/test_security_fixes.py`, `tests/integration/test_review_fixes.py`,
+`tests/integration/test_review_fixes_2.py`).
 
 Sicherheitsrelevant und daher hervorgehoben:
 
@@ -118,6 +119,34 @@ Fachlich ebenso wichtig:
 * Die FreeRADIUS-Modulkonfiguration liest die Zugangsdaten aus der Umgebung,
   sodass ein geändertes `DB_PASSWORD` den mitgelieferten Server nicht mehr
   abhängt.
+
+Aus der zweiten Runde kamen weitere Punkte hinzu:
+
+* **`radusergroup` hat im offiziellen Schema keine `id`-Spalte.** Das ORM-Modell
+  verlangte sie, und die Test-Fixture verdeckte das – auf einer Bestandsinstallation
+  wären Mitgliedschaften damit unbenutzbar gewesen. Modell und Fixture bilden das
+  Schema jetzt korrekt ab.
+* **Maskierte Passwörter werden nicht zurückgeschrieben.** Das war eine Regression
+  aus der ersten Runde: der Editor sendete den Platzhalter zurück, das Backend hätte
+  ihn gespeichert. Eingehende Platzhalter behalten nun den gespeicherten Wert.
+* **Die Kontosperre greift auch am zweiten Faktor**; zuvor liess sich mit derselben
+  Challenge weiterraten, und ein richtiger Code hob die Sperre wieder auf.
+* **Die Datenbank-URL wird über SQLAlchemy gebaut** – Zugangsdaten mit `@`, `/`,
+  `#` oder `%` funktionieren jetzt.
+* **Das ID-Token wird an den Aussteller gebunden** (`iss` gegen die Discovery-Metadaten).
+* **Die Audit-Redaktion nutzt dasselbe Wörterbuch wie die API-Maskierung**, sodass
+  auch `User-Password` und `Password` erfasst sind.
+* Listen und Exporte umfassen Bestandsnamen aus `radreply` und `radusergroup`;
+  Sammelaktionen über die Filtermenge werden oberhalb der Obergrenze abgelehnt
+  statt stillschweigend gekürzt.
+* Ein Update darf die letzte Zeile einer Gruppe nicht entfernen; CSV-Importe ohne
+  Metadatenspalten löschen vorhandene Angaben nicht mehr.
+* `pyrad` meldet Zeitüberschreitungen über eine eigene Exception-Klasse – sie wird
+  jetzt als Timeout und nicht als allgemeiner Fehler ausgewiesen.
+* NAS-Kurznamen einer Session-Seite kommen aus einer einzigen Abfrage statt aus
+  bis zu 200 Einzelabfragen.
+* Die Einstellung `show_mab_warning` wirkt tatsächlich, und nach dem Setzen eines
+  Passworts aktualisiert die Oberfläche Status und Attributliste.
 
 ## Prüfschritte
 

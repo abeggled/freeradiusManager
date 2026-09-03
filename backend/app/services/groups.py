@@ -22,7 +22,7 @@ from app.schemas.groups import (
 from app.schemas.users import AttributeIn
 from app.services.attributes import validate_triple, vlan_triples
 from app.services.audit import AuditService
-from app.services.masking import mask_attributes
+from app.services.masking import is_masked, mask_attributes
 
 VLAN_ATTRIBUTE = "tunnel-private-group-id"
 
@@ -210,9 +210,29 @@ class GroupService:
         """
         warnings: list[ApiWarning] = []
 
-        def convert(items: list[AttributeIn], table: str) -> list[tuple[str, str, str]]:
+        def convert(
+            items: list[AttributeIn],
+            table: str,
+            existing: dict[tuple[str, str], str],
+        ) -> list[tuple[str, str, str]]:
             rows: list[tuple[str, str, str]] = []
             for item in items:
+                if is_masked(item.attribute, item.value):
+                    # Der Client hat den maskierten Wert unveraendert
+                    # zurueckgeschickt: bestehenden Wert beibehalten.
+                    kept = existing.get((item.attribute.lower(), item.op))
+                    if kept is None:
+                        kept = next(
+                            (
+                                value
+                                for (name, _op), value in existing.items()
+                                if name == item.attribute.lower()
+                            ),
+                            None,
+                        )
+                    if kept is not None:
+                        rows.append((item.attribute, item.op, kept))
+                        continue
                 for w in validate_triple(
                     item.attribute, item.op, item.value, table=table, language=language
                 ):
@@ -222,25 +242,39 @@ class GroupService:
                 rows.append((item.attribute, item.op, item.value))
             return rows
 
+        stored_checks = {
+            (r.attribute.lower(), r.op): r.value
+            for r in await self.repo.check_attributes(groupname)
+        }
+        stored_replies = {
+            (r.attribute.lower(), r.op): r.value
+            for r in await self.repo.reply_attributes(groupname)
+        }
+
         if checks is None:
             check_rows = [
                 (r.attribute, r.op, r.value) for r in await self.repo.check_attributes(groupname)
             ]
         else:
-            check_rows = convert(checks, "radgroupcheck")
+            check_rows = convert(checks, "radgroupcheck", stored_checks)
 
         if replies is None:
             reply_rows = [
                 (r.attribute, r.op, r.value) for r in await self.repo.reply_attributes(groupname)
             ]
         else:
-            reply_rows = convert(replies, "radgroupreply")
+            reply_rows = convert(replies, "radgroupreply", stored_replies)
 
         vlan_names = {"tunnel-type", "tunnel-medium-type", VLAN_ATTRIBUTE}
         if vlan is not None or clear_vlan:
             reply_rows = [r for r in reply_rows if r[0].lower() not in vlan_names]
         if vlan:
             reply_rows.extend((t.attribute, t.op, t.value) for t in vlan_triples(vlan))
+
+        if not check_rows and not reply_rows and not await self.repo.member_count(groupname):
+            # Ohne Attribut und ohne Mitglied bliebe keine Zeile uebrig - die
+            # Gruppe waere geloescht, obwohl der Aufrufer nur bearbeiten wollte.
+            raise ValidationError(code="error.group_empty", details={"groupname": groupname})
 
         await self.repo.replace_attributes(groupname, check_rows, reply_rows)
         return warnings

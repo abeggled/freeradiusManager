@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import radius_dict
 from app.core.logging import get_logger
 from app.core.security import Principal
 from app.models.mgr import AuditResult, MgrAudit
@@ -40,16 +41,18 @@ SENSITIVE_KEYS = frozenset(
     }
 )
 
-SENSITIVE_ATTRIBUTES = frozenset(
-    {"cleartext-password", "nt-password", "md5-password", "sha2-password", "crypt-password"}
-)
+
+def _is_password_attribute(attribute: str) -> bool:
+    """Dieselbe Liste wie fuer die API-Maskierung - eine zweite, engere Liste
+    wuerde frueher oder spaeter auseinanderlaufen (NFR-1)."""
+    return radius_dict.is_password_attribute(attribute)
 
 
 def redact(payload: Any) -> Any:
     """Ersetzt sensible Werte rekursiv durch einen Marker."""
     if isinstance(payload, dict):
-        attribute = str(payload.get("attribute", "")).lower()
-        sensitive_row = attribute in SENSITIVE_ATTRIBUTES
+        attribute = str(payload.get("attribute", ""))
+        sensitive_row = bool(attribute) and _is_password_attribute(attribute)
         out: dict[str, Any] = {}
         for key, value in payload.items():
             lowered = key.lower()

@@ -16,8 +16,9 @@ from sqlalchemy import ColumnElement, and_, exists, func, or_, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Subquery
 
+from app.core.errors import ValidationError
 from app.models.mgr import MgrSubject, SubjectType
-from app.models.radius import RadCheck, RadUserGroup
+from app.models.radius import RadCheck, RadReply, RadUserGroup
 
 AUTH_TYPE = "Auth-Type"
 REJECT = "Reject"
@@ -46,8 +47,13 @@ class DirectoryRepository:
         self.session = session
 
     def _base(self, flt: SubjectFilter) -> tuple[Subquery, list[ColumnElement[bool]]]:
+        # Ein Bestandsdatensatz kann auch nur Antwortattribute oder eine
+        # Gruppenzuordnung besitzen. Wer per Direktaufruf sichtbar ist, muss
+        # ebenso in Liste, Export und Sammelaktionen auftauchen.
         names = union(
             select(RadCheck.username.label("username")),
+            select(RadReply.username.label("username")),
+            select(RadUserGroup.username.label("username")),
             select(MgrSubject.username.label("username")),
         ).subquery("names")
 
@@ -104,7 +110,7 @@ class DirectoryRepository:
         if flt.group:
             conditions.append(
                 exists(
-                    select(RadUserGroup.id).where(
+                    select(RadUserGroup.username).where(
                         RadUserGroup.username == names.c.username,
                         RadUserGroup.groupname == flt.group,
                     )
@@ -133,7 +139,12 @@ class DirectoryRepository:
         return [SubjectRow(username=str(u), subject=s) for u, s in rows], total
 
     async def all_usernames(self, flt: SubjectFilter, cap: int = 10_000) -> list[str]:
-        """Fuer Bulk-Aktionen und Export auf Basis der aktuellen Filter (FR-8)."""
+        """Fuer Bulk-Aktionen und Export auf Basis der aktuellen Filter (FR-8).
+
+        Ueberschreitet die Filtermenge ``cap``, wird abgebrochen statt
+        stillschweigend gekuerzt: sonst meldete eine Sammelaktion Erfolg,
+        obwohl sie nur einen Teil der bestaetigten Objekte erfasst hat (NFR-4).
+        """
         names, conditions = self._base(flt)
         join = names.join(MgrSubject, MgrSubject.username == names.c.username, isouter=True)
         stmt = (
@@ -141,9 +152,12 @@ class DirectoryRepository:
             .select_from(join)
             .where(*conditions)
             .order_by(names.c.username)
-            .limit(cap)
+            .limit(cap + 1)
         )
-        return [str(row) for row in (await self.session.scalars(stmt)).all()]
+        rows = [str(row) for row in (await self.session.scalars(stmt)).all()]
+        if len(rows) > cap:
+            raise ValidationError(code="error.selection_too_large", details={"cap": cap})
+        return rows
 
     async def distinct_values(self, column: str) -> list[str]:
         """Filtervorschlaege fuer Standort, Gerätetyp und Verantwortliche."""

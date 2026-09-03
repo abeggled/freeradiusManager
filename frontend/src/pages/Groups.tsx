@@ -8,6 +8,7 @@ import {
   useGroups,
   useUpdateGroup,
 } from "@/api/hooks";
+import { MASKED } from "@/api/types";
 import type { AttributeInput } from "@/api/types";
 import { ConfirmDialog, ErrorBox, Field, Modal, Spinner, WarningList } from "@/components/ui";
 import { useI18n } from "@/i18n";
@@ -120,6 +121,8 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
 
   const detail = existing.data;
   const currentVlan = vlan ?? detail?.vlan ?? "";
+  // Passwortwerte kommen maskiert aus der API. Sie werden hier nur angezeigt;
+  // unverändert zurückgesendet behält das Backend den gespeicherten Wert.
   const currentChecks =
     checks ??
     (detail?.check_attributes.map((a) => ({ attribute: a.attribute, op: a.op, value: a.value })) ??
@@ -273,6 +276,7 @@ function AttributeEditor({
           <input
             aria-label={t("groups.value")}
             value={row.value}
+            placeholder={row.value === MASKED ? t("groups.maskedValue") : undefined}
             onChange={(event) => update(index, { value: event.target.value })}
           />
           <button

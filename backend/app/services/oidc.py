@@ -48,6 +48,12 @@ class OidcService:
             response = await client.get(f"{issuer}/.well-known/openid-configuration")
             response.raise_for_status()
             data = response.json()
+        # Ein Discovery-Dokument, das einen anderen Aussteller nennt als
+        # konfiguriert, wird nicht verwendet (OpenID Connect Discovery 4.3).
+        if str(data.get("issuer", "")).rstrip("/") != issuer:
+            raise AuthenticationError(
+                code="error.unauthenticated", details={"stage": "discovery_issuer"}
+            )
         _metadata_cache[issuer] = data
         return data
 
@@ -104,8 +110,22 @@ class OidcService:
                 response = await client.get(jwks_uri)
                 response.raise_for_status()
                 _jwks_cache[jwks_uri] = JsonWebKey.import_key_set(response.json())
-        claims = jwt.decode(id_token, _jwks_cache[jwks_uri])
+        # Der Aussteller wird gegen die Discovery-Metadaten geprueft. Ohne diese
+        # Bindung akzeptierte ein Anbieter mit gemeinsamem Token-Endpunkt oder
+        # JWKS auch ein korrekt signiertes Token eines fremden Issuers.
+        expected_issuer = str(meta.get("issuer") or self.config.oidc_issuer).rstrip("/")
+        claims = jwt.decode(
+            id_token,
+            _jwks_cache[jwks_uri],
+            claims_options={
+                "iss": {"essential": True, "values": [expected_issuer]},
+                "aud": {"essential": True, "values": [self.config.oidc_client_id]},
+                "exp": {"essential": True},
+            },
+        )
         claims.validate()
+        if str(claims.get("iss", "")).rstrip("/") != expected_issuer:
+            raise AuthenticationError(code="error.unauthenticated", details={"stage": "issuer"})
         if claims.get("nonce") != nonce:
             raise AuthenticationError(code="error.unauthenticated", details={"stage": "nonce"})
         if claims.get("aud") not in (self.config.oidc_client_id, [self.config.oidc_client_id]):

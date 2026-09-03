@@ -40,6 +40,16 @@ class NasRepository:
         total = int(await self.session.scalar(count_stmt) or 0)
         return items, total
 
+    async def shortnames_for(self, nasnames: Sequence[str]) -> dict[str, str | None]:
+        """Kurznamen mehrerer NAS in einer Abfrage - eine Runde je Adresse waere
+        bei bis zu 200 Zeilen je Seite der teuerste Teil des Requests (NFR-2)."""
+        if not nasnames:
+            return {}
+        rows = await self.session.execute(
+            select(Nas.nasname, Nas.shortname).where(Nas.nasname.in_(set(nasnames)))
+        )
+        return {str(name): shortname for name, shortname in rows.all()}
+
     async def all_names(self) -> set[str]:
         return set((await self.session.scalars(select(Nas.nasname))).all())
 

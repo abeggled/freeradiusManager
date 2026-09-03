@@ -10,12 +10,10 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
-from app.core.i18n import translate
 from app.core.mac import format_mac
 from app.core.security import Principal
 from app.models.mgr import CredentialType, SubjectType
 from app.repositories.directory import SubjectFilter
-from app.schemas.common import ApiWarning
 from app.schemas.users import (
     DeviceCreate,
     DeviceUpdate,
@@ -77,12 +75,8 @@ class DeviceService:
             subject_type=SubjectType.DEVICE,
             language=language,
         )
-        detail.warnings.append(
-            ApiWarning(
-                code="warn.mab_not_authentication",
-                message=translate("warn.mab_not_authentication", language),
-            )
-        )
+        # ``UserService.get`` haengt den Hinweis bereits an, sofern die
+        # Einstellung ihn vorsieht - hier wird nichts doppelt ergaenzt.
         return detail
 
     async def update(

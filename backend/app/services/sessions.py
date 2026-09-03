@@ -37,11 +37,7 @@ class SessionService:
         self.nas = NasRepository(session)
 
     async def _decorate(self, page: KeysetPage[RadAcct]) -> list[SessionItem]:
-        shortnames: dict[str, str | None] = {}
-        for row in page.items:
-            if row.nasipaddress not in shortnames:
-                nas = await self.nas.get_by_name(row.nasipaddress)
-                shortnames[row.nasipaddress] = nas.shortname if nas else None
+        shortnames = await self.nas.shortnames_for([row.nasipaddress for row in page.items])
         items: list[SessionItem] = []
         for row in page.items:
             item = SessionItem.model_validate(row)

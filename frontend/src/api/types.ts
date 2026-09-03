@@ -1,5 +1,8 @@
 /** Typen entsprechend den Pydantic-Schemas des Backends (siehe /api/openapi.json). */
 
+/** Platzhalter, den das Backend anstelle von Passwortwerten liefert. */
+export const MASKED = "********";
+
 export type Role = "administrator" | "operator" | "auditor";
 export type SubjectType = "user" | "device";
 export type CredentialType = "cleartext" | "nt" | "both";

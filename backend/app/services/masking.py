@@ -32,3 +32,13 @@ def mask_attributes(rows: Sequence[AttributeRow]) -> list[AttributeOut]:
         )
         for row in rows
     ]
+
+
+def is_masked(attribute: str, value: str) -> bool:
+    """Ob ein eingehender Wert nur der zuvor ausgelieferte Platzhalter ist.
+
+    Ein Client, der einen maskierten Datensatz unveraendert zuruecksendet, darf
+    das echte Passwort nicht durch Sternchen ersetzen - das wuerde die
+    Authentifizierung sofort zerstoeren.
+    """
+    return value == MASKED and radius_dict.is_password_attribute(attribute)

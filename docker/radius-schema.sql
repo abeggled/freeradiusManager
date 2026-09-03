@@ -51,12 +51,12 @@ CREATE TABLE IF NOT EXISTS radgroupreply (
   KEY groupname (groupname(32))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Ohne id-Spalte und ohne Primaerschluessel - genau wie im offiziellen Schema.
+-- Der Manager darf sich nicht auf eine zusaetzliche Spalte stuetzen.
 CREATE TABLE IF NOT EXISTS radusergroup (
-  id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
   username      VARCHAR(64)  NOT NULL DEFAULT '',
   groupname     VARCHAR(64)  NOT NULL DEFAULT '',
   priority      INT(11)      NOT NULL DEFAULT 1,
-  PRIMARY KEY (id),
   KEY username (username(32))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

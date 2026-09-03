@@ -137,6 +137,7 @@ export const de = {
   "groups.attribute": "Attribut",
   "groups.operator": "Operator",
   "groups.value": "Wert",
+  "groups.maskedValue": "gespeicherter Wert bleibt erhalten",
   "groups.addAttribute": "Attribut hinzufügen",
   "groups.priority": "Priorität",
 

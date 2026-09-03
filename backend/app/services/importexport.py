@@ -150,6 +150,20 @@ class ImportReport:
     rows: list[ImportRow] = field(default_factory=list)
 
 
+def _meta_from(row: dict[str, str]) -> SubjectMeta:
+    """Baut die Metadaten nur aus tatsaechlich vorhandenen Spalten.
+
+    Wuerden fehlende Spalten als ``None`` gesetzt, loeschte ein Import mit nur
+    ``username,password`` beim naechsten Lauf Notiz, Standort und Inventarnummer.
+    """
+    present = {
+        field: row[field]
+        for field in ("display_name", "note", "owner", "device_type", "location", "inventory_no")
+        if row.get(field)
+    }
+    return SubjectMeta(**present)
+
+
 def _parse_row(row: dict[str, str], *, username: str, require_password: bool) -> ParsedRow:
     """Uebersetzt eine CSV-Zeile in die Schemas der Services.
 
@@ -176,14 +190,7 @@ def _parse_row(row: dict[str, str], *, username: str, require_password: bool) ->
         password=password,
         credential_type=CredentialType(credential_raw) if credential_raw else None,
         disabled=_parse_bool(row.get("disabled")),
-        meta=SubjectMeta(
-            display_name=row.get("display_name") or None,
-            note=row.get("note") or None,
-            owner=row.get("owner") or None,
-            device_type=row.get("device_type") or None,
-            location=row.get("location") or None,
-            inventory_no=row.get("inventory_no") or None,
-        ),
+        meta=_meta_from(row),
         supplied={key for key, value in row.items() if value},
     )
 

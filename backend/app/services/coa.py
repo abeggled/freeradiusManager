@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from pyrad.client import Client
+from pyrad.client import Timeout as PyradTimeout
 from pyrad.dictionary import Dictionary
 from pyrad.packet import CoAACK, CoANAK, DisconnectACK, DisconnectNAK
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -100,7 +101,9 @@ class CoAService:
             code, reply_attributes = await asyncio.to_thread(
                 _send_blocking, host, port, secret, attributes, disconnect
             )
-        except TimeoutError as exc:
+        # pyrad meldet Zeitueberschreitungen ueber eine eigene Klasse, die nicht
+        # von TimeoutError erbt - ohne sie landete jeder Timeout im Sammelzweig.
+        except (PyradTimeout, TimeoutError) as exc:
             await self._log(payload, session_row, actor, actor_ip, AuditResult.FAILURE, "timeout")
             raise CoAError(code="error.coa_timeout", details={"nas": host, "port": port}) from exc
         except Exception as exc:

@@ -127,7 +127,11 @@ class UserService:
         )
 
         warnings: list[ApiWarning] = []
-        if subject and subject.subject_type is SubjectType.DEVICE:
+        if (
+            subject
+            and subject.subject_type is SubjectType.DEVICE
+            and await self.settings.show_mab_warning()
+        ):
             warnings.append(
                 ApiWarning(
                     code="warn.mab_not_authentication",

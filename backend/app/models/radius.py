@@ -52,11 +52,21 @@ class RadGroupReply(_AttributeRow, Base):
 
 
 class RadUserGroup(Base):
+    """Mitgliedschaften.
+
+    Das offizielle FreeRADIUS-Schema kennt hier bewusst *keine* ``id``-Spalte;
+    die Tabelle besteht nur aus ``username``, ``groupname`` und ``priority``.
+    Fuer das ORM dient das Paar aus Benutzer und Gruppe als Schluessel - eine
+    zusaetzliche Spalte zu verlangen wuerde den Manager auf Bestandsinstallationen
+    unbrauchbar machen (Abschnitt 4.1).
+    """
+
     __tablename__ = "radusergroup"
 
-    id: Mapped[int] = mapped_column(mysql.INTEGER(unsigned=True), primary_key=True)
-    username: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
-    groupname: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    username: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="", index=True, primary_key=True
+    )
+    groupname: Mapped[str] = mapped_column(String(64), nullable=False, default="", primary_key=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 

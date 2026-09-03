@@ -139,6 +139,7 @@ export const en: Record<TranslationKey, string> = {
   "groups.attribute": "Attribute",
   "groups.operator": "Operator",
   "groups.value": "Value",
+  "groups.maskedValue": "stored value is kept",
   "groups.addAttribute": "Add attribute",
   "groups.priority": "Priority",
 

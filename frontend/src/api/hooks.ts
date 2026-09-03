@@ -175,9 +175,13 @@ export function useUpdateUser(username: string) {
 }
 
 export function useSetUserPassword(username: string) {
+  const client = useQueryClient();
   return useMutation({
     mutationFn: (body: { password: string; credential_type?: string | null }) =>
       request<void>(`/users/${encodeURIComponent(username)}/password`, { method: "PUT", body }),
+    // Der Status wechselt dabei von "no_credentials" zu "active"; Detail- und
+    // Listenansicht müssen das sofort zeigen.
+    onSuccess: invalidator(client, ["users", "user", "devices", "device"]),
   });
 }
 

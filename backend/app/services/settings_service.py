@@ -43,6 +43,9 @@ class SettingsService:
         value = await self.get(KEY_MAC_FORMAT)
         return value if value in MAC_FORMATS else app_settings.default_mac_format
 
+    async def show_mab_warning(self) -> bool:
+        return bool(await self.get(KEY_MAB_WARNING))
+
     async def default_credential_type(self) -> CredentialType:
         value = await self.get(KEY_DEFAULT_CREDENTIAL)
         try:
