@@ -22,6 +22,12 @@ export interface RequestOptions {
   query?: Record<string, string | number | boolean | undefined | null>;
   formData?: FormData;
   raw?: boolean;
+  /**
+   * Kennzeichnet Abfragen, die ohne Zutun der Benutzerin laufen. Das Backend
+   * verlängert die Sitzung dann nicht – sonst liefe der Idle-Timeout nie ab,
+   * solange ein Dashboard offen steht.
+   */
+  background?: boolean;
 }
 
 export function buildQuery(
@@ -41,11 +47,15 @@ export function buildQuery(
  * einheitlich als {code, message, details} zurueck (Spezifikation 6.3).
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, query, formData, raw } = options;
+  const { method = "GET", body, query, formData, raw, background } = options;
+  const headers: Record<string, string> = {};
+  if (!formData && body !== undefined) headers["Content-Type"] = "application/json";
+  if (background) headers["X-Background-Refresh"] = "1";
+
   const response = await fetch(`${BASE}${path}${buildQuery(query)}`, {
     method,
     credentials: "same-origin",
-    headers: formData || body === undefined ? undefined : { "Content-Type": "application/json" },
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: formData ?? (body === undefined ? undefined : JSON.stringify(body)),
   });
 

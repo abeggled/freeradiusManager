@@ -40,6 +40,10 @@ from app.services.audit import AuditService
 LOCKOUT_THRESHOLD = 10
 LOCKOUT_MINUTES = 15
 
+# Vergleichswert fuer nicht existierende Konten: ohne ihn waere an der Antwortzeit
+# ablesbar, welche Benutzernamen es gibt (NFR-1).
+_DUMMY_HASH = hash_password("kein-konto-mit-diesem-namen")
+
 
 def _box() -> SecretBox:
     return SecretBox(app_settings.coa_secret_key or app_settings.secret_key)
@@ -69,11 +73,13 @@ class AccountService:
         erreichbar.
         """
         account = await self.repo.get_by_username(username)
+        if account is None:
+            # Gleicher Aufwand wie bei einem vorhandenen Konto.
+            verify_password(password, _DUMMY_HASH)
         if account is None or not verify_password(password, account.password_hash):
             if account is not None:
                 account.failed_logins += 1
-                if account.failed_logins >= LOCKOUT_THRESHOLD:
-                    account.locked_until = utcnow() + dt.timedelta(minutes=LOCKOUT_MINUTES)
+                self._apply_lockout(account)
             await self.audit.log(
                 action="auth.login",
                 object_type="account",
@@ -117,6 +123,20 @@ class AccountService:
             raise ValidationError(code="error.last_administrator")
         account.role = role
         await self.session.commit()
+
+    @staticmethod
+    def _apply_lockout(account: MgrAccount) -> None:
+        """Setzt die Sperre beim Erreichen der Schwelle.
+
+        Eine bereits laufende Sperre wird nicht verlaengert: sonst koennte ein
+        Aufrufer ein Konto allein durch weitere Fehlversuche dauerhaft
+        blockieren, ohne das Passwort zu kennen.
+        """
+        if account.failed_logins < LOCKOUT_THRESHOLD:
+            return
+        now = utcnow()
+        if account.locked_until is None or account.locked_until <= now:
+            account.locked_until = now + dt.timedelta(minutes=LOCKOUT_MINUTES)
 
     async def clear_failures(self, account: MgrAccount) -> None:
         """Setzt Fehlerzaehler und Sperre zurueck - nach vollstaendigem Erfolg."""
@@ -168,8 +188,7 @@ class AccountService:
             # Fehlversuche am zweiten Faktor zaehlen auf dieselbe Sperre ein wie
             # falsche Passwoerter - sonst waere der TOTP-Schritt frei ratbar.
             account.failed_logins += 1
-            if account.failed_logins >= LOCKOUT_THRESHOLD:
-                account.locked_until = utcnow() + dt.timedelta(minutes=LOCKOUT_MINUTES)
+            self._apply_lockout(account)
             await self.audit.log(
                 action="auth.totp",
                 object_type="account",

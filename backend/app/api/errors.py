@@ -16,14 +16,18 @@ log = get_logger("api")
 
 
 def _language(request: Request) -> str:
+    """Wie die ``language``-Dependency: die ausdrueckliche Wahl gilt zuerst.
+
+    Sonst kaeme die Fehlermeldung in der Kontosprache, waehrend die Oberflaeche
+    ringsum in der umgeschalteten Sprache steht.
+    """
+    explicit = request.query_params.get("lang") or request.cookies.get("frm_lang")
+    if explicit:
+        return normalise_language(explicit)
     principal = getattr(request.state, "principal", None)
     if principal is not None:
         return normalise_language(principal.language)
-    return normalise_language(
-        request.query_params.get("lang")
-        or request.cookies.get("frm_lang")
-        or request.headers.get("accept-language")
-    )
+    return normalise_language(request.headers.get("accept-language"))
 
 
 def _payload(code: str, message: str, details: dict[str, object]) -> dict[str, object]:

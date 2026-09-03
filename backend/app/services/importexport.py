@@ -28,6 +28,7 @@ from app.schemas.users import (
     PasswordSet,
     SubjectMeta,
     UserCreate,
+    UserListItem,
     UserUpdate,
 )
 from app.services.audit import AuditService
@@ -89,6 +90,15 @@ def _parse_date(value: str | None) -> dt.datetime | None:
         return dt.datetime.fromisoformat(value)
     except ValueError as exc:
         raise ValidationError(code="error.validation", details={"expires_at": value}) from exc
+
+
+def _format_groups(item: UserListItem) -> str:
+    """Serialisiert Mitgliedschaften inklusive abweichender Prioritaet."""
+    priorities = {m.groupname: m.priority for m in item.memberships}
+    return ",".join(
+        name if priorities.get(name, 1) == 1 else f"{name}:{priorities[name]}"
+        for name in item.groups
+    )
 
 
 def _parse_groups(value: str | None) -> list[MembershipIn]:
@@ -288,6 +298,9 @@ class ImportExportService:
                     username=username,
                     require_password=not exists and kind == "user",
                 )
+                # Wirft dieselben Validierungsfehler wie der Schreibvorgang.
+                self._payloads(parsed, kind, exists)
+
                 if exists:
                     report.to_update += 1
                 else:
@@ -304,6 +317,10 @@ class ImportExportService:
                 if not dry_run:
                     await self._write_row(parsed, kind, exists, actor, actor_ip, language)
             except Exception as exc:  # noqa: BLE001 - jede Zeile wird einzeln gemeldet
+                # Ein abgewiesener Schreibvorgang laesst die Sitzung in einem
+                # Fehlerzustand zurueck; ohne Rollback scheiterte danach jede
+                # weitere Zeile und am Ende der Audit-Eintrag.
+                await self.session.rollback()
                 report.errors += 1
                 report.rows.append(
                     ImportRow(
@@ -329,6 +346,55 @@ class ImportExportService:
             )
             await self.session.commit()
         return report
+
+    def _payloads(
+        self, parsed: ParsedRow, kind: Literal["user", "device"], exists: bool
+    ) -> list[object]:
+        """Baut die Schemas, die der Schreibvorgang verwenden wuerde.
+
+        Wird auch im Dry-Run aufgerufen: nur so meldet die Vorschau dieselben
+        Laengen- und Wertfehler wie der spaetere Import.
+        """
+        if not exists:
+            if kind == "device":
+                return [
+                    DeviceCreate(
+                        mac=parsed.username,
+                        use_mac_as_password=parsed.password is None,
+                        password=parsed.password,
+                        expires_at=parsed.expires_at,
+                        groups=parsed.groups,
+                        vlan=parsed.vlan,
+                        meta=parsed.meta,
+                        disabled=parsed.disabled,
+                    )
+                ]
+            return [
+                UserCreate(
+                    username=parsed.username,
+                    password=parsed.password,
+                    credential_type=parsed.credential_type,
+                    expires_at=parsed.expires_at,
+                    groups=parsed.groups,
+                    vlan=parsed.vlan,
+                    meta=parsed.meta,
+                    disabled=parsed.disabled,
+                )
+            ]
+
+        payloads: list[object] = [
+            UserUpdate(
+                expires_at=parsed.expires_at,
+                groups=parsed.groups or None,
+                vlan=parsed.vlan,
+                meta=parsed.meta,
+            )
+        ]
+        if parsed.password:
+            payloads.append(
+                PasswordSet(password=parsed.password, credential_type=parsed.credential_type)
+            )
+        return payloads
 
     async def _write_row(
         self,
@@ -441,7 +507,9 @@ class ImportExportService:
                     "username": self._safe(item.username),
                     "subject_type": item.subject_type.value,
                     "status": item.status,
-                    "groups": self._safe(",".join(item.groups)),
+                    # ``gruppe:prioritaet`` wie beim Import, damit ein
+                    # Export-Bearbeiten-Import die Reihenfolge nicht auf 1 setzt.
+                    "groups": self._safe(_format_groups(item)),
                     "display_name": self._safe(item.display_name or ""),
                     "owner": self._safe(item.owner or ""),
                     "device_type": self._safe(item.device_type or ""),

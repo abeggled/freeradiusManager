@@ -197,7 +197,11 @@ async def oidc_callback(
         raise AuthenticationError(code="error.forbidden", details={"stage": "role_mapping"})
 
     service = AccountService(session)
-    subject = str(claims.get("sub", ""))
+    raw_subject = claims.get("sub")
+    if not isinstance(raw_subject, str) or not raw_subject.strip():
+        # Ohne stabiles "sub" landeten alle solchen Token auf demselben Konto.
+        raise AuthenticationError(code="error.unauthenticated", details={"stage": "subject"})
+    subject = raw_subject.strip()
     account = await service.repo.get_by_oidc_subject(subject)
     if account is None:
         username = str(claims.get("preferred_username") or claims.get("email") or subject)

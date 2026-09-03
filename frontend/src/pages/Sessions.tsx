@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { useCoA, useSessions, useTerminateCauses } from "@/api/hooks";
+import { useCoA, useSessionDetail, useSessions, useTerminateCauses } from "@/api/hooks";
 import type { SessionItem } from "@/api/types";
 import { ConfirmDialog, ErrorBox, Field, Modal, Spinner } from "@/components/ui";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -19,6 +19,7 @@ export function SessionsPage() {
   const [activeOnly, setActiveOnly] = useState(true);
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const [page, setPage] = useState(0);
+  const [detailId, setDetailId] = useState<number | null>(null);
   const [disconnecting, setDisconnecting] = useState<SessionItem | null>(null);
   const [coaTarget, setCoaTarget] = useState<SessionItem | null>(null);
 
@@ -126,7 +127,11 @@ export function SessionsPage() {
               </thead>
               <tbody>
                 {data?.items.map((session) => (
-                  <tr key={session.radacctid}>
+                  <tr
+                    key={session.radacctid}
+                    className="clickable"
+                    onClick={() => setDetailId(session.radacctid)}
+                  >
                     <td>{session.username}</td>
                     <td>{session.callingstationid}</td>
                     <td>{session.nas_shortname ?? session.nasipaddress}</td>
@@ -144,7 +149,7 @@ export function SessionsPage() {
                       )}
                     </td>
                     <td>{session.acctterminatecause || "–"}</td>
-                    <td className="row-actions">
+                    <td className="row-actions" onClick={(event) => event.stopPropagation()}>
                       {session.active && canWrite ? (
                         <>
                           <button type="button" onClick={() => setDisconnecting(session)}>
@@ -187,6 +192,10 @@ export function SessionsPage() {
         </>
       )}
 
+      {detailId !== null ? (
+        <SessionDetailDialog radacctid={detailId} onClose={() => setDetailId(null)} />
+      ) : null}
+
       {disconnecting ? (
         <ConfirmDialog
           title={t("sessions.disconnect")}
@@ -206,6 +215,69 @@ export function SessionsPage() {
         <CoaDialog session={coaTarget} onClose={() => setCoaTarget(null)} />
       ) : null}
     </section>
+  );
+}
+
+/** Detailansicht einer Session (FR-5): Zeiten, Volumen, NAS-Port und SSID. */
+function SessionDetailDialog({
+  radacctid,
+  onClose,
+}: {
+  radacctid: number;
+  onClose: () => void;
+}) {
+  const { t, language } = useI18n();
+  const { data, isLoading, error } = useSessionDetail(radacctid);
+
+  return (
+    <Modal
+      title={t("sessions.title")}
+      onClose={onClose}
+      footer={
+        <button type="button" onClick={onClose}>
+          {t("common.close")}
+        </button>
+      }
+    >
+      <ErrorBox error={error} />
+      {isLoading ? <Spinner /> : null}
+      {data ? (
+        <dl>
+          <dt>{t("users.username")}</dt>
+          <dd>{data.username}</dd>
+          <dt>{t("sessions.mac")}</dt>
+          <dd>{data.callingstationid || "–"}</dd>
+          <dt>{t("sessions.ssid")}</dt>
+          <dd>{data.ssid ?? "–"}</dd>
+          <dt>{t("sessions.nas")}</dt>
+          <dd>{data.nas_shortname ?? data.nasipaddress}</dd>
+          <dt>{t("sessions.port")}</dt>
+          <dd>{data.nasportid ?? "–"}</dd>
+          <dt>{t("sessions.framedIp")}</dt>
+          <dd>{data.framedipaddress || "–"}</dd>
+          <dt>{t("sessions.start")}</dt>
+          <dd>{formatDateTime(data.acctstarttime, language)}</dd>
+          <dt>{t("sessions.stop")}</dt>
+          <dd>
+            {data.active ? t("sessions.running") : formatDateTime(data.acctstoptime, language)}
+          </dd>
+          <dt>{t("sessions.duration")}</dt>
+          <dd>
+            {data.active ? t("sessions.running") : formatDuration(data.acctsessiontime)}
+          </dd>
+          <dt>{t("sessions.volume")}</dt>
+          <dd>
+            {formatBytes(data.acctinputoctets ?? 0)} ↓ / {formatBytes(data.acctoutputoctets ?? 0)} ↑
+          </dd>
+          <dt>{t("sessions.terminateCause")}</dt>
+          <dd>{data.acctterminatecause || "–"}</dd>
+          <dt>Acct-Session-Id</dt>
+          <dd>
+            <code>{data.acctsessionid}</code>
+          </dd>
+        </dl>
+      ) : null}
+    </Modal>
   );
 }
 

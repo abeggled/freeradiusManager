@@ -476,7 +476,17 @@ export function useUpdateSettings() {
 export function useStats() {
   return useQuery({
     queryKey: queryKeys.stats,
-    queryFn: () => request<Stats>("/stats"),
+    // Als Hintergrundlauf gekennzeichnet: das offene Dashboard soll den
+    // Idle-Timeout der Sitzung nicht aushebeln.
+    queryFn: () => request<Stats>("/stats", { background: true }),
     refetchInterval: 60_000,
+  });
+}
+
+export function useSessionDetail(radacctid: number | null) {
+  return useQuery({
+    queryKey: ["session", radacctid],
+    queryFn: () => request<SessionItem>(`/sessions/${radacctid}`),
+    enabled: radacctid !== null,
   });
 }

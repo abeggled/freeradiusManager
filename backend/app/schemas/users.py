@@ -59,6 +59,7 @@ class UserListItem(BaseModel):
     device_type: str | None = None
     inventory_no: str | None = None
     groups: list[str] = Field(default_factory=list)
+    memberships: list[MembershipOut] = Field(default_factory=list)
     status: UserStatus
     expires_at: dt.datetime | None = None
     credential_type: CredentialType | None = None
@@ -68,7 +69,6 @@ class UserListItem(BaseModel):
 class UserDetail(UserListItem):
     check_attributes: list[AttributeOut] = Field(default_factory=list)
     reply_attributes: list[AttributeOut] = Field(default_factory=list)
-    memberships: list[MembershipOut] = Field(default_factory=list)
     vlan: str | None = None
     active_sessions: int = 0
     last_auth: dt.datetime | None = None

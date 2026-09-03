@@ -80,9 +80,11 @@ class UserService:
         usernames = [row.username for row in rows]
 
         memberships = await self.groups.memberships_for(usernames)
-        by_user: dict[str, list[str]] = {}
+        by_user: dict[str, list[MembershipOut]] = {}
         for m in memberships:
-            by_user.setdefault(m.username, []).append(m.groupname)
+            by_user.setdefault(m.username, []).append(
+                MembershipOut(groupname=m.groupname, priority=m.priority)
+            )
 
         checks = await self.attrs.check_attributes_for(usernames)
         checks_by_user: dict[str, list[RadCheck]] = {}
@@ -103,7 +105,10 @@ class UserService:
                     location=subject.location if subject else None,
                     device_type=subject.device_type if subject else None,
                     inventory_no=subject.inventory_no if subject else None,
-                    groups=sorted(by_user.get(row.username, [])),
+                    groups=sorted(m.groupname for m in by_user.get(row.username, [])),
+                    memberships=sorted(
+                        by_user.get(row.username, []), key=lambda m: (m.priority, m.groupname)
+                    ),
                     status=self._status(user_checks),
                     expires_at=self._expiry(user_checks, subject),
                     credential_type=subject.credential_type if subject else None,

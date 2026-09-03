@@ -25,6 +25,9 @@ coa_limiter = RateLimiter(settings.coa_rate_limit, settings.coa_rate_window_seco
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
+BACKGROUND_HEADER = "x-background-refresh"
+"""Vom Client gesetzt, wenn die Anfrage aus einem Hintergrundlauf stammt."""
+
 
 @lru_cache
 def _trusted_networks() -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
@@ -130,15 +133,20 @@ async def current_principal(request: Request, response: Response, session: Sessi
         absolute_expiry=claims.absolute_expiry,
     )
     request.state.principal = principal
-    refreshed, _ = create_session_token(
-        principal.account_id,
-        principal.username,
-        principal.role,
-        principal.language,
-        session_id=principal.session_id,
-        absolute_expiry=principal.absolute_expiry,
-    )
-    set_session_cookie(response, refreshed)
+
+    # Eine Hintergrundabfrage ist keine Benutzeraktivitaet. Wuerde sie das
+    # Cookie verlaengern, liefe der Idle-Timeout nie ab, solange irgendwo ein
+    # Dashboard offen steht (FR-10).
+    if request.headers.get(BACKGROUND_HEADER, "").lower() not in ("1", "true"):
+        refreshed, _ = create_session_token(
+            principal.account_id,
+            principal.username,
+            principal.role,
+            principal.language,
+            session_id=principal.session_id,
+            absolute_expiry=principal.absolute_expiry,
+        )
+        set_session_cookie(response, refreshed)
     return principal
 
 

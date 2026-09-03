@@ -59,7 +59,12 @@ export function ImportDialog({
             id={id}
             type="file"
             accept=".csv,text/csv"
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            onChange={(event) => {
+              setFile(event.target.files?.[0] ?? null);
+              // Die Vorschau gehört zur vorherigen Datei; sonst liesse sich eine
+              // neue Datei anwenden, ohne sie je gesehen zu haben.
+              importCsv.reset();
+            }}
           />
         )}
       </Field>

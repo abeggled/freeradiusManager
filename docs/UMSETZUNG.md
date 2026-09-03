@@ -75,9 +75,9 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Vier Runden eines automatisierten Reviews meldeten 19, 14, 13 und 13 Befunde;
+Fünf Runden eines automatisierten Reviews meldeten 19, 14, 13, 13 und 10 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
-sowie `test_review_fixes.py` bis `test_review_fixes_4.py` unter
+sowie `test_review_fixes.py` bis `test_review_fixes_5.py` unter
 `backend/tests/integration/`).
 
 Drei Befunde der vierten Runde betrafen unvollständige Korrekturen aus früheren
@@ -201,6 +201,24 @@ Die vierte Runde:
   einen gültigen Wert zurück; die Detailseiten erhalten alle Gruppenmitgliedschaften.
 * Auditoren bekommen keine Schaltflächen mehr angeboten, die zwangsläufig mit
   403 enden – die Durchsetzung bleibt unverändert im Backend.
+
+Die fünfte Runde:
+
+* **Ein offenes Dashboard verlängert die Sitzung nicht mehr.** Die Statistikabfrage
+  läuft im Minutentakt und hätte den Idle-Timeout unbegrenzt hinausgeschoben; sie
+  kennzeichnet sich jetzt als Hintergrundlauf, und das Backend erneuert dafür kein
+  Cookie.
+* **Ein abgewiesener Import bricht nicht mehr den ganzen Lauf ab.** Ein von der
+  Datenbank zurückgewiesener Wert hinterliess die Sitzung im Fehlerzustand,
+  wodurch alle Folgezeilen und der Audit-Eintrag scheiterten. Zusätzlich prüft die
+  Vorschau nun dieselben Schemas wie der Schreibvorgang.
+* **OIDC-Token ohne `sub` werden abgelehnt** – sonst wären alle solchen Token auf
+  demselben lokalen Konto gelandet.
+* **Weitere Fehlversuche verlängern eine laufende Kontosperre nicht**, und
+  unbekannte Benutzernamen erzeugen denselben Rechenaufwand wie vorhandene.
+* Fehlermeldungen folgen der umgeschalteten Oberflächensprache; Exporte behalten
+  abweichende Gruppenprioritäten; eine gewechselte Importdatei verwirft die alte
+  Vorschau; Sessions haben eine Detailansicht.
 
 ## Prüfschritte
 

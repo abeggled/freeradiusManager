@@ -120,6 +120,7 @@ class OidcService:
             claims_options={
                 "iss": {"essential": True, "values": [expected_issuer]},
                 "aud": {"essential": True, "values": [self.config.oidc_client_id]},
+                "sub": {"essential": True},
                 "exp": {"essential": True},
             },
         )
