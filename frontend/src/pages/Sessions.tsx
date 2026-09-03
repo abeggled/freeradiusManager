@@ -242,7 +242,13 @@ export function SessionsPage() {
           message={t("sessions.disconnectConfirm", { name: disconnecting.username })}
           onConfirm={() =>
             coa.mutate(
-              { action: "disconnect", acctuniqueid: disconnecting.acctuniqueid },
+              // radacctid ist auf jeder Zeile vorhanden; acctuniqueid kann im
+              // Schema leer sein und liesse die Aktion sonst ins Leere laufen.
+              {
+                action: "disconnect",
+                radacctid: disconnecting.radacctid,
+                acctuniqueid: disconnecting.acctuniqueid || undefined,
+              },
               { onSuccess: () => setDisconnecting(null) },
             )
           }
@@ -341,7 +347,12 @@ function CoaDialog({ session, onClose }: { session: SessionItem; onClose: () => 
             disabled={!vlan || coa.isPending}
             onClick={() =>
               coa.mutate(
-                { action: "coa", acctuniqueid: session.acctuniqueid, vlan },
+                {
+                  action: "coa",
+                  radacctid: session.radacctid,
+                  acctuniqueid: session.acctuniqueid || undefined,
+                  vlan,
+                },
                 { onSuccess: onClose },
               )
             }

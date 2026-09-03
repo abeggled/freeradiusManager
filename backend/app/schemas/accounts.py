@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -43,20 +43,22 @@ class AccountOut(BaseModel):
 
 
 class AccountCreate(BaseModel):
+    """Laengen entsprechen den Spalten in ``mgr_account``."""
+
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=12, max_length=256)
     role: Role = Role.AUDITOR
-    email: str | None = None
-    display_name: str | None = None
-    language: str = "de"
+    email: str | None = Field(default=None, max_length=255)
+    display_name: str | None = Field(default=None, max_length=128)
+    language: Literal["de", "en"] = "de"
 
 
 class AccountUpdate(BaseModel):
-    email: str | None = None
-    display_name: str | None = None
+    email: str | None = Field(default=None, max_length=255)
+    display_name: str | None = Field(default=None, max_length=128)
     role: Role | None = None
     is_active: bool | None = None
-    language: str | None = None
+    language: Literal["de", "en"] | None = None
     reset_totp: bool = False
 
 

@@ -19,6 +19,7 @@ export function AccountsPage() {
   const [offset, setOffset] = useState(0);
   const [creating, setCreating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<Account | null>(null);
+  const [confirmTotpReset, setConfirmTotpReset] = useState<Account | null>(null);
 
   const { data, isLoading, error } = useAccounts({ limit: LIMIT, offset });
   const update = useUpdateAccount();
@@ -89,12 +90,7 @@ export function AccountsPage() {
                     <td>{account.totp_enabled ? t("common.yes") : t("common.no")}</td>
                     <td>{formatDateTime(account.last_login_at, language)}</td>
                     <td className="row-actions">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          update.mutate({ id: account.id, body: { reset_totp: true } })
-                        }
-                      >
+                      <button type="button" onClick={() => setConfirmTotpReset(account)}>
                         {t("accounts.resetTotp")}
                       </button>
                       <button
@@ -120,6 +116,21 @@ export function AccountsPage() {
       )}
 
       {creating ? <CreateAccountDialog onClose={() => setCreating(false)} /> : null}
+      {confirmTotpReset ? (
+        <ConfirmDialog
+          title={t("accounts.resetTotp")}
+          message={t("accounts.resetTotpConfirm", { name: confirmTotpReset.username })}
+          onConfirm={() =>
+            update.mutate(
+              { id: confirmTotpReset.id, body: { reset_totp: true } },
+              { onSuccess: () => setConfirmTotpReset(null) },
+            )
+          }
+          onCancel={() => setConfirmTotpReset(null)}
+          busy={update.isPending}
+        />
+      ) : null}
+
       {confirmDelete ? (
         <ConfirmDialog
           title={t("common.delete")}

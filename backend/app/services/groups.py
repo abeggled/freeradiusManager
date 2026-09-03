@@ -11,7 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.locking import named_lock
 from app.core.security import Principal
+from app.repositories.mgr.subjects import SubjectRepository
 from app.repositories.radius.groups import GroupRepository
+from app.repositories.radius.users import UserAttributeRepository
 from app.schemas.common import ApiWarning
 from app.schemas.groups import (
     GroupCreate,
@@ -32,6 +34,8 @@ class GroupService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repo = GroupRepository(session)
+        self.attrs = UserAttributeRepository(session)
+        self.subjects = SubjectRepository(session)
         self.audit = AuditService(session)
 
     async def search(self, query: str | None = None) -> list[GroupListItem]:
@@ -202,9 +206,19 @@ class GroupService:
         actor: Principal,
         actor_ip: str | None = None,
     ) -> int:
+        if payload.action == "add" and not await self.repo.exists(groupname):
+            raise NotFoundError(code="error.not_found", details={"groupname": groupname})
+
         changed = 0
         for username in payload.usernames:
             if payload.action == "add":
+                # Das RADIUS-Schema kennt keine Fremdschluessel: ohne diese
+                # Pruefung entstuende aus einem Tippfehler ein Phantom-Benutzer,
+                # der anschliessend in allen Listen auftaucht.
+                if not await self.attrs.exists_anywhere(username) and not await self.subjects.get(
+                    username
+                ):
+                    raise NotFoundError(code="error.not_found", details={"username": username})
                 changed += int(
                     await self.repo.add_membership(username, groupname, payload.priority)
                 )

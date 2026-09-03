@@ -508,3 +508,130 @@ async def test_group_listing_uses_batched_queries(session, admin_principal) -> N
         )
     items = await service.search()
     assert [i.vlan for i in items] == ["10", "11", "12", "13", "14"]
+
+
+# --- Elfte Runde -----------------------------------------------------------
+
+
+async def test_comma_separated_list_settings_are_accepted(monkeypatch) -> None:
+    """Die dokumentierte Schreibweise darf den Start nicht verhindern."""
+    from app.core.config import Settings
+
+    monkeypatch.setenv("FRM_TRUSTED_PROXIES", "10.0.0.0/8,192.168.0.0/16")
+    monkeypatch.setenv("FRM_CORS_ORIGINS", "https://a.example,https://b.example")
+    config = Settings()
+    assert config.trusted_proxies == ["10.0.0.0/8", "192.168.0.0/16"]
+    assert config.cors_origins == ["https://a.example", "https://b.example"]
+
+
+async def test_membership_endpoint_rejects_unknown_targets(session, admin_principal) -> None:
+    """Ohne Fremdschlüssel entstünden sonst Phantom-Objekte."""
+    from app.core.errors import NotFoundError
+    from app.repositories.directory import SubjectFilter
+    from app.schemas.groups import GroupCreate, MembershipChange
+    from app.services.groups import GroupService
+
+    service = GroupService(session)
+    await service.create(GroupCreate(groupname="g1", vlan="10"), actor=admin_principal)
+
+    with pytest.raises(NotFoundError):
+        await service.change_membership(
+            "g1", MembershipChange(usernames=["gibtsnicht"]), actor=admin_principal
+        )
+    with pytest.raises(NotFoundError):
+        await service.change_membership(
+            "andere", MembershipChange(usernames=["egal"]), actor=admin_principal
+        )
+
+    _, total = await UserService(session).search(SubjectFilter())
+    assert total == 0
+
+
+async def test_empty_cells_clear_values_on_import(session, admin_principal) -> None:
+    """Eine geleerte Zelle im Export muss den Wert auch entfernen."""
+    users = UserService(session)
+    await users.create(
+        UserCreate(
+            username="anna",
+            password="geheim123",
+            vlan="20",
+            expires_at=dt.datetime(2030, 1, 1, 12, 0),
+            meta={"note": "alt", "location": "Zürich"},
+        ),
+        actor=admin_principal,
+    )
+    before = await users.get("anna")
+    assert before.vlan == "20" and before.expires_at is not None
+
+    await ImportExportService(session).import_csv(
+        "username,vlan,expires_at,note,location\nanna,,,,\n",
+        kind="user",
+        dry_run=False,
+        actor=admin_principal,
+    )
+    after = await users.get("anna")
+    assert after.vlan is None
+    assert after.expires_at is None
+    assert after.note is None
+    assert after.location is None
+
+
+async def test_missing_columns_keep_values_on_import(session, admin_principal) -> None:
+    """Eine fehlende Spalte bleibt weiterhin ohne Wirkung."""
+    users = UserService(session)
+    await users.create(
+        UserCreate(username="anna", password="geheim123", vlan="20", meta={"note": "alt"}),
+        actor=admin_principal,
+    )
+    await ImportExportService(session).import_csv(
+        "username,owner\nanna,it@example.org\n",
+        kind="user",
+        dry_run=False,
+        actor=admin_principal,
+    )
+    detail = await users.get("anna")
+    assert detail.vlan == "20"
+    assert detail.note == "alt"
+    assert detail.owner == "it@example.org"
+
+
+async def test_account_fields_are_length_checked() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.schemas.accounts import AccountCreate
+
+    with pytest.raises(PydanticValidationError):
+        AccountCreate(username="a", password="ein-sicheres-passwort", email="x" * 300)
+    with pytest.raises(PydanticValidationError):
+        AccountCreate(username="a", password="ein-sicheres-passwort", language="klingonisch")
+
+
+async def test_multi_audience_token_requires_azp(monkeypatch) -> None:
+    """Ein Token, das einen anderen Client autorisiert, darf hier nicht gelten."""
+    from app.core.errors import AuthenticationError
+    from app.services import oidc as oidc_module
+    from app.services.oidc import OidcService
+
+    oidc_module._jwks_cache.clear()
+    settings.oidc_client_id = "manager"
+
+    async def fake_jwks(jwks_uri: str, *, force: bool = False) -> str:
+        return "keys"
+
+    claims = {
+        "iss": "https://idp",
+        "aud": ["manager", "andere-app"],
+        "azp": "andere-app",
+        "nonce": "n",
+        "sub": "s",
+    }
+    monkeypatch.setattr(OidcService, "_jwks", staticmethod(fake_jwks))
+    monkeypatch.setattr(OidcService, "_decode", lambda self, t, k, i: claims)
+
+    meta = {"jwks_uri": "https://idp/jwks", "issuer": "https://idp"}
+    with pytest.raises(AuthenticationError) as excinfo:
+        await OidcService()._verify_id_token("token", "n", meta)
+    assert excinfo.value.details["stage"] == "azp"
+
+    claims["azp"] = "manager"
+    assert (await OidcService()._verify_id_token("token", "n", meta))["sub"] == "s"

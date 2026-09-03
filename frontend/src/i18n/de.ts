@@ -215,6 +215,7 @@ export const de = {
   "accounts.active": "Aktiv",
   "accounts.totp": "TOTP",
   "accounts.resetTotp": "TOTP zurücksetzen",
+  "accounts.resetTotpConfirm": "TOTP von „{name}“ zurücksetzen? Der zweite Faktor muss danach neu eingerichtet werden, und laufende Sitzungen dieses Kontos enden.",
   "accounts.lastLogin": "Letzte Anmeldung",
   "accounts.email": "E-Mail",
   "accounts.displayName": "Anzeigename",

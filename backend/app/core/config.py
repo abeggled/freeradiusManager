@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import secrets
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy import URL
 
 CredentialType = Literal["cleartext", "nt", "both"]
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "production"] = "production"
     debug: bool = False
     root_path: str = ""
-    cors_origins: list[str] = Field(default_factory=list)
+    cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     # --- Datenbank -------------------------------------------------------
     db_host: str = "localhost"
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     cookie_domain: str | None = None
     require_totp_for_admin: bool = True
 
-    trusted_proxies: list[str] = Field(default_factory=list)
+    trusted_proxies: Annotated[list[str], NoDecode] = Field(default_factory=list)
     """Netze, deren ``X-Forwarded-For`` vertraut wird (z. B. ``10.0.0.0/8``).
 
     Leer bedeutet: der Header wird ignoriert und die Peer-Adresse verwendet.
@@ -131,6 +131,11 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", "trusted_proxies", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
+        """Kommagetrennte Liste aus der Umgebung.
+
+        ``NoDecode`` ist noetig, weil pydantic-settings Listenfelder sonst als
+        JSON liest und ``10.0.0.0/8,192.168.0.0/16`` den Start abbrechen wuerde.
+        """
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value

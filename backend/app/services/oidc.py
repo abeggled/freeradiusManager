@@ -136,12 +136,17 @@ class OidcService:
             raise AuthenticationError(code="error.unauthenticated", details={"stage": "issuer"})
         if claims.get("nonce") != nonce:
             raise AuthenticationError(code="error.unauthenticated", details={"stage": "nonce"})
-        if claims.get("aud") not in (self.config.oidc_client_id, [self.config.oidc_client_id]):
-            aud = claims.get("aud")
+        aud = claims.get("aud")
+        if aud not in (self.config.oidc_client_id, [self.config.oidc_client_id]):
             if not (isinstance(aud, list) and self.config.oidc_client_id in aud):
                 raise AuthenticationError(
                     code="error.unauthenticated", details={"stage": "audience"}
                 )
+            # Mehrere Audiences: dann muss "azp" diesen Client nennen (OIDC Core
+            # 3.1.3.7). Sonst genuegte ein Token, das einen anderen Client
+            # autorisiert, fuer eine Sitzung hier.
+            if claims.get("azp") != self.config.oidc_client_id:
+                raise AuthenticationError(code="error.unauthenticated", details={"stage": "azp"})
         return dict(claims)
 
     @staticmethod

@@ -127,6 +127,8 @@ class ParsedRow:
     username: str
     groups: list[MembershipIn]
     groups_supplied: bool
+    expiry_supplied: bool
+    vlan_supplied: bool
     expires_at: dt.datetime | None
     vlan: str | None
     password: str | None
@@ -164,16 +166,18 @@ class ImportReport:
     rows: list[ImportRow] = field(default_factory=list)
 
 
-def _meta_from(row: dict[str, str]) -> SubjectMeta:
-    """Baut die Metadaten nur aus tatsaechlich vorhandenen Spalten.
+META_FIELDS = ("display_name", "note", "owner", "device_type", "location", "inventory_no")
 
-    Wuerden fehlende Spalten als ``None`` gesetzt, loeschte ein Import mit nur
-    ``username,password`` beim naechsten Lauf Notiz, Standort und Inventarnummer.
+
+def _meta_from(row: dict[str, str]) -> SubjectMeta:
+    """Baut die Metadaten aus den vorhandenen Spalten.
+
+    Entscheidend ist die Anwesenheit der Spalte, nicht ihr Inhalt: eine fehlende
+    Spalte laesst den Wert unangetastet, eine vorhandene leere Zelle loescht ihn.
+    Ohne diese Unterscheidung waere weder das eine noch das andere moeglich.
     """
-    present = {
-        field: row[field]
-        for field in ("display_name", "note", "owner", "device_type", "location", "inventory_no")
-        if row.get(field)
+    present: dict[str, str | None] = {
+        field: (row[field] or None) for field in META_FIELDS if field in row
     }
     return SubjectMeta(**present)
 
@@ -232,7 +236,9 @@ def _parse_row(row: dict[str, str], *, username: str, require_password: bool) ->
         # fehlende Spalte laesst die Mitgliedschaften unangetastet.
         groups_supplied="groups" in row,
         expires_at=_parse_date(row.get("expires_at")),
+        expiry_supplied="expires_at" in row,
         vlan=row.get("vlan") or None,
+        vlan_supplied="vlan" in row,
         password=password,
         credential_type=CredentialType(credential_raw) if credential_raw else None,
         disabled=_parse_bool(row.get("disabled")),
@@ -444,8 +450,11 @@ class ImportExportService:
             parsed.username,
             UserUpdate(
                 expires_at=parsed.expires_at,
+                # Vorhandene, aber leere Zelle: ausdruecklich loeschen.
+                clear_expiry=parsed.expiry_supplied and parsed.expires_at is None,
                 groups=parsed.groups if parsed.groups_supplied else None,
                 vlan=parsed.vlan,
+                clear_vlan=parsed.vlan_supplied and parsed.vlan is None,
                 meta=parsed.meta,
             ),
             actor=actor,

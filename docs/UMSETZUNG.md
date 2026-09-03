@@ -75,13 +75,13 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Zehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11, 12,
-11, 10 und 10 Befunde;
+Elf Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11, 12,
+11, 10, 10 und 9 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
-dabei von 9 auf 1 bis 2 je Runde zurück; die späteren Runden betreffen
-zunehmend Nebenpfade und Nebenläufigkeit.
+dabei von 9 auf null zurück; die späteren Runden betreffen zunehmend Nebenpfade,
+Nebenläufigkeit und Bedienkomfort.
 
 Drei Befunde der vierten Runde betrafen unvollständige Korrekturen aus früheren
 Runden – der Hintergrundjob für die Aufbewahrungsfrist war nie gestartet worden,
@@ -331,6 +331,22 @@ Die zehnte Runde:
   aus einem Tippfehler Phantom-Objekte zu erzeugen.
 * Anmeldeversuche gegen gesperrte oder deaktivierte Konten stehen im Audit-Log;
   überlange OIDC-Benutzernamen werden abgewiesen; die NAS-Notiz wird ausgeliefert.
+
+Die elfte Runde (keine P1-Befunde mehr):
+
+* **Kommagetrennte Listeneinstellungen brachen den Start.** `FRM_TRUSTED_PROXIES`
+  in der dokumentierten Schreibweise wurde von pydantic-settings als JSON gelesen
+  – die Anwendung startete nicht. Die Felder sind jetzt als „nicht dekodieren“
+  markiert.
+* Mitgliedschaften über `POST /groups/{name}/members` prüfen Gruppe und Benutzer,
+  statt aus einem Tippfehler Phantom-Objekte zu erzeugen.
+* Beim CSV-Import unterscheidet eine fehlende Spalte von einer vorhandenen, aber
+  leeren Zelle: nur letztere löscht Wert, VLAN, Ablaufdatum oder Metadaten.
+* Kontofelder haben Längengrenzen; die Sprache ist auf `de`/`en` beschränkt.
+* Ein OIDC-Token mit mehreren Audiences muss zusätzlich `azp` auf diesen Client
+  setzen; die automatische Kontoanlage steht im Audit-Log.
+* Session-Aktionen nutzen die Zeilen-ID, weil `acctuniqueid` im Schema leer sein
+  darf; das Zurücksetzen von TOTP verlangt eine Bestätigung.
 
 ## Prüfschritte
 

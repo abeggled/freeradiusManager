@@ -240,6 +240,19 @@ async def oidc_callback(
             password_hash=hash_password(secrets.token_urlsafe(32)),
         )
         await service.repo.add(account)
+        # Auch die automatische Anlage ist eine schreibende Aktion (FR-9).
+        await service.audit.log(
+            action="account.create",
+            object_type="account",
+            object_id=account.username,
+            actor_ip=actor_ip,
+            after={
+                "role": account.role.value,
+                "source": "oidc",
+                "oidc_subject": subject,
+                "email": account.email,
+            },
+        )
     if not account.is_active:
         # Ein deaktiviertes Konto darf sich auch ueber OIDC nicht neu anmelden.
         raise AuthenticationError(code="error.account_disabled")

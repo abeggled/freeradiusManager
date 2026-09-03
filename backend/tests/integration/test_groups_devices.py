@@ -10,10 +10,11 @@ from app.models.mgr import SubjectType
 from app.models.radius import RadCheck, RadGroupReply
 from app.repositories.directory import SubjectFilter
 from app.schemas.groups import GroupCreate, GroupUpdate, MembershipChange
-from app.schemas.users import AttributeIn, DeviceCreate, DeviceUpdate, SubjectMeta
+from app.schemas.users import AttributeIn, DeviceCreate, DeviceUpdate, SubjectMeta, UserCreate
 from app.services.devices import DeviceService
 from app.services.groups import GroupService
 from app.services.settings_service import KEY_MAC_FORMAT, SettingsService
+from app.services.users import UserService
 
 pytestmark = pytest.mark.asyncio
 
@@ -54,6 +55,10 @@ async def test_duplicate_group_rejected(session, admin_principal) -> None:
 async def test_group_delete_requires_force_when_members_exist(session, admin_principal) -> None:
     service = GroupService(session)
     await service.create(GroupCreate(groupname="g1", vlan="10"), actor=admin_principal)
+    # Mitgliedschaften setzen ein vorhandenes Subjekt voraus.
+    await UserService(session).create(
+        UserCreate(username="anna", password="geheim123"), actor=admin_principal
+    )
     await service.change_membership(
         "g1", MembershipChange(usernames=["anna"], action="add"), actor=admin_principal
     )
@@ -66,6 +71,9 @@ async def test_group_delete_requires_force_when_members_exist(session, admin_pri
 async def test_group_rename_moves_memberships(session, admin_principal) -> None:
     service = GroupService(session)
     await service.create(GroupCreate(groupname="alt", vlan="10"), actor=admin_principal)
+    await UserService(session).create(
+        UserCreate(username="anna", password="geheim123"), actor=admin_principal
+    )
     await service.change_membership(
         "alt", MembershipChange(usernames=["anna"], action="add"), actor=admin_principal
     )

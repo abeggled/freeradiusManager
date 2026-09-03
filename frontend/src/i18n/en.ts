@@ -217,6 +217,7 @@ export const en: Record<TranslationKey, string> = {
   "accounts.active": "Active",
   "accounts.totp": "TOTP",
   "accounts.resetTotp": "Reset TOTP",
+  "accounts.resetTotpConfirm": "Reset TOTP for “{name}”? The second factor must be enrolled again and the account's active sessions end.",
   "accounts.lastLogin": "Last login",
   "accounts.email": "E-mail",
   "accounts.displayName": "Display name",
