@@ -35,6 +35,7 @@ async def list_authlog(
         date_from=date_from,
         date_to=date_to,
     )
+    limit = clamp_limit(limit)
     items, next_cursor = await AuthLogService(session).search(flt, limit=limit, cursor=cursor)
     return CursorResponse(items=items, meta=CursorMeta(limit=limit, next_cursor=next_cursor))
 

@@ -82,7 +82,9 @@ class DeviceService:
         actor_ip: str | None = None,
         language: str = "de",
     ) -> UserDetail:
-        username = await self.normalise(payload.mac)
+        # ueber resolve(): sonst entstuende nach einem Formatwechsel ein zweiter
+        # Datensatz fuer dasselbe physische Geraet.
+        username = await self.resolve(payload.mac)
         password = payload.password or (username if payload.use_mac_as_password else None)
         detail = await self.users.create(
             UserCreate(
@@ -104,6 +106,18 @@ class DeviceService:
         # Einstellung ihn vorsieht - hier wird nichts doppelt ergaenzt.
         return detail
 
+    async def _device_username(self, mac: str) -> str:
+        """Loest die MAC auf und stellt sicher, dass es ein Geraet ist.
+
+        Ein Benutzer mit MAC-foermigem Namen darf nicht ueber die
+        Geraete-Endpunkte veraendert oder geloescht werden.
+        """
+        username = await self.resolve(mac)
+        subject = await self.users.subjects.get(username)
+        if subject is None or subject.subject_type is not SubjectType.DEVICE:
+            raise NotFoundError(code="error.not_found", details={"mac": mac})
+        return username
+
     async def update(
         self,
         mac: str,
@@ -113,7 +127,7 @@ class DeviceService:
         actor_ip: str | None = None,
         language: str = "de",
     ) -> UserDetail:
-        username = await self.resolve(mac)
+        username = await self._device_username(mac)
         new_username = await self.normalise(payload.mac) if payload.mac else None
         return await self.users.update(
             username,
@@ -132,11 +146,11 @@ class DeviceService:
         )
 
     async def delete(self, mac: str, *, actor: Principal, actor_ip: str | None = None) -> None:
-        username = await self.resolve(mac)
+        username = await self._device_username(mac)
         await self.users.delete(username, actor=actor, actor_ip=actor_ip)
 
     async def set_disabled(
         self, mac: str, disabled: bool, *, actor: Principal, actor_ip: str | None = None
     ) -> None:
-        username = await self.resolve(mac)
+        username = await self._device_username(mac)
         await self.users.set_disabled(username, disabled, actor=actor, actor_ip=actor_ip)

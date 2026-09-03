@@ -37,8 +37,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 OIDC_STATE_COOKIE = "frm_oidc"
 
 
-def _issue_session(response: Response, account: MgrAccount) -> None:
-    token, _ = create_session_token(account.id, account.username, account.role, account.language)
+def _issue_session(response: Response, account: MgrAccount, *, mfa: bool = False) -> None:
+    token, _ = create_session_token(
+        account.id, account.username, account.role, account.language, mfa=mfa
+    )
     set_session_cookie(response, token)
 
 
@@ -54,6 +56,7 @@ async def login(
     login_ip_limiter.check(str(actor_ip))
     login_limiter.check(f"{actor_ip}:{payload.username}")
     service = AccountService(session)
+    mfa_completed = False
     account = await service.authenticate(
         payload.username, payload.password, actor_ip=actor_ip, reset_failures=False
     )
@@ -65,6 +68,7 @@ async def login(
             # waere die Kontosperre durch wiederholtes Neuanfordern umgehbar.
             return LoginResponse(status="totp_required", challenge=service.challenge_for(account))
         await service.verify_totp_code(account, payload.totp_code, actor_ip=actor_ip)
+        mfa_completed = True
     elif service.requires_totp_enrollment(account):
         # Eigener Scope: dieses Token darf ausschliesslich die Ersteinrichtung
         # freischalten, nie einen bereits aktiven Faktor ersetzen.
@@ -78,7 +82,7 @@ async def login(
     # Kontingent bleibt bestehen: sonst genuegte eine eigene gueltige Kennung,
     # um nach jedem Erfolg wieder beliebig viele fremde Namen zu probieren.
     login_limiter.reset(f"{actor_ip}:{payload.username}")
-    _issue_session(response, account)
+    _issue_session(response, account, mfa=mfa_completed)
     return LoginResponse(status="authenticated", account=AccountOut.model_validate(account))
 
 
@@ -97,8 +101,9 @@ async def login_totp(
     login_ip_limiter.check(str(actor_ip))
     await service.verify_totp_code(account, payload.totp_code, actor_ip=actor_ip)
     login_limiter.reset(f"totp:{account.id}")
+    await service.clear_failures(account)
     await service.mark_login(account, actor_ip)
-    _issue_session(response, account)
+    _issue_session(response, account, mfa=True)
     return LoginResponse(status="authenticated", account=AccountOut.model_validate(account))
 
 
@@ -122,8 +127,11 @@ async def confirm_totp(
     service = AccountService(session)
     account = await service.account_from_challenge(payload.challenge, scope=TOTP_ENROLL_SCOPE)
     await service.confirm_totp(account, payload.totp_code, actor_ip=actor_ip)
+    # Auch der Einrichtungsweg ist eine vollstaendige Anmeldung: der
+    # zurueckgehaltene Fehlerzaehler wird jetzt geleert.
+    await service.clear_failures(account)
     await service.mark_login(account, actor_ip)
-    _issue_session(response, account)
+    _issue_session(response, account, mfa=True)
     return LoginResponse(status="authenticated", account=AccountOut.model_validate(account))
 
 
@@ -227,11 +235,14 @@ async def oidc_callback(
     if not account.is_active:
         # Ein deaktiviertes Konto darf sich auch ueber OIDC nicht neu anmelden.
         raise AuthenticationError(code="error.account_disabled")
-    await service.apply_mapped_role(account, Role(mapped))
+    await service.apply_mapped_role(account, Role(mapped), actor_ip=actor_ip)
     await service.mark_login(account, actor_ip)
 
-    redirect = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
-    _issue_session(redirect, account)
+    redirect = RedirectResponse(
+        url=settings.root_path or "/", status_code=status.HTTP_303_SEE_OTHER
+    )
+    # Der Identity-Provider hat die Anmeldung vollstaendig durchgefuehrt.
+    _issue_session(redirect, account, mfa=True)
     redirect.delete_cookie(OIDC_STATE_COOKIE, path="/")
     return redirect
 

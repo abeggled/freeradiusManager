@@ -124,6 +124,23 @@ async def current_principal(request: Request, response: Response, session: Sessi
     if account is None or not account.is_active:
         raise AuthenticationError(code="error.unauthenticated")
 
+    # Eine Rollenaenderung beendet die laufende Sitzung. Der Entzug wirkt damit
+    # sofort; eine Erweiterung dagegen setzt eine neue Anmeldung voraus - sonst
+    # erhielte eine nur mit Passwort begonnene Sitzung Administratorrechte
+    # entgegen der 2FA-Pflicht (FR-10).
+    if account.role is not claims.role:
+        raise AuthenticationError(
+            code="error.reauthentication_required", details={"reason": "role_changed"}
+        )
+    if (
+        account.role is Role.ADMINISTRATOR
+        and settings.require_totp_for_admin
+        and not (claims.mfa and account.totp_enabled)
+    ):
+        raise AuthenticationError(
+            code="error.reauthentication_required", details={"reason": "mfa_required"}
+        )
+
     principal = Principal(
         account_id=account.id,
         username=account.username,
@@ -131,6 +148,7 @@ async def current_principal(request: Request, response: Response, session: Sessi
         language=account.language,
         session_id=claims.session_id,
         absolute_expiry=claims.absolute_expiry,
+        mfa=claims.mfa,
     )
     request.state.principal = principal
 
@@ -145,6 +163,7 @@ async def current_principal(request: Request, response: Response, session: Sessi
             principal.language,
             session_id=principal.session_id,
             absolute_expiry=principal.absolute_expiry,
+            mfa=principal.mfa,
         )
         set_session_cookie(response, refreshed)
     return principal

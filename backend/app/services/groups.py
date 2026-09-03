@@ -145,6 +145,10 @@ class GroupService:
     async def delete(
         self, groupname: str, *, actor: Principal, actor_ip: str | None = None, force: bool = False
     ) -> int:
+        if not await self.repo.exists(groupname):
+            # Sonst meldete ein veralteter Aufruf Erfolg und schriebe einen
+            # Audit-Eintrag fuer ein Objekt, das es nie gab.
+            raise NotFoundError(code="error.not_found", details={"groupname": groupname})
         members = await self.repo.member_count(groupname)
         if members and not force:
             raise ValidationError(

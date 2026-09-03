@@ -75,10 +75,10 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Sechs Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10 und 11
-Befunde;
+Sieben Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11 und
+12 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
-sowie `test_review_fixes.py` bis `test_review_fixes_5.py` unter
+sowie `test_review_fixes.py` bis `test_review_fixes_6.py` unter
 `backend/tests/integration/`).
 
 Drei Befunde der vierten Runde betrafen unvollständige Korrekturen aus früheren
@@ -242,6 +242,29 @@ Die sechste Runde:
 * Die Oberfläche leitet Asset- und API-Adressen aus `<base href>` ab, das das
   Backend auf `FRM_ROOT_PATH` setzt; das Sprachcookie wird beim Start
   abgeglichen; Sessions haben Zeitraumfilter.
+
+Die siebte Runde:
+
+* **Eine Rollenänderung beendet die laufende Sitzung.** Zuvor übernahm der
+  Manager die neue Rolle sofort aus der Datenbank – eine nur mit Passwort
+  begonnene Operator-Sitzung wurde damit zur Administrator-Sitzung, entgegen der
+  2FA-Pflicht. Das Token merkt sich nun, ob ein zweiter Faktor geprüft wurde;
+  Rollenwechsel und ein zurückgesetztes TOTP erzwingen eine neue Anmeldung.
+* **Der Gruppeneditor filtert nur die drei VLAN-Attribute heraus.** Vorher hätte
+  das Speichern im Expertenmodus jedes andere `Tunnel-*`-Attribut gelöscht.
+* **Die Schemaprüfung leitet sich aus den ORM-Modellen ab** statt aus einer von
+  Hand gepflegten Teilliste. Ein Schema ohne `radacct.realm` oder
+  `radpostauth.class` wird jetzt beim Start abgewiesen, statt erst zur Laufzeit
+  mit „unknown column“ zu scheitern.
+* Geräte-Endpunkte prüfen den Objekttyp, und das Anlegen läuft über dieselbe
+  Auflösung wie Lesen und Ändern; die Diagnose kennt reine Gruppenzuordnungen;
+  das Löschen einer nicht vorhandenen Gruppe ist ein 404 statt eines
+  Erfolgseintrags im Audit-Log.
+* Der Einrichtungsweg für TOTP schliesst die Anmeldung vollständig ab; von OIDC
+  ausgelöste Rollenwechsel stehen im Audit-Log; die gemeldete Seitengrösse
+  entspricht der gelieferten.
+* Der Router kennt den Basispfad; eine geänderte Filterung leert die Auswahl für
+  Sammelaktionen.
 
 ## Prüfschritte
 

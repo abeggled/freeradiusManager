@@ -4,6 +4,7 @@
   "error.conflict": "Der Datensatz existiert bereits oder wurde zwischenzeitlich geändert.",
   "error.validation": "Die Eingabe ist ungültig.",
   "error.unauthenticated": "Anmeldung erforderlich.",
+  "error.reauthentication_required": "Die Berechtigungen haben sich geändert. Bitte neu anmelden.",
   "error.totp_required": "Zweiter Faktor (TOTP) erforderlich.",
   "error.totp_invalid": "Der eingegebene Einmalcode ist ungültig.",
   "error.forbidden": "Für diese Aktion fehlen die Berechtigungen.",

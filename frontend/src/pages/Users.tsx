@@ -1,5 +1,5 @@
 import type { ColumnDef } from "@tanstack/react-table";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { buildQuery, download } from "@/api/client";
@@ -69,6 +69,13 @@ export function UsersPage() {
   const query = { ...filters, limit: LIMIT, offset };
 
   const { data, isLoading, error } = useUsers(query);
+
+  // Nicht mehr sichtbare Einträge dürfen in einer Sammelaktion nicht
+  // mitlaufen: die Bestätigung zeigt nur eine Anzahl, keine Namen.
+  useEffect(() => {
+    setSelected([]);
+    setBulkAll(false);
+  }, [search, group, status, includeDevices, offset]);
   const groups = useGroups();
   const bulkAction = useBulkAction();
 

@@ -14,6 +14,13 @@ import { ConfirmDialog, ErrorBox, Field, Modal, Spinner, WarningList } from "@/c
 import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n";
 
+/** Genau die Attribute, die der geführte VLAN-Dialog verwaltet. */
+const VLAN_ATTRIBUTES = new Set([
+  "tunnel-type",
+  "tunnel-medium-type",
+  "tunnel-private-group-id",
+]);
+
 export function GroupsPage() {
   const { t } = useI18n();
   const { canWrite } = usePermissions();
@@ -138,7 +145,9 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
   const currentReplies =
     replies ??
     (detail?.reply_attributes
-      .filter((a) => !a.attribute.toLowerCase().startsWith("tunnel-"))
+      // Nur die drei Attribute des VLAN-Dialogs ausblenden. Ein Filter über
+      // alle "Tunnel-*" löschte beim Speichern etwa Tunnel-Assignment-Id mit.
+      .filter((a) => !VLAN_ATTRIBUTES.has(a.attribute.toLowerCase()))
       .map((a) => ({ attribute: a.attribute, op: a.op, value: a.value })) ?? []);
 
   const submit = (event: React.FormEvent) => {

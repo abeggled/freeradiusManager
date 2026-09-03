@@ -55,7 +55,10 @@ class AuthLogService:
 
         hints: list[DiagnosisHint] = []
         by_name = {row.attribute.lower(): row for row in checks}
-        exists = bool(checks or replies or meta)
+        # Eine reine Gruppenzuordnung zaehlt ebenfalls: solche Bestandsnamen
+        # sind sichtbar und aufrufbar, die Diagnose darf sie nicht als
+        # unbekannt melden.
+        exists = bool(checks or replies or meta or memberships)
         status = "unknown"
 
         if not exists:

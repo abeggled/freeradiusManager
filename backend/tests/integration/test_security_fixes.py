@@ -68,8 +68,12 @@ async def test_disabling_account_revokes_existing_session(session, client) -> No
     assert response.json()["code"] == "error.unauthenticated"
 
 
-async def test_demotion_takes_effect_without_new_login(session, client) -> None:
-    """Die Rolle stammt aus der Datenbank, nicht aus dem Token."""
+async def test_role_change_ends_the_running_session(session, client) -> None:
+    """Eine Rollenaenderung beendet die Sitzung sofort.
+
+    Der Entzug wirkt damit ohne Verzoegerung; umgekehrt kann eine Erweiterung
+    nicht ohne neue Anmeldung mit zweitem Faktor wirksam werden.
+    """
     account, _ = await _account(session, "operator", Role.OPERATOR)
     await _login(client)
     created = await client.post("/api/v1/users", json={"username": "anna", "password": "geheim123"})
@@ -81,7 +85,8 @@ async def test_demotion_takes_effect_without_new_login(session, client) -> None:
     blocked = await client.post(
         "/api/v1/users", json={"username": "bruno", "password": "geheim123"}
     )
-    assert blocked.status_code == 403
+    assert blocked.status_code == 401
+    assert blocked.json()["code"] == "error.reauthentication_required"
 
 
 async def test_deleted_account_cannot_continue_session(session, client) -> None:

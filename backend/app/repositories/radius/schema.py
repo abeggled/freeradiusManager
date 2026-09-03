@@ -11,31 +11,25 @@ from dataclasses import dataclass, field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-REQUIRED_COLUMNS: dict[str, set[str]] = {
-    "radcheck": {"id", "username", "attribute", "op", "value"},
-    "radreply": {"id", "username", "attribute", "op", "value"},
-    "radgroupcheck": {"id", "groupname", "attribute", "op", "value"},
-    "radgroupreply": {"id", "groupname", "attribute", "op", "value"},
-    "radusergroup": {"username", "groupname", "priority"},
-    "radacct": {
-        "radacctid",
-        "acctsessionid",
-        "acctuniqueid",
-        "username",
-        "nasipaddress",
-        "acctstarttime",
-        "acctstoptime",
-        "acctsessiontime",
-        "acctinputoctets",
-        "acctoutputoctets",
-        "callingstationid",
-        "calledstationid",
-        "acctterminatecause",
-        "framedipaddress",
-    },
-    "radpostauth": {"id", "username", "pass", "reply", "authdate"},
-    "nas": {"id", "nasname", "shortname", "type", "secret"},
-}
+
+def _mapped_columns() -> dict[str, set[str]]:
+    """Alle Spalten, die die ORM-Modelle tatsaechlich selektieren.
+
+    Aus den Modellen abgeleitet statt von Hand gepflegt: eine Liste, die nur
+    einen Teil nennt, liesse ein unvollstaendiges Schema den Start passieren und
+    erst zur Laufzeit mit "unknown column" scheitern.
+    """
+    from app.models import Base
+    from app.models.base import RADIUS_TABLES
+
+    return {
+        name: {column.name.lower() for column in table.columns}
+        for name, table in Base.metadata.tables.items()
+        if name in RADIUS_TABLES
+    }
+
+
+REQUIRED_COLUMNS: dict[str, set[str]] = _mapped_columns()
 
 RECOMMENDED_INDEX_COLUMNS: dict[str, set[str]] = {
     "radacct": {"username", "callingstationid", "acctstarttime", "acctstoptime"},

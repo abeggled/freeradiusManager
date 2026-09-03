@@ -107,7 +107,9 @@ class AccountService:
         await self.session.commit()
         return account
 
-    async def apply_mapped_role(self, account: MgrAccount, role: Role) -> None:
+    async def apply_mapped_role(
+        self, account: MgrAccount, role: Role, *, actor_ip: str | None = None
+    ) -> None:
         """Uebernimmt die aus den OIDC-Claims abgeleitete Rolle.
 
         Der letzte aktive Administrator wird dabei nicht herabgestuft - sonst
@@ -121,7 +123,18 @@ class AccountService:
             and await self.repo.count_active_administrators(exclude_id=account.id, lock=True) == 0
         ):
             raise ValidationError(code="error.last_administrator")
+        previous = account.role
         account.role = role
+        # Auch eine vom Identity-Provider ausgeloeste Aenderung ist eine
+        # schreibende Aktion und gehoert ins Protokoll (FR-9).
+        await self.audit.log(
+            action="account.role_mapped",
+            object_type="account",
+            object_id=account.username,
+            actor_ip=actor_ip,
+            before={"role": previous.value},
+            after={"role": role.value, "source": "oidc"},
+        )
         await self.session.commit()
 
     @staticmethod

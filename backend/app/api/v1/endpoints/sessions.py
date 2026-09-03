@@ -7,6 +7,7 @@ import datetime as dt
 from fastapi import APIRouter
 
 from app.api.deps import ReaderUser, SessionDep
+from app.core.pagination import clamp_limit
 from app.repositories.radius.acct import SessionFilter
 from app.schemas.common import CursorMeta, CursorResponse
 from app.schemas.sessions import SessionItem
@@ -42,6 +43,9 @@ async def list_sessions(
         start_to=start_to,
         active_only=active_only,
     )
+    # Der Dienst begrenzt die Seitengroesse; gemeldet wird der tatsaechliche
+    # Wert, sonst passte die Angabe nicht zur gelieferten Zeilenzahl.
+    limit = clamp_limit(limit)
     items, next_cursor, approx = await SessionService(session).search(
         flt, limit=limit, cursor=cursor
     )

@@ -27,6 +27,8 @@ class Principal:
     language: str
     session_id: str
     absolute_expiry: int
+    mfa: bool = False
+    """Ob diese Sitzung mit zweitem Faktor begonnen wurde."""
 
     def has_role(self, *roles: Role) -> bool:
         return self.role in roles
@@ -53,6 +55,7 @@ def create_session_token(
     config: Settings | None = None,
     session_id: str | None = None,
     absolute_expiry: int | None = None,
+    mfa: bool = False,
 ) -> tuple[str, int]:
     """Erzeugt das Session-JWT. Rueckgabe: (Token, Ablauf als Unix-Zeit)."""
     config = config or settings
@@ -69,6 +72,7 @@ def create_session_token(
         "role": role.value,
         "lang": language,
         "sid": session_id or secrets.token_urlsafe(16),
+        "mfa": mfa,
         "abs": absolute,
         "scope": "session",
         "iat": int(now.timestamp()),
@@ -136,6 +140,7 @@ def principal_from_token(token: str, *, config: Settings | None = None) -> Princ
         language=str(payload.get("lang", "de")),
         session_id=str(payload.get("sid", "")),
         absolute_expiry=absolute,
+        mfa=bool(payload.get("mfa", False)),
     )
 
 

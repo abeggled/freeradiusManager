@@ -4,6 +4,7 @@
   "error.conflict": "The record already exists or was modified in the meantime.",
   "error.validation": "The input is invalid.",
   "error.unauthenticated": "Authentication required.",
+  "error.reauthentication_required": "Your permissions changed. Please sign in again.",
   "error.totp_required": "Second factor (TOTP) required.",
   "error.totp_invalid": "The one-time code is invalid.",
   "error.forbidden": "You lack the permissions for this action.",

@@ -26,7 +26,9 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
-        <BrowserRouter>
+        {/* Der Basispfad stammt aus <base href>, das das Backend auf
+            FRM_ROOT_PATH setzt – sonst greift unter einem Präfix keine Route. */}
+        <BrowserRouter basename={new URL(document.baseURI).pathname}>
           <App />
         </BrowserRouter>
       </I18nProvider>

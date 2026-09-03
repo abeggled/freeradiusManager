@@ -59,6 +59,12 @@ class TotpRequiredError(AuthenticationError):
     code = "error.totp_required"
 
 
+class ReauthenticationRequiredError(AuthenticationError):
+    """Rollen- oder 2FA-Zustand hat sich geaendert; die Sitzung endet."""
+
+    code = "error.reauthentication_required"
+
+
 class PermissionDeniedError(AppError):
     status_code = 403
     code = "error.forbidden"
