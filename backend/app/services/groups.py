@@ -139,11 +139,16 @@ class GroupService:
     ) -> GroupDetail:
         before = await self.get(groupname)
         if payload.groupname and payload.groupname != groupname:
-            if await self.repo.exists(payload.groupname):
-                raise ConflictError(
-                    code="error.group_exists", details={"groupname": payload.groupname}
-                )
-            await self.repo.rename_group(groupname, payload.groupname)
+            # Unter derselben Sperre wie das Anlegen: sonst koennten zwei
+            # Umbenennungen auf denselben Zielnamen beide durchgehen und die
+            # Gruppen verschmelzen (die RADIUS-Tabellen kennen keine
+            # Eindeutigkeit).
+            async with named_lock(self.session, f"group:{payload.groupname}"):
+                if await self.repo.exists(payload.groupname):
+                    raise ConflictError(
+                        code="error.group_exists", details={"groupname": payload.groupname}
+                    )
+                await self.repo.rename_group(groupname, payload.groupname)
             groupname = payload.groupname
 
         # Jede Sammlung wird einzeln betrachtet: eine ausgelassene bleibt
@@ -222,9 +227,10 @@ class GroupService:
                     username
                 ):
                     raise NotFoundError(code="error.not_found", details={"username": username})
-                changed += int(
-                    await self.repo.add_membership(username, groupname, payload.priority)
-                )
+                async with named_lock(self.session, f"member:{username}:{groupname}"):
+                    changed += int(
+                        await self.repo.add_membership(username, groupname, payload.priority)
+                    )
             else:
                 changed += await self.repo.remove_membership(username, groupname)
         await self.audit.log(

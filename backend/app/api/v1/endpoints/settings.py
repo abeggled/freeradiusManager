@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from app.api.deps import AdminUser, ClientIp, ReaderUser, SessionDep
+from app.api.deps import AdminUser, ClientIp, SessionDep
 from app.core.mac import MAC_FORMATS
 from app.models.mgr import CredentialType
 from app.services.audit import AuditService
@@ -16,7 +16,10 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 @router.get("")
-async def read_settings(session: SessionDep, _: ReaderUser) -> dict[str, Any]:
+async def read_settings(session: SessionDep, _: AdminUser) -> dict[str, Any]:
+    """Systemeinstellungen - wie das Aendern den Administratoren vorbehalten
+    (Abschnitt 2). Einzelne Werte, die die Oberflaeche fuer alle Rollen braucht,
+    liefern die jeweiligen Fachendpunkte."""
     return {
         "values": await SettingsService(session).all(),
         "options": {

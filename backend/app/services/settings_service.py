@@ -76,7 +76,9 @@ class SettingsService:
             if key == KEY_DEFAULT_CREDENTIAL and value not in {c.value for c in CredentialType}:
                 raise ValidationError(code="error.validation", details={"key": key})
             if key in (KEY_AUDIT_RETENTION, KEY_ACCT_RETENTION_HINT) and (
-                not isinstance(value, int) or value < 1
+                # ``bool`` ist in Python ein ``int``: ``True`` wuerde sonst als
+                # ein Tag gelesen und der Job loeschte fast das ganze Audit-Log.
+                isinstance(value, bool) or not isinstance(value, int) or value < 1
             ):
                 raise ValidationError(code="error.validation", details={"key": key})
             await self.repo.set(key, value, updated_by)

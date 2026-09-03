@@ -7,7 +7,12 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.common import ApiWarning
-from app.schemas.users import AttributeIn, AttributeOut, validate_groupname
+from app.schemas.users import (
+    MAX_ATTRIBUTES,
+    AttributeIn,
+    AttributeOut,
+    validate_groupname,
+)
 
 
 class GroupListItem(BaseModel):
@@ -32,8 +37,8 @@ class GroupCreate(BaseModel):
 
     vlan: str | None = Field(default=None, max_length=64)
     clear_vlan: bool = False
-    check_attributes: list[AttributeIn] = Field(default_factory=list)
-    reply_attributes: list[AttributeIn] = Field(default_factory=list)
+    check_attributes: list[AttributeIn] = Field(default_factory=list, max_length=MAX_ATTRIBUTES)
+    reply_attributes: list[AttributeIn] = Field(default_factory=list, max_length=MAX_ATTRIBUTES)
 
 
 class GroupUpdate(BaseModel):
@@ -46,8 +51,8 @@ class GroupUpdate(BaseModel):
 
     vlan: str | None = None
     clear_vlan: bool = False
-    check_attributes: list[AttributeIn] | None = None
-    reply_attributes: list[AttributeIn] | None = None
+    check_attributes: list[AttributeIn] | None = Field(default=None, max_length=MAX_ATTRIBUTES)
+    reply_attributes: list[AttributeIn] | None = Field(default=None, max_length=MAX_ATTRIBUTES)
 
 
 class MembershipChange(BaseModel):

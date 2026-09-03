@@ -1029,3 +1029,126 @@ async def test_credential_type_only_import_takes_effect(session, admin_principal
     )
     rows = (await session.scalars(select(RadCheck).where(RadCheck.username == "anna"))).all()
     assert {r.attribute for r in rows} == {"NT-Password"}
+
+
+# --- Fünfzehnte Runde ------------------------------------------------------
+
+
+async def test_oidc_subject_whitespace_is_rejected(session, client, monkeypatch) -> None:
+    """Ein getrimmtes Subject könnte die Sitzung eines anderen Kontos erhalten."""
+    from app.api.v1.endpoints import auth as auth_endpoint
+    from app.services.oidc import OidcService
+
+    settings.oidc_enabled = True
+
+    async def claims() -> dict[str, str]:
+        return {"sub": " alice", "preferred_username": "alice"}
+
+    monkeypatch.setattr(OidcService, "exchange", lambda self, c, v, n: claims())
+    monkeypatch.setattr(OidcService, "map_role", lambda self, c: "operator")
+    try:
+        client.cookies.set(auth_endpoint.OIDC_STATE_COOKIE, "state|verifier|nonce")
+        response = await client.get(
+            "/api/v1/auth/oidc/callback?code=abc&state=state", follow_redirects=False
+        )
+        assert response.status_code == 401
+    finally:
+        settings.oidc_enabled = False
+
+
+async def test_locked_account_cannot_guess_its_password(session, admin_principal) -> None:
+    """Auch mit gültiger Sitzung endet das Raten an der Sperre."""
+    from app.core.errors import AuthenticationError
+    from app.schemas.accounts import AccountCreate, PasswordChange
+    from app.services.accounts import LOCKOUT_THRESHOLD, AccountService
+
+    service = AccountService(session)
+    created = await service.create(
+        AccountCreate(username="anna", password="ein-sicheres-passwort"), actor=admin_principal
+    )
+    actor = admin_principal.__class__(
+        account_id=created.id,
+        username=created.username,
+        role=Role.ADMINISTRATOR,
+        language="de",
+        session_id="x",
+        absolute_expiry=0,
+    )
+    for _ in range(LOCKOUT_THRESHOLD):
+        with pytest.raises(AuthenticationError):
+            await service.change_password(
+                created.id,
+                PasswordChange(current_password="falsch", new_password="neues-sicheres-pw"),
+                actor=actor,
+            )
+
+    # Auch mit dem richtigen Passwort: die Sperre gilt.
+    with pytest.raises(AuthenticationError) as excinfo:
+        await service.change_password(
+            created.id,
+            PasswordChange(
+                current_password="ein-sicheres-passwort", new_password="neues-sicheres-pw"
+            ),
+            actor=actor,
+        )
+    assert excinfo.value.code == "error.account_locked"
+
+
+async def test_settings_are_administrator_only(session, client) -> None:
+    await _account(session, "operator", Role.OPERATOR)
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+    assert (await client.get("/api/v1/settings")).status_code == 403
+    # Der MAB-Schalter bleibt über den Geräte-Endpunkt erreichbar.
+    formats = await client.get("/api/v1/devices/mac-formats")
+    assert formats.status_code == 200
+    assert "show_mab_warning" in formats.json()
+
+
+async def test_retention_setting_rejects_booleans(session) -> None:
+    """``True`` würde als ein Tag gelesen und fast das ganze Audit-Log löschen."""
+    from app.core.errors import ValidationError as AppValidationError
+    from app.services.settings_service import KEY_AUDIT_RETENTION, SettingsService
+
+    with pytest.raises(AppValidationError):
+        await SettingsService(session).update({KEY_AUDIT_RETENTION: True})
+
+
+async def test_import_keeps_password_whitespace(session, admin_principal) -> None:
+    """Leerzeichen sind Teil des Passworts."""
+    await ImportExportService(session).import_csv(
+        'username,password\nanna," geheim "\n',
+        kind="user",
+        dry_run=False,
+        actor=admin_principal,
+    )
+    row = await session.scalar(
+        select(RadCheck).where(
+            RadCheck.username == "anna", RadCheck.attribute == "Cleartext-Password"
+        )
+    )
+    assert row.value == " geheim "
+
+
+async def test_bulk_priority_is_bounded() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.schemas.users import BulkAction
+
+    with pytest.raises(PydanticValidationError):
+        BulkAction(action="assign_group", groupname="g1", priority=10_000_000)
+
+
+async def test_attribute_collections_are_bounded() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.schemas.groups import GroupCreate
+    from app.schemas.users import MAX_ATTRIBUTES, AttributeIn
+
+    too_many = [
+        AttributeIn(attribute="Filter-Id", op=":=", value="x") for _ in range(MAX_ATTRIBUTES + 1)
+    ]
+    with pytest.raises(PydanticValidationError):
+        GroupCreate(groupname="g1", reply_attributes=too_many)

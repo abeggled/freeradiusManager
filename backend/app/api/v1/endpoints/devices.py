@@ -56,9 +56,13 @@ async def list_devices(
 
 @router.get("/mac-formats")
 async def mac_formats(session: SessionDep, _: ReaderUser) -> dict[str, object]:
+    settings_service = DeviceService(session).users.settings
     return {
         "formats": [{"key": k, "example": v} for k, v in MAC_FORMATS.items()],
-        "active": await DeviceService(session).mac_format(),
+        "active": await settings_service.mac_format(),
+        # Die Geraeteansicht braucht diesen Schalter fuer alle Rollen; die
+        # uebrigen Systemeinstellungen bleiben den Administratoren vorbehalten.
+        "show_mab_warning": await settings_service.show_mab_warning(),
     }
 
 

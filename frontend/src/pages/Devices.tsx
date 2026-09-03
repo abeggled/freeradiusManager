@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { buildQuery, download } from "@/api/client";
-import { useCreateDevice, useDevices, useGroups, useMacFormats, useSettings } from "@/api/hooks";
+import { useCreateDevice, useDevices, useGroups, useMacFormats } from "@/api/hooks";
 import type { UserListItem } from "@/api/types";
 import { DataTable } from "@/components/DataTable";
 import { ErrorBox, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
@@ -27,8 +27,9 @@ export function DevicesPage() {
   const [showImport, setShowImport] = useState(false);
 
   const formats = useMacFormats();
-  const settings = useSettings();
-  const showWarning = settings.data?.values.show_mab_warning !== false;
+  // Der Schalter kommt über den Geräte-Endpunkt: die Systemeinstellungen
+  // selbst sind Administratoren vorbehalten.
+  const showWarning = formats.data?.show_mab_warning !== false;
   // Ein Filterobjekt fuer Liste und Export – der Export muss genau die
   // angezeigte Menge liefern (FR-8).
   const filters = {

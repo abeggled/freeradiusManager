@@ -12,6 +12,13 @@ from app.schemas.common import ApiWarning
 
 MASKED = "********"
 
+MAX_ATTRIBUTES = 200
+"""Obergrenze je Attributsammlung.
+
+Der vollstaendige Vorgang wird ins Audit-Log geschrieben; ``mgr_audit.after_json``
+ist eine TEXT-Spalte mit rund 64 KiB. Ohne Grenze scheiterte der Audit-Eintrag
+und rollte den ganzen Vorgang zurueck."""
+
 
 def validate_identifier(value: str, field: str) -> str:
     """Prueft einen Namen, der spaeter in einem Pfadsegment steht.
@@ -127,8 +134,8 @@ class UserCreate(BaseModel):
     groups: list[MembershipIn] = Field(default_factory=list)
     vlan: str | None = Field(default=None, max_length=64)
     meta: SubjectMeta = Field(default_factory=SubjectMeta)
-    reply_attributes: list[AttributeIn] = Field(default_factory=list)
-    check_attributes: list[AttributeIn] = Field(default_factory=list)
+    reply_attributes: list[AttributeIn] = Field(default_factory=list, max_length=MAX_ATTRIBUTES)
+    check_attributes: list[AttributeIn] = Field(default_factory=list, max_length=MAX_ATTRIBUTES)
     disabled: bool = False
 
     @field_validator("username")
@@ -152,8 +159,8 @@ class UserUpdate(BaseModel):
     vlan: str | None = None
     clear_vlan: bool = False
     meta: SubjectMeta | None = None
-    reply_attributes: list[AttributeIn] | None = None
-    check_attributes: list[AttributeIn] | None = None
+    reply_attributes: list[AttributeIn] | None = Field(default=None, max_length=MAX_ATTRIBUTES)
+    check_attributes: list[AttributeIn] | None = Field(default=None, max_length=MAX_ATTRIBUTES)
 
 
 class PasswordSet(BaseModel):
@@ -189,5 +196,5 @@ class BulkAction(BaseModel):
     filter_all: bool = False
     action: Literal["disable", "enable", "delete", "assign_group", "remove_group", "set_expiry"]
     groupname: str | None = None
-    priority: int = 1
+    priority: int = Field(default=1, ge=0, le=10_000)
     expires_at: dt.datetime | None = None

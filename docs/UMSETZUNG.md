@@ -75,8 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Vierzehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
-12, 11, 10, 10, 9, 9, 11 und 12 Befunde;
+Fünfzehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
+12, 11, 10, 10, 9, 9, 11, 12 und 10 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
@@ -407,6 +407,25 @@ Die vierzehnte Runde:
 * Überlange OIDC-Subjects werden abgewiesen; Gerätepasswörter und Prioritäten
   sind bereits im Request begrenzt; das CoA-Secret lässt sich in der Oberfläche
   entfernen.
+
+Die fünfzehnte Runde:
+
+* **Die TOTP-Einrichtung aus dem eigenen Profil funktioniert wieder.** Die
+  Änderung aus Runde 14 setzte die Generation schon beim Start und beendete
+  damit die laufende Sitzung mitten im Vorgang; der Zeitstempel wird jetzt erst
+  bei der Bestätigung gesetzt. Ein administratives Zurücksetzen wirkt weiterhin
+  sofort.
+* **OIDC-Subjects werden unverändert übernommen.** Ein getrimmter Wert hätte
+  ` alice` die Sitzung von `alice` verschafft.
+* Die Kontosperre gilt auch beim Ändern des eigenen Passworts.
+* Umbenennen einer Gruppe und das Hinzufügen einer Mitgliedschaft laufen unter
+  derselben Sperre wie das Anlegen.
+* `GET /settings` ist Administratoren vorbehalten; den MAB-Schalter liefert der
+  Geräte-Endpunkt für alle Rollen.
+* `true` wird nicht mehr als Aufbewahrungsdauer akzeptiert – Python liest es
+  sonst als ein Tag und der Job hätte fast das ganze Audit-Log gelöscht.
+* Passwörter behalten beim Import ihre Leerzeichen; Attributmengen und
+  Bulk-Prioritäten sind begrenzt.
 
 ## Prüfschritte
 

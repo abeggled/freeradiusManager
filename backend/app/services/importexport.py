@@ -219,7 +219,11 @@ def _normalise_row(raw: dict[str | None, Any]) -> dict[str, str]:
             raise ValidationError(
                 code="error.import_invalid", details={"reason": "zu viele Spalten"}
             )
-        row[key.strip().lower()] = _unescape((value or "").strip())
+        column = key.strip().lower()
+        cell = value or ""
+        # Passwoerter bleiben unveraendert: fuehrende oder anhaengende
+        # Leerzeichen sind Teil des Werts und muessen erhalten bleiben.
+        row[column] = cell if column == "password" else _unescape(cell.strip())
     return row
 
 

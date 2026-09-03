@@ -223,7 +223,14 @@ async def oidc_callback(
     if not isinstance(raw_subject, str) or not raw_subject.strip():
         # Ohne stabiles "sub" landeten alle solchen Token auf demselben Konto.
         raise AuthenticationError(code="error.unauthenticated", details={"stage": "subject"})
-    subject = raw_subject.strip()
+    # Der Wert bleibt unveraendert: OIDC-Subjects sind undurchsichtige,
+    # fallunterscheidende Schluessel. Wuerde man sie trimmen, erhielte " alice"
+    # die Sitzung von "alice".
+    if raw_subject != raw_subject.strip():
+        raise AuthenticationError(
+            code="error.unauthenticated", details={"stage": "subject_whitespace"}
+        )
+    subject = raw_subject
     if len(subject) > 255:
         # mgr_account.oidc_subject fasst 255 Zeichen; gekuerzt waere die
         # Identitaet nicht mehr eindeutig, deshalb wird abgewiesen.

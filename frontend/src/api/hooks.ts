@@ -144,9 +144,11 @@ export function useMacFormats() {
   return useQuery({
     queryKey: queryKeys.macFormats,
     queryFn: () =>
-      request<{ formats: { key: string; example: string }[]; active: string }>(
-        "/devices/mac-formats",
-      ),
+      request<{
+        formats: { key: string; example: string }[];
+        active: string;
+        show_mab_warning: boolean;
+      }>("/devices/mac-formats"),
     staleTime: 300_000,
   });
 }

@@ -175,7 +175,11 @@ class GroupRepository:
         await self.session.flush()
 
     async def add_membership(self, username: str, groupname: str, priority: int = 1) -> bool:
-        """Fuegt eine Mitgliedschaft hinzu; ``False`` wenn sie bereits bestand."""
+        """Fuegt eine Mitgliedschaft hinzu; ``False`` wenn sie bereits bestand.
+
+        Aufrufer serialisieren Pruefung und Einfuegen ueber ``named_lock``:
+        ``radusergroup`` kennt keine Eindeutigkeit, gleichzeitige Aufrufe wuerden
+        sonst doppelte Zeilen erzeugen."""
         stmt = select(RadUserGroup).where(
             RadUserGroup.username == username, RadUserGroup.groupname == groupname
         )

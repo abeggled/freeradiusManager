@@ -263,10 +263,12 @@ class AccountService:
         """
         if account.totp_enabled:
             raise ConflictError(code="error.totp_already_enrolled")
+        # ``totp_changed_at`` wird erst bei der Bestaetigung gesetzt: waehrend
+        # der Einrichtung aus dem eigenen Profil heraus wuerde die laufende
+        # Sitzung sonst mitten im Vorgang beendet.
         secret = generate_totp_secret()
         account.totp_secret_enc = _box().encrypt(secret)
         account.totp_enabled = False
-        account.totp_changed_at = utcnow()
         await self.session.commit()
         return TotpSetupResponse(
             secret=secret, provisioning_uri=totp_provisioning_uri(secret, account.username)
@@ -281,6 +283,7 @@ class AccountService:
         if not verify_totp(secret, code):
             raise AuthenticationError(code="error.totp_invalid")
         account.totp_enabled = True
+        account.totp_changed_at = utcnow()
         await self.audit.log(
             action="account.totp_enabled",
             object_type="account",
@@ -444,6 +447,13 @@ class AccountService:
         account = await self.get(account_id)
         if account.id != actor.account_id and not actor.is_admin:
             raise PermissionDeniedError(code="error.forbidden")
+        # Die Sperre muss auch hier greifen: sonst liesse sich mit einer noch
+        # gueltigen Sitzung unbegrenzt weiterraten.
+        if account.locked_until is not None and account.locked_until > utcnow():
+            raise AuthenticationError(
+                code="error.account_locked",
+                details={"until": account.locked_until.isoformat()},
+            )
         if account.id == actor.account_id and not verify_password(
             payload.current_password, account.password_hash
         ):
