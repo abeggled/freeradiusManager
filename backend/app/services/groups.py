@@ -183,6 +183,9 @@ class GroupService:
                 code="error.validation",
                 details={"groupname": groupname, "members": members, "hint": "force"},
             )
+        # Vollstaendiger Zustand vor dem Loeschen; danach waere die geloeschte
+        # Konfiguration nicht mehr rekonstruierbar (FR-9).
+        before = (await self.get(groupname)).model_dump(mode="json")
         await self.repo.delete_group(groupname)
         await self.audit.log(
             action="group.delete",
@@ -190,7 +193,7 @@ class GroupService:
             object_id=groupname,
             actor=actor,
             actor_ip=actor_ip,
-            before={"groupname": groupname, "members": members},
+            before=before,
         )
         await self.session.commit()
         return members

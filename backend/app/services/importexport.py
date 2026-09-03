@@ -189,7 +189,7 @@ def _unescape(value: str) -> str:
     wuerde, ein Hochkomma voran. Ohne diesen Schritt waere der dokumentierte Weg
     "exportieren, bearbeiten, importieren" nicht verlustfrei.
     """
-    if len(value) > 1 and value[0] == "'" and value[1] in ("=", "+", "-", "@"):
+    if len(value) > 1 and value[0] == "'" and value[1] in ("=", "+", "-", "@", "'", "\t", "\r"):
         return value[1:]
     return value
 
@@ -325,6 +325,14 @@ class ImportExportService:
                 )
                 # Wirft dieselben Validierungsfehler wie der Schreibvorgang.
                 self._payloads(parsed, kind, exists)
+                # Auch die Existenz der Gruppen wird schon hier geprueft, damit
+                # die Vorschau nicht mehr meldet als der Import leistet.
+                for membership in parsed.groups:
+                    if not await self.users.groups.exists(membership.groupname):
+                        raise NotFoundError(
+                            code="error.not_found",
+                            details={"groupname": membership.groupname},
+                        )
 
                 if not dry_run:
                     # Erst schreiben, dann zaehlen: ein von der Datenbank
@@ -560,7 +568,9 @@ class ImportExportService:
         Benutzernamen und Notizen sind frei waehlbar; ein fuehrendes ``=`` wuerde
         beim Oeffnen des Exports auf einem fremden Arbeitsplatz ausgewertet.
         """
-        if value and value[0] in ("=", "+", "-", "@", "\t", "\r"):
+        # Auch ein bereits fuehrendes Hochkomma wird verdoppelt, damit sich der
+        # Zusatz beim Import eindeutig wieder entfernen laesst.
+        if value and value[0] in ("=", "+", "-", "@", "'", "\t", "\r"):
             return "'" + value
         return value
 

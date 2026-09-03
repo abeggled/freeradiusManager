@@ -12,7 +12,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 
-from sqlalchemy import ColumnElement, and_, exists, func, or_, select, true, union
+from sqlalchemy import ColumnElement, and_, exists, func, or_, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Subquery
 
@@ -138,7 +138,9 @@ class DirectoryRepository:
             select(RadCheck.id).where(
                 RadCheck.username == names.c.username,
                 RadCheck.attribute == EXPIRATION,
-                func.str_to_date(RadCheck.value, EXPIRATION_SQL_FORMAT) < func.now(),
+                # UTC_TIMESTAMP statt NOW(): die Werte werden in UTC
+                # geschrieben, die Sitzungszeitzone der Datenbank ist offen.
+                func.str_to_date(RadCheck.value, EXPIRATION_SQL_FORMAT) < func.utc_timestamp(),
             )
         )
         has_password = exists(
@@ -156,7 +158,9 @@ class DirectoryRepository:
             return and_(~blocked, ~expired, ~has_password)
         if status == "active":
             return and_(~blocked, ~expired, has_password)
-        return true()
+        # Unbekannte Werte duerfen die Auswahl nicht stillschweigend auf alles
+        # ausweiten: eine Sammelaktion traefe sonst jedes Objekt (NFR-4).
+        raise ValidationError(code="error.validation", details={"status": status})
 
     async def search(
         self, flt: SubjectFilter, limit: int = 50, offset: int = 0

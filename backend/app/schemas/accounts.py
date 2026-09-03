@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.constants import MIN_PASSWORD_LENGTH
 from app.models.mgr import Role
 
 
@@ -57,7 +58,7 @@ class AccountCreate(BaseModel):
     """Laengen entsprechen den Spalten in ``mgr_account``."""
 
     username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=12, max_length=256)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
     role: Role = Role.AUDITOR
     email: str | None = Field(default=None, max_length=255)
     display_name: str | None = Field(default=None, max_length=128)
@@ -87,7 +88,7 @@ class OidcLink(BaseModel):
 
 class PasswordChange(BaseModel):
     current_password: str
-    new_password: str = Field(min_length=12, max_length=256)
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
 
 
 class TotpSetupResponse(BaseModel):

@@ -776,3 +776,108 @@ async def test_sql_echo_hides_bound_parameters() -> None:
     # Die Einstellung sitzt auf der synchronen Engine darunter.
     assert engine.sync_engine.hide_parameters is True
     await engine.dispose()
+
+
+# --- Dreizehnte Runde ------------------------------------------------------
+
+
+async def test_bootstrap_password_follows_the_policy(session) -> None:
+    """Ein Platzhalter aus der Umgebung darf kein Administratorzugang werden."""
+    from app.core.errors import ValidationError as AppValidationError
+    from app.services.accounts import AccountService
+
+    service = AccountService(session)
+    with pytest.raises(AppValidationError) as excinfo:
+        await service.ensure_bootstrap_admin("admin", "a")
+    assert excinfo.value.code == "error.password_too_short"
+
+    created = await service.ensure_bootstrap_admin("admin", "ein-sicheres-passwort")
+    assert created is not None
+
+
+async def test_unknown_status_filter_is_rejected(session) -> None:
+    """Ein Tippfehler darf die Auswahl nicht auf alles ausweiten."""
+    from app.core.errors import ValidationError as AppValidationError
+    from app.repositories.directory import SubjectFilter
+
+    with pytest.raises(AppValidationError):
+        await UserService(session).search(SubjectFilter(status="disbaled"))
+
+
+async def test_duplicate_memberships_are_collapsed(session, admin_principal) -> None:
+    """radusergroup kennt keine Eindeutigkeit; Duplikate verfälschten die Zahlen."""
+    from app.models.radius import RadUserGroup
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    await GroupService(session).create(
+        GroupCreate(groupname="g1", vlan="10"), actor=admin_principal
+    )
+    await UserService(session).create(
+        UserCreate(
+            username="anna",
+            password="geheim123",
+            groups=[
+                {"groupname": "g1", "priority": 1},
+                {"groupname": "g1", "priority": 5},
+            ],
+        ),
+        actor=admin_principal,
+    )
+    rows = (
+        await session.scalars(select(RadUserGroup).where(RadUserGroup.username == "anna"))
+    ).all()
+    assert len(rows) == 1
+    assert (await GroupService(session).get("g1")).members == 1
+
+
+async def test_nas_note_can_be_cleared(session, admin_principal) -> None:
+    from app.schemas.nas import NasUpdate
+
+    service = NasService(session)
+    item, _ = await service.create(
+        NasCreate(nasname="10.0.0.1", secret="s", note="Etage 3"), actor=admin_principal
+    )
+    updated, _ = await service.update(item.id, NasUpdate(note=None), actor=admin_principal)
+    assert updated.note in (None, "")
+
+
+async def test_group_delete_records_the_configuration(session, admin_principal) -> None:
+    from app.models.mgr import MgrAudit
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    service = GroupService(session)
+    await service.create(GroupCreate(groupname="g1", vlan="42"), actor=admin_principal)
+    await service.delete("g1", actor=admin_principal, force=True)
+
+    entry = await session.scalar(select(MgrAudit).where(MgrAudit.action == "group.delete"))
+    assert '"vlan": "42"' in (entry.before_json or "")
+
+
+async def test_apostrophe_escaping_is_reversible(session, admin_principal) -> None:
+    """Ein Wert, der selbst mit einem Hochkomma beginnt, bleibt erhalten."""
+    from app.repositories.directory import SubjectFilter
+
+    users = UserService(session)
+    await users.create(
+        UserCreate(username="anna", password="geheim123", meta={"note": "'=literal"}),
+        actor=admin_principal,
+    )
+    csv_text = await ImportExportService(session).export(SubjectFilter())
+    await ImportExportService(session).import_csv(
+        csv_text, kind="user", dry_run=False, actor=admin_principal
+    )
+    assert (await users.get("anna")).note == "'=literal"
+
+
+async def test_preview_reports_unknown_groups(session, admin_principal) -> None:
+    """Die Vorschau darf nicht mehr versprechen als der Import einlöst."""
+    preview = await ImportExportService(session).import_csv(
+        "username,password,groups\nanna,geheim123,gibtsnicht\n",
+        kind="user",
+        dry_run=True,
+        actor=admin_principal,
+    )
+    assert preview.errors == 1
+    assert preview.to_create == 0

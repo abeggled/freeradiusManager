@@ -28,6 +28,7 @@
   "error.invalid_mac": "The MAC address is invalid.",
   "error.invalid_operator": "The operator is not allowed for this table.",
   "error.password_required": "The selected credential type requires a password.",
+  "error.password_too_short": "The password must be at least {minimum} characters long.",
   "error.credential_type_needs_password": "The requested credential type needs a cleartext password. Please change it via “Set password”.",
   "error.session_not_found": "The session is no longer active.",
   "error.audit_immutable": "The audit log cannot be modified.",

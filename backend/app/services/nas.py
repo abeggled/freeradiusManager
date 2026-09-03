@@ -146,7 +146,11 @@ class NasService:
             coa_enabled=payload.coa_enabled,
             coa_port=payload.coa_port,
             coa_secret_enc=secret_enc if secret_enc is not None else None,
-            note=payload.note,
+            # "" statt None, wenn das Feld ausdruecklich auf null gesetzt wurde:
+            # sonst liesse sich eine Notiz setzen, aber nie wieder entfernen.
+            note=("" if payload.note is None else payload.note)
+            if "note" in payload.model_fields_set
+            else None,
         )
         if payload.clear_coa_secret:
             extra = await self.extra.get(row.nasname)

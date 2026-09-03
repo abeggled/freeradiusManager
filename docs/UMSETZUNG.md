@@ -75,8 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Zwölf Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11, 12,
-11, 10, 10, 9 und 9 Befunde;
+Dreizehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
+12, 11, 10, 10, 9, 9 und 11 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
@@ -364,6 +364,27 @@ Die zwölfte Runde:
 * Bei aktiviertem SQL-Echo werden gebundene Werte nicht mehr protokolliert.
 * OIDC-Claims werden auf die Spaltenbreite gekürzt; das CoA-Secret ist auch bei
   Änderungen begrenzt; das Deaktivieren eines Kontos verlangt eine Bestätigung.
+
+Die dreizehnte Runde:
+
+* **Eine abgemeldete Ansicht erzeugte eine Endlosschleife.** Der 401-Haken aus
+  Runde 11 lud auch die Sitzungsabfrage neu, deren eigene 401-Antwort ihn wieder
+  auslöste. Er lässt diese Abfrage jetzt aus.
+* **Ein unbekannter Statusfilter weitete die Auswahl auf alles aus.** Mit
+  `filter_all` hätte ein Tippfehler wie `status=disbaled` eine Sammelaktion auf
+  sämtliche Objekte angewandt; solche Werte werden nun abgewiesen.
+* **Das Bootstrap-Passwort unterliegt der Passwortrichtlinie.** Ein Platzhalter
+  in der Umgebung wäre sonst ein Administratorzugang mit ratbarem Passwort.
+* **`oidc_subject` wird fallunterscheidend gespeichert** (Migration 0003); mit
+  der voreingestellten Kollation hätte „Alice“ die Sitzung von „alice“ erhalten.
+* Ablaufdaten werden in SQL gegen `UTC_TIMESTAMP()` verglichen, nicht gegen die
+  Sitzungszeitzone der Datenbank.
+* Doppelte Gruppenangaben werden zusammengefasst; die Import-Vorschau prüft die
+  Gruppen wie der Schreibvorgang; die Formel-Entschärfung ist auch bei Werten
+  umkehrbar, die selbst mit einem Hochkomma beginnen.
+* Das Audit-Log hält beim Löschen einer Gruppe deren Konfiguration fest; eine
+  NAS-Notiz lässt sich wieder entfernen; der Credential-Typ ist beim Setzen
+  eines Passworts in der Oberfläche wählbar.
 
 ## Prüfschritte
 

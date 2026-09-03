@@ -24,9 +24,13 @@ const queryClient = new QueryClient({
 
 // Eine serverseitig beendete Sitzung (Passwort-, Rollen- oder TOTP-Wechsel)
 // führt sofort zurück zur Anmeldung, statt eine tote Oberfläche zu zeigen.
+//
+// Die Sitzungsabfrage selbst wird dabei nicht neu geladen: sonst löste ihre
+// eigene 401-Antwort den Handler wieder aus und jede abgemeldete Ansicht
+// erzeugte eine endlose Kette von Anfragen.
 setUnauthenticatedHandler(() => {
   queryClient.setQueryData(["me"], null);
-  void queryClient.invalidateQueries();
+  queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== "me" });
 });
 
 createRoot(document.getElementById("root")!).render(

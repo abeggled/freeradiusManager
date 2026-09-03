@@ -90,7 +90,14 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     } catch {
       /* Antwort ohne JSON-Körper */
     }
-    if (response.status === 401 && !path.startsWith("/auth/login")) {
+    // Weder die Anmeldung selbst noch die Sitzungsabfrage lösen den Handler
+    // aus: erstere kennt ihren Fehler, letztere würde sich sonst im Kreis
+    // drehen.
+    if (
+      response.status === 401 &&
+      !path.startsWith("/auth/login") &&
+      path !== "/auth/me"
+    ) {
       onUnauthenticated?.();
     }
     throw new ApiError(response.status, payload);

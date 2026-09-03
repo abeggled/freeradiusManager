@@ -38,6 +38,8 @@ keine-mac,Kamera,Flur,
 
 
 async def test_dry_run_does_not_write(session, admin_principal) -> None:
+    # Die Vorschau prüft auch die Gruppen; sie müssen also vorhanden sein.
+    await _ensure_groups(session, admin_principal, "mitarbeiter", "gaeste")
     service = ImportExportService(session)
     report = await service.import_csv(USER_CSV, kind="user", dry_run=True, actor=admin_principal)
     assert report.dry_run is True

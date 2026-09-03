@@ -38,6 +38,7 @@ export function UserDetailPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [password, setPasswordValue] = useState("");
+  const [credentialType, setCredentialType] = useState<string | null>(null);
   const [vlan, setVlan] = useState<string | null>(null);
   const [expires, setExpires] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -213,11 +214,15 @@ export function UserDetailPage() {
                 disabled={!password || setPassword.isPending}
                 onClick={() =>
                   setPassword.mutate(
-                    { password },
+                    {
+                      password,
+                      credential_type: credentialType ?? data.credential_type ?? null,
+                    },
                     {
                       onSuccess: () => {
                         setShowPassword(false);
                         setPasswordValue("");
+                        setCredentialType(null);
                       },
                     },
                   )
@@ -229,7 +234,7 @@ export function UserDetailPage() {
           }
         >
           <ErrorBox error={setPassword.error} />
-          <Field label={t("users.password")} hint={t("users.credentialTypeHint")} required>
+          <Field label={t("users.password")} required>
             {(id) => (
               <input
                 id={id}
@@ -237,6 +242,19 @@ export function UserDetailPage() {
                 value={password}
                 onChange={(event) => setPasswordValue(event.target.value)}
               />
+            )}
+          </Field>
+          <Field label={t("users.credentialType")} hint={t("users.credentialTypeHint")}>
+            {(id) => (
+              <select
+                id={id}
+                value={credentialType ?? data.credential_type ?? "both"}
+                onChange={(event) => setCredentialType(event.target.value)}
+              >
+                <option value="both">{t("users.credentialType.both")}</option>
+                <option value="cleartext">{t("users.credentialType.cleartext")}</option>
+                <option value="nt">{t("users.credentialType.nt")}</option>
+              </select>
             )}
           </Field>
         </Modal>

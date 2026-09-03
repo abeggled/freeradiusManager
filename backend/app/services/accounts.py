@@ -7,6 +7,7 @@ import datetime as dt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings as app_settings
+from app.core.constants import MIN_PASSWORD_LENGTH
 from app.core.crypto import SecretBox, hash_password, needs_rehash, verify_password
 from app.core.dates import utcnow
 from app.core.errors import (
@@ -457,7 +458,16 @@ class AccountService:
         await self.session.commit()
 
     async def ensure_bootstrap_admin(self, username: str, password: str) -> MgrAccount | None:
-        """Legt beim ersten Start einen Administrator an, falls noch keiner existiert."""
+        """Legt beim ersten Start einen Administrator an, falls noch keiner existiert.
+
+        Das Passwort unterliegt derselben Mindestlaenge wie ueber die
+        Kontenverwaltung: ein Platzhalter aus der Umgebung waere sonst ein
+        vollwertiger Administratorzugang mit ratbarem Passwort.
+        """
+        if len(password) < MIN_PASSWORD_LENGTH:
+            raise ValidationError(
+                code="error.password_too_short", details={"minimum": MIN_PASSWORD_LENGTH}
+            )
         if await self.repo.count_active_administrators() > 0:
             return None
         if await self.repo.get_by_username(username) is not None:

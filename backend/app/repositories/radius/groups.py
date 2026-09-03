@@ -158,8 +158,17 @@ class GroupRepository:
         return list((await self.session.scalars(stmt)).all())
 
     async def set_memberships(self, username: str, groups: Sequence[tuple[str, int]]) -> None:
+        """Ersetzt alle Mitgliedschaften eines Benutzers.
+
+        Doppelte Gruppennamen werden zusammengefasst: ``radusergroup`` kennt
+        keine Eindeutigkeit, doppelte Zeilen wuerden die Mitgliederzahl
+        verfaelschen und die Attribute der Gruppe mehrfach anwenden.
+        """
         await self.session.execute(delete(RadUserGroup).where(RadUserGroup.username == username))
+        seen: dict[str, int] = {}
         for groupname, priority in groups:
+            seen.setdefault(groupname, priority)
+        for groupname, priority in seen.items():
             self.session.add(
                 RadUserGroup(username=username, groupname=groupname, priority=priority)
             )

@@ -74,7 +74,13 @@ class MgrAccount(TimestampMixin, Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     language: Mapped[str] = mapped_column(String(5), nullable=False, default="de")
-    oidc_subject: Mapped[str | None] = mapped_column(String(255), unique=True)
+    oidc_subject: Mapped[str | None] = mapped_column(
+        # Binaere Kollation: OIDC-Subjects unterscheiden Gross- und
+        # Kleinschreibung. Mit der voreingestellten Kollation koennte "Alice"
+        # die Sitzung von "alice" erhalten.
+        String(255, collation="utf8mb4_bin"),
+        unique=True,
+    )
     last_login_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
     failed_logins: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     locked_until: Mapped[dt.datetime | None] = mapped_column(DateTime)
