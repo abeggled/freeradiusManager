@@ -16,6 +16,7 @@
   "error.invalid_credentials": "Benutzername oder Passwort ist falsch.",
   "error.account_locked": "Das Konto ist vorübergehend gesperrt.",
   "error.account_disabled": "Das Konto ist deaktiviert.",
+  "error.oidc_account_conflict": "Es existiert bereits ein lokales Konto mit diesem Namen. Die Verknüpfung mit der OIDC-Identität muss ein Administrator vornehmen.",
   "error.user_exists": "Ein Benutzer mit diesem Namen existiert bereits.",
   "error.subject_exists": "Für diesen Namen bestehen bereits RADIUS-Einträge.",
   "error.group_exists": "Eine Gruppe mit diesem Namen existiert bereits.",

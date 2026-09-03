@@ -14,8 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.dates import utcnow
 from app.core.logging import get_logger
-from app.models.mgr import MgrSubject, SubjectType
-from app.models.radius import Nas, RadCheck
+from app.models.mgr import SubjectType
+from app.models.radius import Nas
+from app.repositories.directory import DirectoryRepository, SubjectFilter
 from app.repositories.mgr.settings_repo import StatsRepository
 from app.repositories.radius.acct import AccountingRepository
 from app.repositories.radius.groups import GroupRepository
@@ -30,6 +31,7 @@ class StatsService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repo = StatsRepository(session)
+        self.directory = DirectoryRepository(session)
         self.acct = AccountingRepository(session)
         self.postauth = PostAuthRepository(session)
         self.groups = GroupRepository(session)
@@ -42,19 +44,14 @@ class StatsService:
             {"username": u, "attempts": c}
             for u, c in await self.postauth.unknown_subjects(since, limit=10)
         ]
-        payload["users_total"] = int(
-            await self.session.scalar(
-                select(func.count(func.distinct(RadCheck.username))).select_from(RadCheck)
-            )
-            or 0
+        # Beide Zahlen kommen aus derselben Menge wie die Listenansichten -
+        # sonst zaehlten MAB-Geraete doppelt und Bestandsnamen ohne
+        # Check-Attribute fehlten ganz.
+        _, payload["users_total"] = await self.directory.search(
+            SubjectFilter(subject_type=SubjectType.USER), limit=1, offset=0
         )
-        payload["devices_total"] = int(
-            await self.session.scalar(
-                select(func.count())
-                .select_from(MgrSubject)
-                .where(MgrSubject.subject_type == SubjectType.DEVICE)
-            )
-            or 0
+        _, payload["devices_total"] = await self.directory.search(
+            SubjectFilter(subject_type=SubjectType.DEVICE), limit=1, offset=0
         )
         payload["groups_total"] = len(await self.groups.group_names())
         payload["nas_total"] = int(

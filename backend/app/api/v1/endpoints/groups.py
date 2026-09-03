@@ -6,6 +6,7 @@ from fastapi import APIRouter, status
 
 from app.api.deps import ClientIp, Language, ReaderUser, SessionDep, WriterUser
 from app.core import radius_dict
+from app.core.pagination import clamp_limit
 from app.schemas.groups import (
     DictionaryEntry,
     DictionaryResponse,
@@ -58,7 +59,10 @@ async def get_group(groupname: str, session: SessionDep, _: ReaderUser) -> Group
 async def group_members(
     groupname: str, session: SessionDep, _: ReaderUser, limit: int = 50, offset: int = 0
 ) -> list[str]:
-    return await GroupService(session).members(groupname, limit=limit, offset=offset)
+    """Mitglieder einer Gruppe, seitenweise (NFR-2)."""
+    return await GroupService(session).members(
+        groupname, limit=clamp_limit(limit), offset=max(0, offset)
+    )
 
 
 @router.post("", response_model=GroupDetail, status_code=status.HTTP_201_CREATED)

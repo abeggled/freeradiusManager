@@ -61,6 +61,12 @@ class Settings(BaseSettings):
 
     login_rate_limit: int = 10
     login_rate_window_seconds: int = 300
+    login_ip_rate_limit: int = 30
+    """Obergrenze je Absender-IP, unabhaengig vom genannten Benutzernamen.
+
+    Ohne sie liesse sich das Limit umgehen, indem fuer jeden Versuch ein neuer
+    Benutzername angegeben wird (Password Spraying).
+    """
     coa_rate_limit: int = 30
     coa_rate_window_seconds: int = 60
 

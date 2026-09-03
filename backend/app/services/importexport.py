@@ -15,9 +15,9 @@ from typing import Any, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dates import from_expiration, to_expiration, utcnow
+from app.core.dates import from_expiration, to_expiration
 from app.core.errors import ValidationError
-from app.core.mac import format_mac, is_mac
+from app.core.mac import is_mac
 from app.core.security import Principal
 from app.models.mgr import CredentialType, SubjectType
 from app.repositories.directory import SubjectFilter
@@ -223,7 +223,6 @@ class ImportExportService:
             raise ValidationError(code="error.import_invalid")
 
         report = ImportReport(dry_run=dry_run)
-        mac_format = await self.devices.mac_format()
 
         for index, raw in enumerate(reader, start=2):
             row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items()}
@@ -235,7 +234,9 @@ class ImportExportService:
                         raise ValidationError(
                             code="error.invalid_mac", details={"value": identifier}
                         )
-                    username = format_mac(identifier, mac_format)
+                    # ueber resolve(), damit ein Formatwechsel keine Dubletten
+                    # desselben physischen Geraets erzeugt.
+                    username = await self.devices.resolve(identifier)
                 else:
                     username = row.get("username", "")
                     if not username:
@@ -386,8 +387,17 @@ class ImportExportService:
     # --- Export ----------------------------------------------------------
 
     async def export(self, flt: SubjectFilter, cap: int = 10_000) -> str:
-        """Exportiert genau die aktuelle Filtermenge – ohne Passwoerter (NFR-1)."""
-        items, _ = await self.users.search(flt, limit=cap, offset=0)
+        """Exportiert genau die aktuelle Filtermenge - ohne Passwoerter (NFR-1).
+
+        Oberhalb von ``cap`` wird abgelehnt statt gekuerzt: eine unvollstaendige
+        Datei, die wie ein vollstaendiger Export aussieht, ist schlimmer als ein
+        klarer Fehler.
+        """
+        items, total = await self.users.search(flt, limit=cap, offset=0)
+        if total > cap:
+            raise ValidationError(
+                code="error.selection_too_large", details={"cap": cap, "total": total}
+            )
         buffer = io.StringIO()
         writer = csv.DictWriter(buffer, fieldnames=list(EXPORT_COLUMNS), extrasaction="ignore")
         writer.writeheader()
@@ -427,18 +437,25 @@ class ImportExportService:
         actor: Principal,
         actor_ip: str | None = None,
     ) -> tuple[int, int, list[dict[str, Any]]]:
+        if payload.action == "set_expiry" and payload.expires_at is None:
+            # Ohne Datum wuerde ein Klick die gesamte bestaetigte Menge sofort
+            # ablaufen lassen - das ist keine sinnvolle Vorgabe (NFR-4).
+            raise ValidationError(code="error.validation", details={"field": "expires_at"})
+        if payload.action in ("assign_group", "remove_group") and not payload.groupname:
+            raise ValidationError(code="error.validation", details={"field": "groupname"})
+
         usernames = list(payload.usernames)
         if payload.filter_all:
             usernames = await self.users.directory.all_usernames(flt)
         if not usernames:
             return 0, 0, []
 
-        succeeded = 0
+        succeeded: list[str] = []
         errors: list[dict[str, Any]] = []
         for username in usernames:
             try:
                 await self._bulk_one(username, payload, actor=actor, actor_ip=actor_ip)
-                succeeded += 1
+                succeeded.append(username)
             except Exception as exc:  # noqa: BLE001 - Sammelmeldung je Objekt
                 errors.append({"username": username, "error": str(exc)})
 
@@ -449,13 +466,18 @@ class ImportExportService:
             actor_ip=actor_ip,
             after={
                 "count": len(usernames),
-                "succeeded": succeeded,
+                "succeeded": len(succeeded),
                 "failed": len(errors),
                 "groupname": payload.groupname,
+                "expires_at": payload.expires_at,
+                # Die betroffenen Namen gehoeren ins Protokoll, sonst laesst sich
+                # eine Sammelaktion nachtraeglich keinem Objekt zuordnen (FR-9).
+                "usernames": succeeded,
+                "failed_usernames": [e["username"] for e in errors],
             },
         )
         await self.session.commit()
-        return len(usernames), succeeded, errors
+        return len(usernames), len(succeeded), errors
 
     async def _bulk_one(
         self,
@@ -471,19 +493,34 @@ class ImportExportService:
             await self.users.set_disabled(username, False, actor=actor, actor_ip=actor_ip)
         elif payload.action == "delete":
             await self.users.delete(username, actor=actor, actor_ip=actor_ip)
-        elif payload.action == "assign_group":
-            if not payload.groupname:
-                raise ValidationError(code="error.validation", details={"field": "groupname"})
-            await self.users.groups.add_membership(username, payload.groupname, payload.priority)
-            await self.session.commit()
-        elif payload.action == "remove_group":
-            if not payload.groupname:
-                raise ValidationError(code="error.validation", details={"field": "groupname"})
-            await self.users.groups.remove_membership(username, payload.groupname)
+        elif payload.action in ("assign_group", "remove_group"):
+            groupname = str(payload.groupname)
+            if payload.action == "assign_group":
+                await self.users.groups.add_membership(username, groupname, payload.priority)
+            else:
+                await self.users.groups.remove_membership(username, groupname)
+            await self.audit.log(
+                action=f"user.{payload.action}",
+                object_type="user",
+                object_id=username,
+                actor=actor,
+                actor_ip=actor_ip,
+                after={"groupname": groupname},
+            )
             await self.session.commit()
         elif payload.action == "set_expiry":
-            expires = payload.expires_at or utcnow()
+            expires = payload.expires_at
+            if expires is None:
+                raise ValidationError(code="error.validation", details={"field": "expires_at"})
             subject = await self.users.subjects.ensure(username)
             subject.expires_at = expires
             await self.users.attrs.set_check(username, "Expiration", ":=", to_expiration(expires))
+            await self.audit.log(
+                action="user.set_expiry",
+                object_type="user",
+                object_id=username,
+                actor=actor,
+                actor_ip=actor_ip,
+                after={"expires_at": expires},
+            )
             await self.session.commit()

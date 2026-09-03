@@ -20,6 +20,7 @@ from app.models.mgr import Role
 from app.repositories.mgr.accounts import AccountRepository
 
 login_limiter = RateLimiter(settings.login_rate_limit, settings.login_rate_window_seconds)
+login_ip_limiter = RateLimiter(settings.login_ip_rate_limit, settings.login_rate_window_seconds)
 coa_limiter = RateLimiter(settings.coa_rate_limit, settings.coa_rate_window_seconds)
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]

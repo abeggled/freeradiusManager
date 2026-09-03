@@ -12,6 +12,7 @@ from app.api.deps import (
     CurrentUser,
     SessionDep,
     clear_session_cookie,
+    login_ip_limiter,
     login_limiter,
     set_session_cookie,
 )
@@ -48,12 +49,21 @@ async def login(
     session: SessionDep,
     actor_ip: ClientIp,
 ) -> LoginResponse:
+    # Zwei Grenzen: je Konto und - unabhaengig vom genannten Namen - je Absender.
+    # Sonst genuegte ein neuer Benutzername je Versuch, um das Limit zu umgehen.
+    login_ip_limiter.check(str(actor_ip))
     login_limiter.check(f"{actor_ip}:{payload.username}")
     service = AccountService(session)
-    account = await service.authenticate(payload.username, payload.password, actor_ip=actor_ip)
+    account = await service.authenticate(
+        payload.username, payload.password, actor_ip=actor_ip, reset_failures=False
+    )
 
     if service.requires_totp(account):
         if not payload.totp_code:
+            # Der Zaehler bleibt bis zum vollstaendigen Abschluss stehen, damit
+            # der zweite Faktor nicht mit jedem neuen Passwortversuch von vorn
+            # geraten werden kann.
+            await service.clear_failures(account)
             return LoginResponse(status="totp_required", challenge=service.challenge_for(account))
         await service.verify_totp_code(account, payload.totp_code, actor_ip=actor_ip)
     elif service.requires_totp_enrollment(account):
@@ -63,8 +73,10 @@ async def login(
             status="totp_setup_required", challenge=service.enrollment_challenge_for(account)
         )
 
+    await service.clear_failures(account)
     await service.mark_login(account, actor_ip)
     login_limiter.reset(f"{actor_ip}:{payload.username}")
+    login_ip_limiter.reset(str(actor_ip))
     _issue_session(response, account)
     return LoginResponse(status="authenticated", account=AccountOut.model_validate(account))
 
@@ -76,10 +88,14 @@ async def login_totp(
     session: SessionDep,
     actor_ip: ClientIp,
 ) -> LoginResponse:
-    login_limiter.check(f"totp:{actor_ip}")
     service = AccountService(session)
     account = await service.account_from_challenge(payload.challenge)
+    # Je Konto begrenzen statt je IP: hinter einem NAT teilen sich sonst alle
+    # Benutzer dasselbe Kontingent und sperren sich gegenseitig aus.
+    login_limiter.check(f"totp:{account.id}")
+    login_ip_limiter.check(str(actor_ip))
     await service.verify_totp_code(account, payload.totp_code, actor_ip=actor_ip)
+    login_limiter.reset(f"totp:{account.id}")
     await service.mark_login(account, actor_ip)
     _issue_session(response, account)
     return LoginResponse(status="authenticated", account=AccountOut.model_validate(account))
@@ -184,23 +200,29 @@ async def oidc_callback(
     account = await service.repo.get_by_oidc_subject(subject)
     if account is None:
         username = str(claims.get("preferred_username") or claims.get("email") or subject)
-        account = await service.repo.get_by_username(username)
-        if account is None:
-            account = MgrAccount(
-                username=username,
-                email=claims.get("email"),
-                display_name=claims.get("name"),
-                role=Role(mapped),
-                oidc_subject=subject,
-                password_hash=hash_password(secrets.token_urlsafe(32)),
+        existing = await service.repo.get_by_username(username)
+        if existing is not None:
+            # Ein vorhandenes lokales Konto wird nicht stillschweigend an eine
+            # OIDC-Identitaet gebunden: sonst koennte eine fremd verwaltete
+            # Kennung namens "admin" das Bootstrap-Konto uebernehmen und dabei
+            # gleich herabstufen. Die Verknuepfung erfolgt bewusst durch einen
+            # Administrator.
+            raise AuthenticationError(
+                code="error.oidc_account_conflict", details={"username": username}
             )
-            await service.repo.add(account)
-        else:
-            account.oidc_subject = subject
+        account = MgrAccount(
+            username=username,
+            email=claims.get("email"),
+            display_name=claims.get("name"),
+            role=Role(mapped),
+            oidc_subject=subject,
+            password_hash=hash_password(secrets.token_urlsafe(32)),
+        )
+        await service.repo.add(account)
     if not account.is_active:
         # Ein deaktiviertes Konto darf sich auch ueber OIDC nicht neu anmelden.
         raise AuthenticationError(code="error.account_disabled")
-    account.role = Role(mapped)
+    await service.apply_mapped_role(account, Role(mapped))
     await service.mark_login(account, actor_ip)
 
     redirect = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)

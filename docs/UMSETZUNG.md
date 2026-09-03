@@ -75,10 +75,10 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Zwei Runden eines automatisierten Reviews meldeten 19 und danach 14 Befunde;
-alle sind behoben und mit Regressionstests abgesichert
-(`tests/integration/test_security_fixes.py`, `tests/integration/test_review_fixes.py`,
-`tests/integration/test_review_fixes_2.py`).
+Drei Runden eines automatisierten Reviews meldeten 19, 14 und 13 Befunde; alle
+sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`,
+`test_review_fixes.py`, `test_review_fixes_2.py`, `test_review_fixes_3.py`
+unter `backend/tests/integration/`).
 
 Sicherheitsrelevant und daher hervorgehoben:
 
@@ -147,6 +147,31 @@ Aus der zweiten Runde kamen weitere Punkte hinzu:
   bis zu 200 Einzelabfragen.
 * Die Einstellung `show_mab_warning` wirkt tatsächlich, und nach dem Setzen eines
   Passworts aktualisiert die Oberfläche Status und Attributliste.
+
+Die dritte Runde betraf vor allem die Anmeldung:
+
+* **Ein zweites, IP-weites Limit** ergänzt die Grenze je Konto. Zuvor genügte ein
+  neuer Benutzername je Versuch, um beliebig viele Passwörter durchzuprobieren.
+* **Der Fehlerzähler wird erst nach vollständigem Erfolg zurückgesetzt.** Beim
+  kombinierten Weg (Passwort und TOTP in einem Aufruf) setzte die erfolgreiche
+  Passwortprüfung ihn zuvor jedes Mal auf null – die Kontosperre war damit auf
+  diesem Weg nie erreichbar.
+* **Das TOTP-Limit zählt je Konto statt je IP.** Hinter einem NAT hätten sich die
+  Benutzer sonst gegenseitig ausgesperrt.
+* **OIDC bindet keine bestehenden lokalen Konten mehr implizit.** Eine
+  fremdverwaltete Kennung namens `admin` hätte sonst das Bootstrap-Konto
+  übernehmen und herabstufen können; zusätzlich ist der letzte Administrator
+  gegen ein Rollen-Mapping geschützt.
+* **Eine Sammelaktion `set_expiry` ohne Datum wird abgelehnt**, statt die gesamte
+  bestätigte Menge sofort ablaufen zu lassen. Das Audit-Log hält jetzt auch die
+  betroffenen Benutzernamen fest, nicht nur Zähler.
+* **Geräte bleiben nach einer Umstellung des MAC-Formats erreichbar**: die
+  Auflösung sucht die gespeicherte Schreibweise, statt blind neu zu formatieren.
+  Damit erzeugt auch ein Import keine Dublette desselben Geräts.
+* Geräte haben eine eigene Detailseite und sind damit nach dem Anlegen
+  bearbeitbar; Exporte oberhalb der Obergrenze werden abgelehnt statt gekürzt;
+  die Dashboard-Zahlen stammen aus derselben Menge wie die Listen; Mitgliederlisten
+  und Kontofelder verhalten sich wie die übrigen Endpunkte.
 
 ## Prüfschritte
 

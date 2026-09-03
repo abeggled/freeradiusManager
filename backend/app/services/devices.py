@@ -10,7 +10,7 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
-from app.core.mac import format_mac
+from app.core.mac import MAC_FORMATS, format_mac
 from app.core.security import Principal
 from app.models.mgr import CredentialType, SubjectType
 from app.repositories.directory import SubjectFilter
@@ -34,7 +34,32 @@ class DeviceService:
         return await self.users.settings.mac_format()
 
     async def normalise(self, mac: str) -> str:
+        """Zielformat fuer neu angelegte Geraete."""
         return format_mac(mac, await self.mac_format())
+
+    async def resolve(self, mac: str) -> str:
+        """Findet den gespeicherten Benutzernamen zu einer MAC.
+
+        Das eingestellte Format kann sich aendern, bestehende Datensaetze
+        behalten aber ihren Namen. Deshalb wird die MAC in allen bekannten
+        Schreibweisen gesucht und nur dann neu formatiert, wenn es den Datensatz
+        noch nicht gibt - sonst waeren vorhandene Geraete nach einer Umstellung
+        weder aufrufbar noch aenderbar (FR-3).
+        """
+        preferred = await self.normalise(mac)
+        if await self.users.attrs.exists_anywhere(preferred) or await self.users.subjects.get(
+            preferred
+        ):
+            return preferred
+        for fmt in MAC_FORMATS:
+            candidate = format_mac(mac, fmt)
+            if candidate == preferred:
+                continue
+            if await self.users.attrs.exists_anywhere(candidate) or await self.users.subjects.get(
+                candidate
+            ):
+                return candidate
+        return preferred
 
     async def search(
         self, flt: SubjectFilter, limit: int = 50, offset: int = 0
@@ -43,7 +68,7 @@ class DeviceService:
         return await self.users.search(flt, limit=limit, offset=offset)
 
     async def get(self, mac: str, language: str = "de") -> UserDetail:
-        username = await self.normalise(mac)
+        username = await self.resolve(mac)
         detail = await self.users.get(username, language)
         if detail.subject_type is not SubjectType.DEVICE:
             raise NotFoundError(code="error.not_found", details={"mac": mac})
@@ -88,7 +113,7 @@ class DeviceService:
         actor_ip: str | None = None,
         language: str = "de",
     ) -> UserDetail:
-        username = await self.normalise(mac)
+        username = await self.resolve(mac)
         new_username = await self.normalise(payload.mac) if payload.mac else None
         return await self.users.update(
             username,
@@ -107,11 +132,11 @@ class DeviceService:
         )
 
     async def delete(self, mac: str, *, actor: Principal, actor_ip: str | None = None) -> None:
-        username = await self.normalise(mac)
+        username = await self.resolve(mac)
         await self.users.delete(username, actor=actor, actor_ip=actor_ip)
 
     async def set_disabled(
         self, mac: str, disabled: bool, *, actor: Principal, actor_ip: str | None = None
     ) -> None:
-        username = await self.normalise(mac)
+        username = await self.resolve(mac)
         await self.users.set_disabled(username, disabled, actor=actor, actor_ip=actor_ip)

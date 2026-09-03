@@ -131,7 +131,7 @@ export function DevicesPage() {
           <DataTable
             data={data?.items ?? []}
             columns={columns}
-            onRowClick={(row) => navigate(`/users/${encodeURIComponent(row.username)}`)}
+            onRowClick={(row) => navigate(`/devices/${encodeURIComponent(row.username)}`)}
           />
           <Pagination
             total={data?.meta.total ?? 0}

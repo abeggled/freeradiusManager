@@ -7,6 +7,7 @@ import { AccountsPage } from "@/pages/Accounts";
 import { AuditPage } from "@/pages/Audit";
 import { AuthLogPage } from "@/pages/AuthLog";
 import { DashboardPage } from "@/pages/Dashboard";
+import { DeviceDetailPage } from "@/pages/DeviceDetail";
 import { DevicesPage } from "@/pages/Devices";
 import { DiagnosePage } from "@/pages/Diagnose";
 import { GroupsPage } from "@/pages/Groups";
@@ -49,6 +50,7 @@ export function App() {
         <Route path="users" element={<UsersPage />} />
         <Route path="users/:username" element={<UserDetailPage />} />
         <Route path="devices" element={<DevicesPage />} />
+        <Route path="devices/:mac" element={<DeviceDetailPage />} />
         <Route path="groups" element={<GroupsPage />} />
         <Route path="nas" element={<NasPage />} />
         <Route path="sessions" element={<SessionsPage />} />

@@ -54,8 +54,20 @@ class AccountService:
     # --- Anmeldung -------------------------------------------------------
 
     async def authenticate(
-        self, username: str, password: str, *, actor_ip: str | None = None
+        self,
+        username: str,
+        password: str,
+        *,
+        actor_ip: str | None = None,
+        reset_failures: bool = True,
     ) -> MgrAccount:
+        """Prueft Benutzername und Passwort.
+
+        ``reset_failures=False`` laesst den Fehlerzaehler stehen, damit ihn erst
+        die vollstaendig abgeschlossene Anmeldung zuruecksetzt - sonst waere die
+        Sperre auf dem kombinierten Weg (Passwort und TOTP in einem Aufruf) nie
+        erreichbar.
+        """
         account = await self.repo.get_by_username(username)
         if account is None or not verify_password(password, account.password_hash):
             if account is not None:
@@ -83,10 +95,34 @@ class AccountService:
 
         if needs_rehash(account.password_hash or ""):
             account.password_hash = hash_password(password)
+        if reset_failures:
+            account.failed_logins = 0
+            account.locked_until = None
+        await self.session.commit()
+        return account
+
+    async def apply_mapped_role(self, account: MgrAccount, role: Role) -> None:
+        """Uebernimmt die aus den OIDC-Claims abgeleitete Rolle.
+
+        Der letzte aktive Administrator wird dabei nicht herabgestuft - sonst
+        koennte eine Aenderung im Identity-Provider die Instanz verwaisen lassen.
+        """
+        if account.role is role:
+            return
+        if (
+            account.role is Role.ADMINISTRATOR
+            and role is not Role.ADMINISTRATOR
+            and await self.repo.count_active_administrators(exclude_id=account.id) == 0
+        ):
+            raise ValidationError(code="error.last_administrator")
+        account.role = role
+        await self.session.commit()
+
+    async def clear_failures(self, account: MgrAccount) -> None:
+        """Setzt Fehlerzaehler und Sperre zurueck - nach vollstaendigem Erfolg."""
         account.failed_logins = 0
         account.locked_until = None
         await self.session.commit()
-        return account
 
     def requires_totp(self, account: MgrAccount) -> bool:
         return account.totp_enabled
@@ -254,7 +290,13 @@ class AccountService:
         if demoting and await self.repo.count_active_administrators(exclude_id=account.id) == 0:
             raise ValidationError(code="error.last_administrator")
 
-        for field in ("email", "display_name", "role", "is_active", "language"):
+        # ``model_fields_set`` trennt "nicht gesendet" von "ausdruecklich auf
+        # null gesetzt"; sonst liessen sich E-Mail und Anzeigename nie leeren.
+        supplied = payload.model_fields_set
+        for field in ("email", "display_name"):
+            if field in supplied:
+                setattr(account, field, getattr(payload, field))
+        for field in ("role", "is_active", "language"):
             value = getattr(payload, field)
             if value is not None:
                 setattr(account, field, value)

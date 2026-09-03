@@ -116,10 +116,12 @@ class UserService:
         checks = list(await self.attrs.check_attributes(username))
         replies = list(await self.attrs.reply_attributes(username))
         subject = await self.subjects.get(username)
-        if not checks and not replies and subject is None:
+        memberships = await self.groups.memberships(username)
+        # Eine reine Gruppenzuordnung genuegt als Nachweis: solche Bestandsnamen
+        # erscheinen in der Liste und muessen dort auch aufrufbar sein.
+        if not checks and not replies and subject is None and not memberships:
             raise NotFoundError(code="error.not_found", details={"username": username})
 
-        memberships = await self.groups.memberships(username)
         active = await self.acct.active_for_user(username)
         recent = await self.postauth.recent_for(username, limit=1)
         vlan = next(

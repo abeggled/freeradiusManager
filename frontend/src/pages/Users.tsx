@@ -258,7 +258,15 @@ export function UsersPage() {
             />
             {t("bulk.applyToFilter")}
           </label>
-          <button type="button" disabled={!bulk} onClick={() => setConfirmBulk(true)}>
+          <button
+            type="button"
+            disabled={
+              !bulk ||
+              (bulk === "set_expiry" && !bulkExpiry) ||
+              ((bulk === "assign_group" || bulk === "remove_group") && !bulkGroup)
+            }
+            onClick={() => setConfirmBulk(true)}
+          >
             {t("common.confirm")}
           </button>
           <button
