@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 from collections.abc import Callable
+from datetime import UTC
 from functools import lru_cache
 from typing import Annotated
 
@@ -132,14 +133,26 @@ async def current_principal(request: Request, response: Response, session: Sessi
         raise AuthenticationError(
             code="error.reauthentication_required", details={"reason": "role_changed"}
         )
+    # Bei OIDC verantwortet der Identity-Provider den zweiten Faktor; die
+    # lokale TOTP-Pflicht gilt fuer lokale Anmeldungen.
     if (
         account.role is Role.ADMINISTRATOR
         and settings.require_totp_for_admin
+        and not claims.oidc
         and not (claims.mfa and account.totp_enabled)
     ):
         raise AuthenticationError(
             code="error.reauthentication_required", details={"reason": "mfa_required"}
         )
+
+    # Eine Passwortaenderung verwirft aeltere Sitzungen - sonst bliebe ein
+    # gestohlenes Cookie bis zur absoluten Gueltigkeit brauchbar.
+    if account.password_changed_at is not None and claims.auth_at:
+        changed_at = account.password_changed_at.replace(tzinfo=UTC).timestamp()
+        if claims.auth_at < changed_at:
+            raise AuthenticationError(
+                code="error.reauthentication_required", details={"reason": "password_changed"}
+            )
 
     principal = Principal(
         account_id=account.id,
@@ -149,6 +162,8 @@ async def current_principal(request: Request, response: Response, session: Sessi
         session_id=claims.session_id,
         absolute_expiry=claims.absolute_expiry,
         mfa=claims.mfa,
+        oidc=claims.oidc,
+        auth_at=claims.auth_at,
     )
     request.state.principal = principal
 
@@ -164,6 +179,8 @@ async def current_principal(request: Request, response: Response, session: Sessi
             session_id=principal.session_id,
             absolute_expiry=principal.absolute_expiry,
             mfa=principal.mfa,
+            oidc=principal.oidc,
+            auth_at=principal.auth_at,
         )
         set_session_cookie(response, refreshed)
     return principal

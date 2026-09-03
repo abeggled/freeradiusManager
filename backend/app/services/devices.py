@@ -128,7 +128,9 @@ class DeviceService:
         language: str = "de",
     ) -> UserDetail:
         username = await self._device_username(mac)
-        new_username = await self.normalise(payload.mac) if payload.mac else None
+        # ueber resolve(): ein Zielname, der bereits in einer anderen
+        # Schreibweise existiert, darf nicht als frei gelten.
+        new_username = await self.resolve(payload.mac) if payload.mac else None
         return await self.users.update(
             username,
             UserUpdate(

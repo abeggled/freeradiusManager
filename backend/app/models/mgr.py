@@ -130,6 +130,11 @@ class MgrSubject(TimestampMixin, Base):
     inventory_no: Mapped[str | None] = mapped_column(String(64))
     expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
     disabled_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
+    disabled_state: Mapped[str | None] = mapped_column(String(300))
+    """Vor dem Sperren vorhandenes ``Auth-Type``-Tripel als JSON.
+
+    Ohne diese Notiz wuerde eine voruebergehende Sperre eine bestehende
+    ``Auth-Type``-Vorgabe dauerhaft entfernen (FR-1)."""
     created_by: Mapped[str | None] = mapped_column(String(64))
 
 

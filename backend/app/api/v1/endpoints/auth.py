@@ -37,9 +37,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 OIDC_STATE_COOKIE = "frm_oidc"
 
 
-def _issue_session(response: Response, account: MgrAccount, *, mfa: bool = False) -> None:
+def _issue_session(
+    response: Response, account: MgrAccount, *, mfa: bool = False, oidc: bool = False
+) -> None:
     token, _ = create_session_token(
-        account.id, account.username, account.role, account.language, mfa=mfa
+        account.id, account.username, account.role, account.language, mfa=mfa, oidc=oidc
     )
     set_session_cookie(response, token)
 
@@ -241,8 +243,9 @@ async def oidc_callback(
     redirect = RedirectResponse(
         url=settings.root_path or "/", status_code=status.HTTP_303_SEE_OTHER
     )
-    # Der Identity-Provider hat die Anmeldung vollstaendig durchgefuehrt.
-    _issue_session(redirect, account, mfa=True)
+    # Der Identity-Provider hat die Anmeldung vollstaendig durchgefuehrt; die
+    # lokale TOTP-Pflicht gilt fuer diese Sitzung nicht.
+    _issue_session(redirect, account, mfa=True, oidc=True)
     redirect.delete_cookie(OIDC_STATE_COOKIE, path="/")
     return redirect
 

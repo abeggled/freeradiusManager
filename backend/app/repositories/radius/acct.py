@@ -85,6 +85,15 @@ class AccountingRepository:
         stmt = select(RadAcct).where(RadAcct.acctuniqueid == acctuniqueid)
         return await self.session.scalar(stmt)
 
+    async def count_active_for_user(self, username: str) -> int:
+        """Genaue Zahl laufender Sessions - ``active_for_user`` ist begrenzt."""
+        stmt = (
+            select(func.count())
+            .select_from(RadAcct)
+            .where(RadAcct.username == username, RadAcct.acctstoptime.is_(None))
+        )
+        return int(await self.session.scalar(stmt) or 0)
+
     async def active_for_user(self, username: str) -> list[RadAcct]:
         stmt = (
             select(RadAcct)
@@ -103,10 +112,17 @@ class AccountingRepository:
         )
         return await self.session.scalar(stmt)
 
-    async def terminate_causes(self) -> list[str]:
+    async def terminate_causes(self, since: dt.datetime | None = None) -> list[str]:
+        """Vorkommende Terminate-Causes eines begrenzten Zeitraums.
+
+        Ohne Zeitgrenze laeuft ein ``DISTINCT`` ueber die gesamte, unindizierte
+        Spalte - auf Millionen Zeilen ein voller Tabellenscan je Seitenaufruf
+        (NFR-2).
+        """
+        since = since or (dt.datetime.now(tz=dt.UTC).replace(tzinfo=None) - dt.timedelta(days=30))
         stmt = (
             select(RadAcct.acctterminatecause)
-            .where(RadAcct.acctterminatecause != "")
+            .where(RadAcct.acctterminatecause != "", RadAcct.acctstarttime >= since)
             .distinct()
             .limit(100)
         )

@@ -304,6 +304,12 @@ class ImportExportService:
                 # Wirft dieselben Validierungsfehler wie der Schreibvorgang.
                 self._payloads(parsed, kind, exists)
 
+                if not dry_run:
+                    # Erst schreiben, dann zaehlen: ein von der Datenbank
+                    # abgewiesener Datensatz darf nicht zugleich als Erfolg und
+                    # als Fehler im Bericht stehen.
+                    await self._write_row(parsed, kind, exists, actor, actor_ip, language)
+
                 if exists:
                     report.to_update += 1
                 else:
@@ -316,9 +322,6 @@ class ImportExportService:
                         values=parsed.summary(),
                     )
                 )
-
-                if not dry_run:
-                    await self._write_row(parsed, kind, exists, actor, actor_ip, language)
             except Exception as exc:  # noqa: BLE001 - jede Zeile wird einzeln gemeldet
                 # Ein abgewiesener Schreibvorgang laesst die Sitzung in einem
                 # Fehlerzustand zurueck; ohne Rollback scheiterte danach jede

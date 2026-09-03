@@ -21,13 +21,19 @@ _SSID_PATTERN = re.compile(r"[:\-]?([^:\-]{2,})$")
 
 
 def extract_ssid(called_station_id: str | None) -> str | None:
-    """Viele APs liefern ``<AP-MAC>:<SSID>`` in Called-Station-Id."""
-    if not called_station_id:
+    """Viele APs liefern ``<AP-MAC>:<SSID>`` in Called-Station-Id.
+
+    Eine reine BSSID in Doppelpunktschreibweise (``00:11:22:33:44:55``) enthaelt
+    keine SSID - sonst gaebe das letzte Oktett eine erfundene SSID.
+    """
+    value = (called_station_id or "").strip()
+    if not value or is_mac(value):
         return None
-    if ":" in called_station_id:
-        candidate = called_station_id.rsplit(":", 1)[-1].strip()
-        if candidate and not is_mac(candidate) and len(candidate) > 1:
-            return candidate
+    if ":" not in value:
+        return None
+    candidate = value.rsplit(":", 1)[-1].strip()
+    if candidate and not is_mac(candidate) and len(candidate) > 1:
+        return candidate
     return None
 
 
@@ -37,7 +43,14 @@ class SessionService:
         self.nas = NasRepository(session)
 
     async def _decorate(self, page: KeysetPage[RadAcct]) -> list[SessionItem]:
-        shortnames = await self.nas.shortnames_for([row.nasipaddress for row in page.items])
+        addresses = [row.nasipaddress for row in page.items]
+        shortnames = await self.nas.shortnames_for(addresses)
+        # NAS duerfen als Netz eingetragen sein; ohne diese Aufloesung fehlte der
+        # Kurzname genau dort, wo Diagnose und CoA ihn finden (FR-4).
+        for address in {a for a in addresses if a and a not in shortnames}:
+            match = await self.nas.find_for_address(address)
+            if match is not None:
+                shortnames[address] = match.shortname
         items: list[SessionItem] = []
         for row in page.items:
             item = SessionItem.model_validate(row)

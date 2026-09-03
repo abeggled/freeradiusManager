@@ -10,6 +10,7 @@ werden in jeder API-Antwort maskiert (NFR-1).
 from __future__ import annotations
 
 import datetime as dt
+import json
 from collections.abc import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -127,7 +128,7 @@ class UserService:
         if not checks and not replies and subject is None and not memberships:
             raise NotFoundError(code="error.not_found", details={"username": username})
 
-        active = await self.acct.active_for_user(username)
+        active_sessions = await self.acct.count_active_for_user(username)
         recent = await self.postauth.recent_for(username, limit=1)
         vlan = next(
             (r.value for r in replies if r.attribute.lower() == "tunnel-private-group-id"), None
@@ -174,7 +175,7 @@ class UserService:
                 MembershipOut(groupname=m.groupname, priority=m.priority) for m in memberships
             ],
             vlan=vlan,
-            active_sessions=len(active),
+            active_sessions=active_sessions,
             last_auth=recent[0].authdate if recent else None,
             last_auth_reply=recent[0].reply if recent else None,
             created_at=subject.created_at if subject else None,
@@ -272,7 +273,7 @@ class UserService:
             subject = await self.subjects.ensure(username)
 
         if payload.credential_type is not None:
-            subject.credential_type = payload.credential_type
+            await self._change_credential_type(username, subject, payload.credential_type)
 
         if payload.clear_expiry:
             await self.attrs.delete_check(username, EXPIRATION)
@@ -360,13 +361,25 @@ class UserService:
         if not await self.attrs.exists_anywhere(username) and not await self.subjects.get(username):
             raise NotFoundError(code="error.not_found", details={"username": username})
         subject = await self.subjects.ensure(username)
+        existing = await self.attrs.find_check(username, AUTH_TYPE)
         if disabled:
+            # Eine vorhandene Auth-Type-Vorgabe (etwa "PAP") wird gemerkt und
+            # beim Entsperren zurueckgeschrieben; sonst waere die Sperre eine
+            # dauerhafte Aenderung der Authentifizierungskonfiguration.
+            if existing is not None and existing.value != REJECT:
+                subject.disabled_state = json.dumps({"op": existing.op, "value": existing.value})
             await self.attrs.set_check(username, AUTH_TYPE, ":=", REJECT)
             subject.disabled_at = utcnow()
         else:
-            row = await self.attrs.find_check(username, AUTH_TYPE)
-            if row is not None and row.value == REJECT:
-                await self.attrs.delete_check(username, AUTH_TYPE)
+            if existing is not None and existing.value == REJECT:
+                previous = self._previous_auth_type(subject.disabled_state)
+                if previous is None:
+                    await self.attrs.delete_check(username, AUTH_TYPE)
+                else:
+                    await self.attrs.set_check(
+                        username, AUTH_TYPE, previous["op"], previous["value"]
+                    )
+            subject.disabled_state = None
             subject.disabled_at = None
         await self.audit.log(
             action="user.disable" if disabled else "user.enable",
@@ -426,6 +439,30 @@ class UserService:
         if mac_is_password:
             credential_type = subject.credential_type if subject else CredentialType.CLEARTEXT
             await self._write_credentials(new, new, credential_type)
+
+    async def _change_credential_type(
+        self, username: str, subject: MgrSubject, target: CredentialType
+    ) -> None:
+        """Passt die gespeicherten Attribute an den neuen Credential-Typ an.
+
+        Aus dem NT-Hash laesst sich kein Klartext zurueckgewinnen; ein Wechsel,
+        der Klartext verlangt, wird deshalb abgewiesen, statt einen Typ zu
+        melden, den die Daten nicht hergeben.
+        """
+        wanted = set(CREDENTIAL_ATTRIBUTES[target])
+        cleartext = await self.attrs.find_check(username, "Cleartext-Password")
+
+        if "Cleartext-Password" in wanted and cleartext is None:
+            raise ValidationError(
+                code="error.credential_type_needs_password",
+                details={"username": username, "credential_type": target.value},
+            )
+        if "NT-Password" in wanted and cleartext is not None:
+            await self.attrs.set_check(username, "NT-Password", ":=", nt_hash(cleartext.value))
+        for attribute in ("Cleartext-Password", "NT-Password"):
+            if attribute not in wanted:
+                await self.attrs.delete_check(username, attribute)
+        subject.credential_type = target
 
     async def _write_credentials(
         self, username: str, password: str, credential_type: CredentialType
@@ -505,6 +542,18 @@ class UserService:
         if attributes is not None or vlan is not None or clear_vlan:
             await self.attrs.replace_replies(username, rows)
         return warnings
+
+    @staticmethod
+    def _previous_auth_type(raw: str | None) -> dict[str, str] | None:
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(data, dict) and "op" in data and "value" in data:
+            return {"op": str(data["op"]), "value": str(data["value"])}
+        return None
 
     @staticmethod
     def _status(checks: Sequence[RadCheck]) -> UserStatus:

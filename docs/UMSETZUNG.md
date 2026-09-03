@@ -75,10 +75,10 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Sieben Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11 und
-12 Befunde;
+Acht Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11, 12
+und 11 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
-sowie `test_review_fixes.py` bis `test_review_fixes_6.py` unter
+sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`).
 
 Drei Befunde der vierten Runde betrafen unvollständige Korrekturen aus früheren
@@ -265,6 +265,29 @@ Die siebte Runde:
   entspricht der gelieferten.
 * Der Router kennt den Basispfad; eine geänderte Filterung leert die Auswahl für
   Sammelaktionen.
+
+Die achte Runde:
+
+* **Eine Passwortänderung verwirft ältere Sitzungen.** Das Token führt den
+  Anmeldezeitpunkt mit; liegt er vor `password_changed_at`, endet die Sitzung.
+  Ein gestohlenes Cookie überlebte den Passwortwechsel sonst bis zur absoluten
+  Gültigkeit.
+* **OIDC-Administratoren kommen wieder an der 2FA-Schranke vorbei.** Die Sperre
+  aus Runde 7 hätte frisch angelegte OIDC-Konten ausgesperrt; für solche
+  Sitzungen verantwortet der Identity-Provider den zweiten Faktor.
+* **Das Container-Image wird erst nach dem End-to-End-Test veröffentlicht.**
+* **Sperren verändert die Authentifizierungskonfiguration nicht mehr dauerhaft.**
+  Ein vorhandenes `Auth-Type` (etwa `PAP`) wird gemerkt und beim Entsperren
+  zurückgeschrieben (neue Spalte `mgr_subject.disabled_state`, Migration 0002).
+* **Ein Wechsel des Credential-Typs gleicht die Attribute ab** statt nur die
+  Notiz zu ändern; ein Wechsel, der Klartext verlangt, wird mit klarer Meldung
+  abgelehnt, weil er aus dem NT-Hash nicht herleitbar ist.
+* Die Zahl laufender Sessions kommt aus einem `COUNT` statt aus einer begrenzten
+  Liste; die Terminate-Cause-Liste nutzt ein Zeitfenster statt eines vollen
+  Tabellenscans; Sessionlisten lösen NAS-Netzeinträge auf; eine reine BSSID
+  ergibt keine erfundene SSID.
+* Eine Geräteumbenennung erkennt Dubletten in anderen MAC-Schreibweisen; eine
+  abgewiesene Importzeile zählt nicht mehr zugleich als Erfolg.
 
 ## Prüfschritte
 
