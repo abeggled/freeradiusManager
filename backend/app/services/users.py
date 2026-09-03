@@ -489,7 +489,13 @@ class UserService:
         warnings: list[ApiWarning] = []
         if attributes is None:
             return warnings
-        reserved = {"cleartext-password", "nt-password", AUTH_TYPE.lower(), EXPIRATION.lower()}
+        # Aus dem gemeinsamen Woerterbuch: eine feste Zweierliste haette bei
+        # Bestandsbenutzern mit Crypt-, MD5- oder SHA2-Password deren
+        # Anmeldedaten geloescht.
+        reserved = set(radius_dict.PASSWORD_ATTRIBUTES) | {
+            AUTH_TYPE.lower(),
+            EXPIRATION.lower(),
+        }
         if replace:
             for row in await self.attrs.check_attributes(username):
                 if row.attribute.lower() not in reserved:

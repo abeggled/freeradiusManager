@@ -64,26 +64,61 @@ docker compose exec freeradius radtest BENUTZER PASSWORT 127.0.0.1 0 testing123
 
 ## Betrieb gegen eine bestehende Installation
 
-1. Eigenen Datenbankbenutzer anlegen (NFR-1) – nicht das FreeRADIUS-Konto verwenden:
+1. Eigenen Datenbankbenutzer anlegen (NFR-1) – nicht das FreeRADIUS-Konto
+   verwenden. MariaDB kennt keine Tabellen-Wildcards, die `mgr_`-Tabellen werden
+   deshalb einzeln freigegeben:
 
    ```sql
    CREATE USER 'radmgr'@'%' IDENTIFIED BY '...';
+
+   -- Accounting und Auth-Log nur lesen
    GRANT SELECT ON radius.radacct TO 'radmgr'@'%';
    GRANT SELECT ON radius.radpostauth TO 'radmgr'@'%';
+
+   -- Konfigurationstabellen pflegen
    GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radcheck TO 'radmgr'@'%';
    GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radreply TO 'radmgr'@'%';
    GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radgroupcheck TO 'radmgr'@'%';
    GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radgroupreply TO 'radmgr'@'%';
    GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radusergroup TO 'radmgr'@'%';
    GRANT SELECT, INSERT, UPDATE, DELETE ON radius.nas TO 'radmgr'@'%';
-   GRANT ALL PRIVILEGES ON `radius`.`mgr\_%` TO 'radmgr'@'%';
    ```
 
-2. Container mit den Umgebungsvariablen aus `.env.example` starten. Beim Start
+2. Die `mgr_`-Tabellen einmalig anlegen. Alembic braucht dafür DDL-Rechte, die
+   das Betriebskonto dauerhaft nicht haben soll – deshalb ein eigenes Konto, das
+   danach wieder entfällt:
+
+   ```bash
+   docker compose run --rm \
+     -e FRM_DB_USER=radmgr_migrate -e FRM_DB_PASSWORD=... \
+     manager alembic upgrade head
+   ```
+
+   ```sql
+   -- Nur fuer die Migration, anschliessend loeschbar
+   CREATE USER 'radmgr_migrate'@'%' IDENTIFIED BY '...';
+   GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP, REFERENCES
+     ON radius.* TO 'radmgr_migrate'@'%';
+
+   -- Danach dem Betriebskonto die fertigen Tabellen freigeben
+   GRANT SELECT, INSERT, UPDATE, DELETE ON radius.mgr_account TO 'radmgr'@'%';
+   GRANT SELECT, INSERT, UPDATE, DELETE ON radius.mgr_audit TO 'radmgr'@'%';
+   GRANT SELECT, INSERT, UPDATE, DELETE ON radius.mgr_subject TO 'radmgr'@'%';
+   GRANT SELECT, INSERT, UPDATE, DELETE ON radius.mgr_nas_extra TO 'radmgr'@'%';
+   GRANT SELECT, INSERT, UPDATE, DELETE ON radius.mgr_setting TO 'radmgr'@'%';
+   GRANT SELECT, INSERT, UPDATE, DELETE ON radius.mgr_stats_snapshot TO 'radmgr'@'%';
+   GRANT SELECT ON radius.alembic_version TO 'radmgr'@'%';
+   DROP USER 'radmgr_migrate'@'%';
+   ```
+
+   Anschliessend `FRM_RUN_MIGRATIONS=0` setzen, damit der Container beim Start
+   keine Migration mehr versucht.
+
+3. Container mit den Umgebungsvariablen aus `.env.example` starten. Beim Start
    migriert der Manager ausschliesslich seine eigenen `mgr_`-Tabellen und prüft
    das RADIUS-Schema; bei Abweichungen verweigert er den Betrieb mit einer
    klaren Meldung (Abschnitt 4.2).
-3. Den Manager hinter einen TLS-Reverse-Proxy stellen und `FRM_COOKIE_SECURE=true`
+4. Den Manager hinter einen TLS-Reverse-Proxy stellen und `FRM_COOKIE_SECURE=true`
    belassen. Damit Audit-Log und Rate-Limits die echte Client-Adresse sehen, das
    Netz des Proxys in `FRM_TRUSTED_PROXIES` eintragen – nur von dort wird
    `X-Forwarded-For` ausgewertet.

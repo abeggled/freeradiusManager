@@ -41,6 +41,29 @@ class NasRepository:
         total = int(await self.session.scalar(count_stmt) or 0)
         return items, total
 
+    async def network_entries(self) -> list[Nas]:
+        """Alle als Netz eingetragenen NAS - einmal geladen, dann im Speicher
+        ausgewertet (NFR-2)."""
+        rows = await self.session.scalars(select(Nas).where(Nas.nasname.like("%/%")))
+        return list(rows.all())
+
+    @staticmethod
+    def match_network(address: str, candidates: Sequence[Nas]) -> Nas | None:
+        """Spezifischstes Netz, das die Adresse enthaelt."""
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError:
+            return None
+        best: tuple[int, Nas] | None = None
+        for row in candidates:
+            try:
+                network = ipaddress.ip_network(row.nasname, strict=False)
+            except ValueError:
+                continue
+            if ip in network and (best is None or network.prefixlen > best[0]):
+                best = (network.prefixlen, row)
+        return best[1] if best else None
+
     async def find_for_address(self, address: str) -> Nas | None:
         """NAS zu einer konkreten IP - exakt oder ueber das passende Netz.
 
@@ -49,20 +72,7 @@ class NasRepository:
         exact = await self.get_by_name(address)
         if exact is not None:
             return exact
-        try:
-            ip = ipaddress.ip_address(address)
-        except ValueError:
-            return None
-        rows = await self.session.scalars(select(Nas).where(Nas.nasname.like("%/%")))
-        best: tuple[int, Nas] | None = None
-        for row in rows.all():
-            try:
-                network = ipaddress.ip_network(row.nasname, strict=False)
-            except ValueError:
-                continue
-            if ip in network and (best is None or network.prefixlen > best[0]):
-                best = (network.prefixlen, row)
-        return best[1] if best else None
+        return self.match_network(address, await self.network_entries())
 
     async def shortnames_for(self, nasnames: Sequence[str]) -> dict[str, str | None]:
         """Kurznamen mehrerer NAS in einer Abfrage - eine Runde je Adresse waere
@@ -73,6 +83,15 @@ class NasRepository:
             select(Nas.nasname, Nas.shortname).where(Nas.nasname.in_(set(nasnames)))
         )
         return {str(name): shortname for name, shortname in rows.all()}
+
+    async def find_by_label(self, text: str) -> list[Nas]:
+        """NAS nach Kurzname oder Name - fuer die Filterung ueber den
+        angezeigten Bezeichner."""
+        pattern = f"%{text}%"
+        rows = await self.session.scalars(
+            select(Nas).where(or_(Nas.shortname.like(pattern), Nas.nasname.like(pattern)))
+        )
+        return list(rows.all())
 
     async def all_names(self) -> set[str]:
         return set((await self.session.scalars(select(Nas.nasname))).all())

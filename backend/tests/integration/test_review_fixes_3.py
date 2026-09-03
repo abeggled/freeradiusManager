@@ -340,14 +340,19 @@ async def test_new_device_uses_the_configured_format(session, admin_principal) -
 # --- Gruppen ---------------------------------------------------------------
 
 
-async def test_member_listing_limit_is_clamped(session, client) -> None:
+async def test_member_listing_rejects_invalid_paging(session, client) -> None:
+    """Unsinnige Seitenparameter sind ein Eingabefehler, kein Serverfehler."""
     await _account(session, "auditor", Role.AUDITOR)
     await client.post(
         "/api/v1/auth/login", json={"username": "auditor", "password": "ein-sicheres-passwort"}
     )
-    response = await client.get("/api/v1/groups/g1/members?limit=1000000&offset=-5")
-    assert response.status_code == 200
-    assert response.json() == []
+    rejected = await client.get("/api/v1/groups/g1/members?limit=1000000&offset=-5")
+    assert rejected.status_code == 422
+    assert rejected.json()["code"] == "error.validation"
+
+    ok = await client.get("/api/v1/groups/g1/members?limit=50&offset=0")
+    assert ok.status_code == 200
+    assert ok.json() == []
 
 
 async def test_challenge_rejected_when_locked(session) -> None:

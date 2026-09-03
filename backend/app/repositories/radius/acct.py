@@ -22,6 +22,7 @@ class SessionFilter:
     username: str | None = None
     calling_station_id: str | None = None
     nas_ip_address: str | None = None
+    nas_ip_addresses: list[str] | None = None
     called_station_id: str | None = None
     framed_ip_address: str | None = None
     terminate_cause: str | None = None
@@ -42,6 +43,8 @@ class AccountingRepository:
             conditions.append(RadAcct.callingstationid == flt.calling_station_id)
         if flt.nas_ip_address:
             conditions.append(RadAcct.nasipaddress == flt.nas_ip_address)
+        if flt.nas_ip_addresses:
+            conditions.append(RadAcct.nasipaddress.in_(flt.nas_ip_addresses))
         if flt.called_station_id:
             conditions.append(RadAcct.calledstationid.like(f"%{flt.called_station_id}%"))
         if flt.framed_ip_address:

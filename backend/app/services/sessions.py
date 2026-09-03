@@ -45,12 +45,16 @@ class SessionService:
     async def _decorate(self, page: KeysetPage[RadAcct]) -> list[SessionItem]:
         addresses = [row.nasipaddress for row in page.items]
         shortnames = await self.nas.shortnames_for(addresses)
-        # NAS duerfen als Netz eingetragen sein; ohne diese Aufloesung fehlte der
-        # Kurzname genau dort, wo Diagnose und CoA ihn finden (FR-4).
-        for address in {a for a in addresses if a and a not in shortnames}:
-            match = await self.nas.find_for_address(address)
-            if match is not None:
-                shortnames[address] = match.shortname
+        # NAS duerfen als Netz eingetragen sein. Die Netzeintraege werden einmal
+        # geladen und im Speicher zugeordnet - eine Abfrage je Adresse waere bei
+        # 200 Zeilen je Seite der teuerste Teil des Requests (NFR-2).
+        unresolved = {a for a in addresses if a and a not in shortnames}
+        if unresolved:
+            networks = await self.nas.network_entries()
+            for address in unresolved:
+                match = self.nas.match_network(address, networks)
+                if match is not None:
+                    shortnames[address] = match.shortname
         items: list[SessionItem] = []
         for row in page.items:
             item = SessionItem.model_validate(row)
@@ -60,9 +64,24 @@ class SessionService:
             items.append(item)
         return items
 
+    async def resolve_nas_filter(self, text: str) -> list[str]:
+        """Uebersetzt den angezeigten NAS-Bezeichner in Accounting-Adressen.
+
+        In der Liste steht der Kurzname; ``radacct`` kennt aber nur die IP. Ohne
+        diese Aufloesung liefe eine Suche nach dem angezeigten Namen ins Leere.
+        Netzeintraege lassen sich nicht in ein SQL-Praedikat uebersetzen und
+        bleiben deshalb aussen vor.
+        """
+        matches = await self.nas.find_by_label(text)
+        addresses = [nas.nasname for nas in matches if "/" not in nas.nasname]
+        return addresses or [text]
+
     async def search(
         self, flt: SessionFilter, limit: int | None = None, cursor: str | None = None
     ) -> tuple[list[SessionItem], str | None, int]:
+        if flt.nas_ip_address:
+            flt.nas_ip_addresses = await self.resolve_nas_filter(flt.nas_ip_address)
+            flt.nas_ip_address = None
         page = await self.repo.search(flt, limit=limit, cursor=cursor)
         approx = await self.repo.count(flt)
         return await self._decorate(page), page.next_cursor, approx

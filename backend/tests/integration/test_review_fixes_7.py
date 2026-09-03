@@ -285,3 +285,111 @@ async def test_failed_row_is_not_counted_as_success(session, admin_principal) ->
     assert report.errors == 1
     assert report.to_create == 1
     assert len([r for r in report.rows if r.action == "create"]) == 1
+
+
+# --- Neunte Runde ----------------------------------------------------------
+
+
+async def test_metadata_length_is_validated(session, admin_principal) -> None:
+    """Zu lange Werte sind ein Eingabefehler, kein Serverfehler."""
+    from pydantic import ValidationError as PydanticValidationError
+
+    with pytest.raises(PydanticValidationError):
+        UserCreate(username="anna", password="geheim123", meta={"location": "x" * 200})
+
+
+async def test_identifiers_with_slashes_are_rejected() -> None:
+    """Ein Schrägstrich liesse sich über die REST-Pfade nicht adressieren."""
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.schemas.groups import GroupCreate
+
+    with pytest.raises(PydanticValidationError):
+        UserCreate(username="domain/user", password="geheim123")
+    with pytest.raises(PydanticValidationError):
+        GroupCreate(groupname="a/b", vlan="10")
+
+
+async def test_patch_keeps_other_password_attributes(session, admin_principal) -> None:
+    """Bestandsbenutzer mit Crypt-Password dürfen ihn nicht verlieren."""
+    from app.schemas.users import AttributeIn
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.attrs.add_check("anna", "Crypt-Password", ":=", "$1$abc")
+    await session.commit()
+
+    await users.update(
+        "anna",
+        UserUpdate(
+            check_attributes=[AttributeIn(attribute="Simultaneous-Use", op=":=", value="1")]
+        ),
+        actor=admin_principal,
+    )
+    rows = (await session.scalars(select(RadCheck).where(RadCheck.username == "anna"))).all()
+    assert "Crypt-Password" in {r.attribute for r in rows}
+
+
+async def test_export_import_roundtrip_is_lossless(session, admin_principal) -> None:
+    """Exportieren, bearbeiten, importieren darf Werte nicht verändern."""
+    from app.repositories.directory import SubjectFilter
+
+    users = UserService(session)
+    await users.create(
+        UserCreate(
+            username="anna",
+            password="geheim123",
+            groups=[{"groupname": "-guest", "priority": 1}],
+            meta={"note": "=SUMME(A1)"},
+        ),
+        actor=admin_principal,
+    )
+    csv_text = await ImportExportService(session).export(SubjectFilter())
+    assert "'-guest" in csv_text
+
+    await ImportExportService(session).import_csv(
+        csv_text.replace("username,", "username,").replace("\n", "\n", 1),
+        kind="user",
+        dry_run=False,
+        actor=admin_principal,
+    )
+    detail = await users.get("anna")
+    assert detail.groups == ["-guest"]
+    assert detail.note == "=SUMME(A1)"
+
+
+async def test_sessions_can_be_filtered_by_nas_shortname(session, admin_principal) -> None:
+    """In der Liste steht der Kurzname; danach muss sich auch filtern lassen."""
+    from app.repositories.radius.acct import SessionFilter
+
+    await NasService(session).create(
+        NasCreate(nasname="10.0.0.7", shortname="sw07", secret="s"), actor=admin_principal
+    )
+    session.add(
+        RadAcct(
+            acctsessionid="s1",
+            acctuniqueid="u1",
+            username="anna",
+            nasipaddress="10.0.0.7",
+            acctstarttime=dt.datetime(2026, 9, 1, 8, 0),
+            callingstationid="AA-BB-CC-DD-EE-FF",
+        )
+    )
+    await session.commit()
+
+    items, _, _ = await SessionService(session).search(SessionFilter(nas_ip_address="sw07"))
+    assert [i.username for i in items] == ["anna"]
+
+    by_ip, _, _ = await SessionService(session).search(SessionFilter(nas_ip_address="10.0.0.7"))
+    assert len(by_ip) == 1
+
+
+async def test_negative_offset_is_a_validation_error(session, client) -> None:
+    await _account(session, "auditor", Role.AUDITOR)
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "auditor", "password": "ein-sicheres-passwort"},
+    )
+    response = await client.get("/api/v1/users?offset=-1")
+    assert response.status_code == 422
+    assert response.json()["code"] == "error.validation"

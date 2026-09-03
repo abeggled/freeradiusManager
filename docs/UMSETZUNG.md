@@ -75,11 +75,12 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Acht Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11, 12
-und 11 Befunde;
+Neun Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11, 12,
+11 und 10 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
-`backend/tests/integration/`).
+`backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
+dabei von 9 auf 1 zurück.
 
 Drei Befunde der vierten Runde betrafen unvollständige Korrekturen aus früheren
 Runden – der Hintergrundjob für die Aufbewahrungsfrist war nie gestartet worden,
@@ -288,6 +289,28 @@ Die achte Runde:
   ergibt keine erfundene SSID.
 * Eine Geräteumbenennung erkennt Dubletten in anderen MAC-Schreibweisen; eine
   abgewiesene Importzeile zählt nicht mehr zugleich als Erfolg.
+
+Die neunte Runde:
+
+* **Die Rechtevergabe im Betriebshandbuch war falsch.** MariaDB behandelt
+  ``radius.`mgr\_%``` als Tabellennamen, nicht als Muster – der so eingerichtete
+  Benutzer hätte keinen Zugriff auf eine einzige `mgr_`-Tabelle gehabt. Die
+  Anleitung nennt jetzt ein separates Migrationskonto und die konkreten
+  Tabellen; beides ist gegen eine echte MariaDB durchgespielt.
+* **Optionale Einstellungen erreichen den Container.** OIDC liess sich über den
+  dokumentierten `.env`-Weg nicht aktivieren, weil Compose die Variablen nur
+  interpoliert hat; ein `env_file`-Eintrag reicht sie nun durch.
+* **Eine beendete Sitzung führt sofort zur Anmeldemaske**, statt eine tote
+  Oberfläche stehen zu lassen.
+* Metadatenfelder haben Längengrenzen passend zu den Spalten; Namen mit
+  Schrägstrich werden abgewiesen, statt später über die REST-Pfade unerreichbar
+  zu sein; negative Seitenoffsets sind ein Eingabefehler.
+* Beim Ersetzen von Prüfattributen bleiben alle bekannten Passwortattribute
+  geschützt, nicht nur die zwei häufigsten.
+* Der Export-Bearbeiten-Import-Weg ist verlustfrei: die Formel-Entschärfung wird
+  beim Import wieder entfernt.
+* Sessions lassen sich über den angezeigten NAS-Kurznamen filtern; NAS-Netze
+  werden beim Aufbau einer Seite gesammelt aufgelöst statt einzeln abgefragt.
 
 ## Prüfschritte
 

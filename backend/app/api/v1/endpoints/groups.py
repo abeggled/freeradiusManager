@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from app.api.deps import ClientIp, Language, ReaderUser, SessionDep, WriterUser
 from app.core import radius_dict
-from app.core.pagination import clamp_limit
+from app.core.pagination import MAX_PAGE_SIZE, clamp_limit
 from app.schemas.groups import (
     DictionaryEntry,
     DictionaryResponse,
@@ -57,7 +57,11 @@ async def get_group(groupname: str, session: SessionDep, _: ReaderUser) -> Group
 
 @router.get("/{groupname}/members", response_model=list[str])
 async def group_members(
-    groupname: str, session: SessionDep, _: ReaderUser, limit: int = 50, offset: int = 0
+    groupname: str,
+    session: SessionDep,
+    _: ReaderUser,
+    limit: int = Query(default=50, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(default=0, ge=0),
 ) -> list[str]:
     """Mitglieder einer Gruppe, seitenweise (NFR-2)."""
     return await GroupService(session).members(

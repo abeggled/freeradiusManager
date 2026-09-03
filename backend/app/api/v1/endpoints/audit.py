@@ -6,10 +6,10 @@ import datetime as dt
 import json
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from app.api.deps import ReaderUser, SessionDep
-from app.core.pagination import clamp_limit
+from app.core.pagination import MAX_PAGE_SIZE, clamp_limit
 from app.repositories.mgr.audit import AuditRepository
 from app.schemas.accounts import AuditItem
 from app.schemas.common import PagedResponse, PageMeta
@@ -36,8 +36,8 @@ async def list_audit(
     object_id: str | None = None,
     date_from: dt.datetime | None = None,
     date_to: dt.datetime | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(default=50, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(default=0, ge=0),
 ) -> PagedResponse[AuditItem]:
     limit = clamp_limit(limit)
     rows, total = await AuditRepository(session).search(

@@ -57,7 +57,7 @@ def register_error_handlers(app: FastAPI) -> None:
     async def _validation(request: Request, exc: RequestValidationError) -> JSONResponse:
         language = _language(request)
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=422,
             content=_payload(
                 "error.validation",
                 translate("error.validation", language),

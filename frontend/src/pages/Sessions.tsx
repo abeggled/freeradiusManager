@@ -68,7 +68,7 @@ export function SessionsPage() {
           }}
         />
         <input
-          placeholder={t("sessions.nas")}
+          placeholder={t("sessions.nasFilter")}
           value={nas}
           onChange={(event) => {
             setNas(event.target.value);

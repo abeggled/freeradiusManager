@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.common import ApiWarning
-from app.schemas.users import AttributeIn, AttributeOut
+from app.schemas.users import AttributeIn, AttributeOut, validate_identifier
 
 
 class GroupListItem(BaseModel):
@@ -24,6 +24,12 @@ class GroupDetail(GroupListItem):
 
 class GroupCreate(BaseModel):
     groupname: str = Field(min_length=1, max_length=64)
+
+    @field_validator("groupname")
+    @classmethod
+    def _check(cls, value: str) -> str:
+        return validate_identifier(value, "groupname")
+
     vlan: str | None = Field(default=None, max_length=64)
     clear_vlan: bool = False
     check_attributes: list[AttributeIn] = Field(default_factory=list)
@@ -32,6 +38,12 @@ class GroupCreate(BaseModel):
 
 class GroupUpdate(BaseModel):
     groupname: str | None = Field(default=None, max_length=64)
+
+    @field_validator("groupname")
+    @classmethod
+    def _check(cls, value: str | None) -> str | None:
+        return None if value is None else validate_identifier(value, "groupname")
+
     vlan: str | None = None
     clear_vlan: bool = False
     check_attributes: list[AttributeIn] | None = None

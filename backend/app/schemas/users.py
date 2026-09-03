@@ -12,6 +12,22 @@ from app.schemas.common import ApiWarning
 
 MASKED = "********"
 
+
+def validate_identifier(value: str, field: str) -> str:
+    """Prueft einen Namen, der spaeter in einem Pfadsegment steht.
+
+    Ein Schraegstrich liesse sich ueber die REST-Ressourcen nicht mehr
+    adressieren: der Datensatz waere sichtbar, aber weder auf- noch aufrufbar.
+    Deshalb wird er beim Anlegen abgewiesen statt spaeter zu einem 404 zu fuehren.
+    """
+    value = value.strip()
+    if not value:
+        raise ValueError(f"{field} darf nicht leer sein")
+    if "/" in value or "\\" in value:
+        raise ValueError(f"{field} darf keinen Schraegstrich enthalten")
+    return value
+
+
 UserStatus = Literal["active", "disabled", "expired", "no_credentials"]
 
 
@@ -41,12 +57,18 @@ class MembershipOut(BaseModel):
 
 
 class SubjectMeta(BaseModel):
-    display_name: str | None = None
-    note: str | None = None
-    owner: str | None = None
-    device_type: str | None = None
-    location: str | None = None
-    inventory_no: str | None = None
+    """Metadaten zu Benutzern und Geraeten.
+
+    Die Laengen entsprechen den Spalten in ``mgr_subject``; ohne sie erzeugte ein
+    zu langer Wert einen allgemeinen Serverfehler statt einer Validierungsmeldung.
+    """
+
+    display_name: str | None = Field(default=None, max_length=128)
+    note: str | None = Field(default=None, max_length=4000)
+    owner: str | None = Field(default=None, max_length=128)
+    device_type: str | None = Field(default=None, max_length=64)
+    location: str | None = Field(default=None, max_length=128)
+    inventory_no: str | None = Field(default=None, max_length=64)
 
 
 class UserListItem(BaseModel):
@@ -93,14 +115,17 @@ class UserCreate(BaseModel):
     @field_validator("username")
     @classmethod
     def _strip(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("username darf nicht leer sein")
-        return value
+        return validate_identifier(value, "username")
 
 
 class UserUpdate(BaseModel):
     username: str | None = Field(default=None, max_length=64)
+
+    @field_validator("username")
+    @classmethod
+    def _strip(cls, value: str | None) -> str | None:
+        return None if value is None else validate_identifier(value, "username")
+
     credential_type: CredentialType | None = None
     expires_at: dt.datetime | None = None
     clear_expiry: bool = False

@@ -54,6 +54,12 @@ services:
       FRM_BOOTSTRAP_ADMIN_USERNAME: ${FRM_BOOTSTRAP_ADMIN_USERNAME:-admin}
       FRM_BOOTSTRAP_ADMIN_PASSWORD: ${FRM_BOOTSTRAP_ADMIN_PASSWORD:-}
       FRM_DEFAULT_MAC_FORMAT: ${FRM_DEFAULT_MAC_FORMAT:-colon_lower}
+    env_file:
+      # Alle weiteren FRM_-Variablen aus der .env erreichen den Container nur
+      # ueber diesen Weg; die Zuweisungen oben setzen lediglich die Vorgaben.
+      # Fehlt die Datei, startet der Stapel trotzdem (required: false).
+      - path: .env
+        required: false
     ports:
       - "${MANAGER_PORT:-8000}:8000"
 

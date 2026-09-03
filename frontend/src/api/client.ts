@@ -9,6 +9,17 @@ export const API_BASE = `${document.baseURI.replace(/\/$/, "")}/api/v1`;
 
 const BASE = API_BASE;
 
+/**
+ * Wird bei jeder abgelehnten Authentifizierung aufgerufen. Ohne diesen Haken
+ * bliebe die Oberfläche nach einer serverseitig beendeten Sitzung sichtbar,
+ * während jede weitere Aktion mit 401 scheitert.
+ */
+let onUnauthenticated: (() => void) | null = null;
+
+export function setUnauthenticatedHandler(handler: () => void): void {
+  onUnauthenticated = handler;
+}
+
 export class ApiError extends Error {
   readonly code: string;
   readonly status: number;
@@ -78,6 +89,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       payload = (await response.json()) as ApiErrorBody;
     } catch {
       /* Antwort ohne JSON-Körper */
+    }
+    if (response.status === 401 && !path.startsWith("/auth/login")) {
+      onUnauthenticated?.();
     }
     throw new ApiError(response.status, payload);
   }

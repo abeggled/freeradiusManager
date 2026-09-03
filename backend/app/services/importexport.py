@@ -109,7 +109,7 @@ def _parse_groups(value: str | None) -> list[MembershipIn]:
         return []
     out: list[MembershipIn] = []
     for chunk in str(value).replace(";", ",").split(","):
-        name = chunk.strip()
+        name = _unescape(chunk.strip())
         if not name:
             continue
         if ":" in name:
@@ -177,6 +177,18 @@ def _meta_from(row: dict[str, str]) -> SubjectMeta:
     return SubjectMeta(**present)
 
 
+def _unescape(value: str) -> str:
+    """Nimmt die Entschaerfung des Exports zurueck.
+
+    Der Export stellt Werten, die eine Tabellenkalkulation als Formel lesen
+    wuerde, ein Hochkomma voran. Ohne diesen Schritt waere der dokumentierte Weg
+    "exportieren, bearbeiten, importieren" nicht verlustfrei.
+    """
+    if len(value) > 1 and value[0] == "'" and value[1] in ("=", "+", "-", "@"):
+        return value[1:]
+    return value
+
+
 def _normalise_row(raw: dict[str | None, Any]) -> dict[str, str]:
     """Vereinheitlicht Spaltennamen und Werte einer CSV-Zeile."""
     row: dict[str, str] = {}
@@ -190,7 +202,7 @@ def _normalise_row(raw: dict[str | None, Any]) -> dict[str, str]:
             raise ValidationError(
                 code="error.import_invalid", details={"reason": "zu viele Spalten"}
             )
-        row[key.strip().lower()] = (value or "").strip()
+        row[key.strip().lower()] = _unescape((value or "").strip())
     return row
 
 

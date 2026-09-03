@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from app.api.deps import (
     AdminUser,
@@ -14,7 +14,7 @@ from app.api.deps import (
     coa_limiter,
 )
 from app.core.errors import PermissionDeniedError
-from app.core.pagination import clamp_limit
+from app.core.pagination import MAX_PAGE_SIZE, clamp_limit
 from app.models.mgr import Role
 from app.schemas.common import PagedResponse, PageMeta
 from app.schemas.nas import (
@@ -42,8 +42,8 @@ async def list_nas(
     session: SessionDep,
     principal: ReaderUser,
     search: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(default=50, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(default=0, ge=0),
 ) -> PagedResponse[NasListItem]:
     if principal.role is Role.OPERATOR:
         raise PermissionDeniedError(code="error.forbidden")

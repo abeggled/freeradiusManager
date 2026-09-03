@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from app.api.deps import AdminUser, ClientIp, CurrentUser, SessionDep
-from app.core.pagination import clamp_limit
+from app.core.pagination import MAX_PAGE_SIZE, clamp_limit
 from app.schemas.accounts import (
     AccountCreate,
     AccountOut,
@@ -23,8 +23,8 @@ async def list_accounts(
     session: SessionDep,
     _: AdminUser,
     search: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(default=50, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(default=0, ge=0),
 ) -> PagedResponse[AccountOut]:
     limit = clamp_limit(limit)
     items, total = await AccountService(session).search(search=search, limit=limit, offset=offset)

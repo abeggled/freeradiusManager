@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import ClientIp, Language, ReaderUser, SessionDep, WriterUser
 from app.core.mac import MAC_FORMATS
-from app.core.pagination import clamp_limit
+from app.core.pagination import MAX_PAGE_SIZE, clamp_limit
 from app.models.mgr import SubjectType
 from app.repositories.directory import SubjectFilter
 from app.schemas.common import PagedResponse, PageMeta
@@ -45,8 +45,8 @@ async def list_devices(
     location: str | None = None,
     device_type: str | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(default=50, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(default=0, ge=0),
 ) -> PagedResponse[UserListItem]:
     limit = clamp_limit(limit)
     flt = _filter(search, group, location, device_type, status_filter)

@@ -3,7 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
-import { ApiError } from "@/api/client";
+import { ApiError, setUnauthenticatedHandler } from "@/api/client";
 import { App } from "@/App";
 import { I18nProvider } from "@/i18n";
 
@@ -20,6 +20,13 @@ const queryClient = new QueryClient({
       },
     },
   },
+});
+
+// Eine serverseitig beendete Sitzung (Passwort-, Rollen- oder TOTP-Wechsel)
+// führt sofort zurück zur Anmeldung, statt eine tote Oberfläche zu zeigen.
+setUnauthenticatedHandler(() => {
+  queryClient.setQueryData(["me"], null);
+  void queryClient.invalidateQueries();
 });
 
 createRoot(document.getElementById("root")!).render(

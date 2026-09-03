@@ -178,6 +178,7 @@ export const en: Record<TranslationKey, string> = {
   "sessions.coa": "Reassign VLAN",
   "sessions.coaConfirm": "Send the new VLAN to the NAS via CoA?",
   "sessions.newVlan": "New VLAN",
+  "sessions.nasFilter": "NAS (name or IP)",
   "sessions.from": "Started from",
   "sessions.to": "Started until",
   "sessions.running": "running",
