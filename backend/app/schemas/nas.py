@@ -50,7 +50,7 @@ class NasUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=200)
     coa_enabled: bool | None = None
     coa_port: int | None = Field(default=None, ge=1, le=65535)
-    coa_secret: str | None = None
+    coa_secret: str | None = Field(default=None, max_length=253)
     clear_coa_secret: bool = False
     note: str | None = None
 

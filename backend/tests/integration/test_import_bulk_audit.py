@@ -14,6 +14,17 @@ from app.services.users import UserService
 
 pytestmark = pytest.mark.asyncio
 
+
+async def _ensure_groups(session, actor, *names: str) -> None:
+    """Mitgliedschaften setzen vorhandene Gruppen voraus (Phantomgruppen-Schutz)."""
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    service = GroupService(session)
+    for index, name in enumerate(names):
+        await service.create(GroupCreate(groupname=name, vlan=str(100 + index)), actor=actor)
+
+
 USER_CSV = """username,password,groups,vlan,note
 anna,geheim123,mitarbeiter,20,Aussendienst
 bruno,geheim456,"mitarbeiter,gaeste",,Empfang
@@ -37,6 +48,7 @@ async def test_dry_run_does_not_write(session, admin_principal) -> None:
 
 
 async def test_import_creates_users_with_groups_and_vlan(session, admin_principal) -> None:
+    await _ensure_groups(session, admin_principal, "mitarbeiter", "gaeste")
     service = ImportExportService(session)
     report = await service.import_csv(USER_CSV, kind="user", dry_run=False, actor=admin_principal)
     assert report.errors == 1

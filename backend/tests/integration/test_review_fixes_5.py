@@ -24,6 +24,16 @@ from app.services.users import UserService
 pytestmark = pytest.mark.asyncio
 
 
+async def _ensure_groups(session, actor, *names: str) -> None:
+    """Mitgliedschaften setzen vorhandene Gruppen voraus (Phantomgruppen-Schutz)."""
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    service = GroupService(session)
+    for index, name in enumerate(names):
+        await service.create(GroupCreate(groupname=name, vlan=str(100 + index)), actor=actor)
+
+
 @pytest_asyncio.fixture
 async def client(engine) -> AsyncIterator[AsyncClient]:
     settings.cookie_secure = False
@@ -183,6 +193,7 @@ async def test_preview_reports_schema_violations(session, admin_principal) -> No
 async def test_export_keeps_membership_priorities(session, admin_principal) -> None:
     """Export, bearbeiten, importieren darf die Reihenfolge nicht auf 1 setzen."""
     users = UserService(session)
+    await _ensure_groups(session, admin_principal, "a", "b")
     await users.create(
         UserCreate(
             username="anna",
@@ -209,6 +220,7 @@ async def test_export_keeps_membership_priorities(session, admin_principal) -> N
 
 
 async def test_list_items_expose_priorities(session, admin_principal) -> None:
+    await _ensure_groups(session, admin_principal, "b")
     await UserService(session).create(
         UserCreate(
             username="anna",

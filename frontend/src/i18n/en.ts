@@ -215,6 +215,8 @@ export const en: Record<TranslationKey, string> = {
   "accounts.role.operator": "Operator",
   "accounts.role.auditor": "Auditor",
   "accounts.active": "Active",
+  "accounts.deactivate": "Deactivate account",
+  "accounts.deactivateConfirm": "Deactivate account “{name}”? Active sessions end immediately.",
   "accounts.totp": "TOTP",
   "accounts.resetTotp": "Reset TOTP",
   "accounts.resetTotpConfirm": "Reset TOTP for “{name}”? The second factor must be enrolled again and the account's active sessions end.",

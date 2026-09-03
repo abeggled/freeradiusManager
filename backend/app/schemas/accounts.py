@@ -21,6 +21,16 @@ class TotpLoginRequest(BaseModel):
     totp_code: str = Field(min_length=6, max_length=10)
 
 
+class TotpEnrollRequest(BaseModel):
+    """Die Challenge ist ein kurzlebiges Zugangsmerkmal.
+
+    Sie gehoert deshalb in den Rumpf: eine URL landet regelmaessig in
+    Zugriffsprotokollen von Reverse-Proxys und liesse sich dort mitlesen.
+    """
+
+    challenge: str
+
+
 class LoginResponse(BaseModel):
     status: str = "authenticated"
     challenge: str | None = None
@@ -40,6 +50,7 @@ class AccountOut(BaseModel):
     language: str
     last_login_at: dt.datetime | None = None
     created_at: dt.datetime | None = None
+    oidc_subject: str | None = None
 
 
 class AccountCreate(BaseModel):
@@ -60,6 +71,18 @@ class AccountUpdate(BaseModel):
     is_active: bool | None = None
     language: Literal["de", "en"] | None = None
     reset_totp: bool = False
+
+
+class OidcLink(BaseModel):
+    """Verknuepft ein bestehendes lokales Konto mit einer OIDC-Identitaet.
+
+    Die Verknuepfung erfolgt bewusst durch einen Administrator: eine
+    automatische Bindung ueber den Benutzernamen liesse sich vom Provider aus
+    missbrauchen (siehe ``error.oidc_account_conflict``).
+    """
+
+    oidc_subject: str | None = Field(default=None, max_length=255)
+    """``None`` loest eine bestehende Verknuepfung."""
 
 
 class PasswordChange(BaseModel):

@@ -29,6 +29,16 @@ from app.services.users import UserService
 pytestmark = pytest.mark.asyncio
 
 
+async def _ensure_groups(session, actor, *names: str) -> None:
+    """Mitgliedschaften setzen vorhandene Gruppen voraus (Phantomgruppen-Schutz)."""
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    service = GroupService(session)
+    for index, name in enumerate(names):
+        await service.create(GroupCreate(groupname=name, vlan=str(100 + index)), actor=actor)
+
+
 @pytest_asyncio.fixture
 async def client(engine) -> AsyncIterator[AsyncClient]:
     settings.cookie_secure = False
@@ -335,6 +345,7 @@ async def test_export_import_roundtrip_is_lossless(session, admin_principal) -> 
     from app.repositories.directory import SubjectFilter
 
     users = UserService(session)
+    await _ensure_groups(session, admin_principal, "-guest")
     await users.create(
         UserCreate(
             username="anna",
@@ -635,3 +646,133 @@ async def test_multi_audience_token_requires_azp(monkeypatch) -> None:
 
     claims["azp"] = "manager"
     assert (await OidcService()._verify_id_token("token", "n", meta))["sub"] == "s"
+
+
+# --- Zwölfte Runde ---------------------------------------------------------
+
+
+async def test_enrollment_challenge_is_not_in_the_url(session, client) -> None:
+    """Ein kurzlebiges Zugangsmerkmal gehört nicht in Zugriffsprotokolle."""
+    await _account(session, "admin", Role.ADMINISTRATOR)
+    first = await client.post(
+        "/api/v1/auth/login", json={"username": "admin", "password": "ein-sicheres-passwort"}
+    )
+    challenge = first.json()["challenge"]
+
+    in_url = await client.post(f"/api/v1/auth/totp/enroll?challenge={challenge}")
+    assert in_url.status_code == 422
+
+    in_body = await client.post("/api/v1/auth/totp/enroll", json={"challenge": challenge})
+    assert in_body.status_code == 200
+
+
+async def test_unknown_group_is_rejected_on_assignment(session, admin_principal) -> None:
+    """Ein Tippfehler darf keine Phantomgruppe erzeugen."""
+    from app.core.errors import NotFoundError
+    from app.services.groups import GroupService
+
+    with pytest.raises(NotFoundError):
+        await UserService(session).create(
+            UserCreate(
+                username="anna",
+                password="geheim123",
+                groups=[{"groupname": "tipfehler", "priority": 1}],
+            ),
+            actor=admin_principal,
+        )
+    assert await GroupService(session).search() == []
+
+
+async def test_delete_records_the_previous_state(session, admin_principal) -> None:
+    """Nach dem Löschen liesse sich der Zustand nicht mehr rekonstruieren."""
+    from app.models.mgr import MgrAudit
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    await GroupService(session).create(
+        GroupCreate(groupname="g1", vlan="10"), actor=admin_principal
+    )
+    users = UserService(session)
+    await users.create(
+        UserCreate(
+            username="anna",
+            password="streng-geheim",
+            vlan="20",
+            groups=[{"groupname": "g1", "priority": 1}],
+            meta={"note": "Aussendienst"},
+        ),
+        actor=admin_principal,
+    )
+    await users.delete("anna", actor=admin_principal)
+
+    entry = await session.scalar(select(MgrAudit).where(MgrAudit.action == "user.delete"))
+    before = entry.before_json or ""
+    assert "g1" in before
+    assert "Aussendienst" in before
+    assert '"vlan": "20"' in before
+    # Das Passwort steht auch hier nicht im Klartext.
+    assert "streng-geheim" not in before
+
+
+async def test_rejected_coa_is_audited(session, admin_principal) -> None:
+    """Auch der nicht abgeschickte Trennversuch gehört ins Protokoll."""
+    from app.core.errors import CoAError
+    from app.models.mgr import AuditResult, MgrAudit
+    from app.schemas.nas import CoARequest
+    from app.services.coa import CoAService
+
+    await NasService(session).create(
+        NasCreate(nasname="10.0.0.1", secret="s"), actor=admin_principal
+    )
+    session.add(
+        RadAcct(
+            acctsessionid="s1",
+            acctuniqueid="u1",
+            username="anna",
+            nasipaddress="10.0.0.1",
+            acctstarttime=dt.datetime(2026, 9, 1, 8, 0),
+            callingstationid="AA-BB-CC-DD-EE-FF",
+        )
+    )
+    await session.commit()
+
+    with pytest.raises(CoAError):
+        await CoAService(session).execute(CoARequest(acctuniqueid="u1"), actor=admin_principal)
+    entry = await session.scalar(select(MgrAudit).where(MgrAudit.action == "coa.disconnect"))
+    assert entry is not None
+    assert entry.result is AuditResult.FAILURE
+
+
+async def test_administrator_can_link_an_oidc_identity(session, admin_principal) -> None:
+    """Ohne diesen Weg bliebe eine OIDC-Einführung für Bestandskonten blockiert."""
+    from app.core.errors import ConflictError
+    from app.schemas.accounts import AccountCreate
+    from app.services.accounts import AccountService
+
+    service = AccountService(session)
+    first = await service.create(
+        AccountCreate(username="anna", password="ein-sicheres-passwort"), actor=admin_principal
+    )
+    second = await service.create(
+        AccountCreate(username="bruno", password="ein-sicheres-passwort"), actor=admin_principal
+    )
+
+    linked = await service.set_oidc_subject(first.id, "idp-anna", actor=admin_principal)
+    assert linked.oidc_subject == "idp-anna"
+
+    with pytest.raises(ConflictError):
+        await service.set_oidc_subject(second.id, "idp-anna", actor=admin_principal)
+
+    unlinked = await service.set_oidc_subject(first.id, None, actor=admin_principal)
+    assert unlinked.oidc_subject is None
+
+
+async def test_sql_echo_hides_bound_parameters() -> None:
+    """Bei aktiviertem Echo dürfen keine Passwörter im Protokoll landen."""
+    from app.core.config import Settings
+    from app.core.db import create_engine
+
+    engine = create_engine(Settings(db_echo=True, db_password="x"))
+    # Die Einstellung sitzt auf der synchronen Engine darunter.
+    assert engine.sync_engine.hide_parameters is True
+    await engine.dispose()

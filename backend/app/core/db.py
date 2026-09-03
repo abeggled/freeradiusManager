@@ -22,6 +22,9 @@ def create_engine(config: Settings | None = None) -> AsyncEngine:
     return create_async_engine(
         config.database_url,
         echo=config.db_echo,
+        # Bei aktiviertem Echo bleiben die gebundenen Werte aussen vor: sonst
+        # stuenden Passwoerter und Secrets im Anwendungsprotokoll (NFR-1).
+        hide_parameters=True,
         pool_size=config.db_pool_size,
         max_overflow=config.db_pool_max_overflow,
         pool_pre_ping=True,

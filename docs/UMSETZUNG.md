@@ -75,8 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Elf Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11, 12,
-11, 10, 10 und 9 Befunde;
+Zwölf Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11, 12,
+11, 10, 10, 9 und 9 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
@@ -347,6 +347,23 @@ Die elfte Runde (keine P1-Befunde mehr):
   setzen; die automatische Kontoanlage steht im Audit-Log.
 * Session-Aktionen nutzen die Zeilen-ID, weil `acctuniqueid` im Schema leer sein
   darf; das Zurücksetzen von TOTP verlangt eine Bestätigung.
+
+Die zwölfte Runde:
+
+* **Die TOTP-Challenge steht nicht mehr in der URL.** Als Query-Parameter wäre
+  dieses kurzlebige Zugangsmerkmal in jedem Zugriffsprotokoll gelandet und dort
+  innerhalb seiner Gültigkeit wiederverwendbar gewesen; sie geht jetzt im Rumpf.
+* **Die administrative OIDC-Verknüpfung existiert.** Der Callback lehnt eine
+  automatische Bindung bewusst ab – bislang fehlte aber der dokumentierte Weg,
+  ein Bestandskonto von Hand zu verknüpfen (`PUT /accounts/{id}/oidc`).
+* Mitgliedschaften prüfen die Gruppe auch beim Anlegen und Ändern eines
+  Benutzers; ein Tippfehler erzeugt keine Phantomgruppe mehr. **Hinweis:** damit
+  müssen Gruppen vor der Zuweisung existieren, auch beim CSV-Import.
+* Das Audit-Log hält beim Löschen den vollständigen vorherigen Zustand fest und
+  protokolliert auch CoA-Versuche, die vor dem Versand abgewiesen werden.
+* Bei aktiviertem SQL-Echo werden gebundene Werte nicht mehr protokolliert.
+* OIDC-Claims werden auf die Spaltenbreite gekürzt; das CoA-Secret ist auch bei
+  Änderungen begrenzt; das Deaktivieren eines Kontos verlangt eine Bestätigung.
 
 ## Prüfschritte
 

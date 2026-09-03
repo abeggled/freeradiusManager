@@ -213,6 +213,8 @@ export const de = {
   "accounts.role.operator": "Operator",
   "accounts.role.auditor": "Auditor",
   "accounts.active": "Aktiv",
+  "accounts.deactivate": "Konto deaktivieren",
+  "accounts.deactivateConfirm": "Konto „{name}“ deaktivieren? Laufende Sitzungen enden sofort.",
   "accounts.totp": "TOTP",
   "accounts.resetTotp": "TOTP zurücksetzen",
   "accounts.resetTotpConfirm": "TOTP von „{name}“ zurücksetzen? Der zweite Faktor muss danach neu eingerichtet werden, und laufende Sitzungen dieses Kontos enden.",

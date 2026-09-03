@@ -398,6 +398,37 @@ class AccountService:
         )
         await self.session.commit()
 
+    async def set_oidc_subject(
+        self,
+        account_id: int,
+        subject: str | None,
+        *,
+        actor: Principal,
+        actor_ip: str | None = None,
+    ) -> AccountOut:
+        """Verknuepft ein Konto mit einer OIDC-Identitaet oder loest die Bindung."""
+        account = await self.get(account_id)
+        previous = account.oidc_subject
+        if subject:
+            existing = await self.repo.get_by_oidc_subject(subject)
+            if existing is not None and existing.id != account.id:
+                raise ConflictError(
+                    code="error.oidc_subject_taken",
+                    details={"oidc_subject": subject, "username": existing.username},
+                )
+        account.oidc_subject = subject or None
+        await self.audit.log(
+            action="account.link_oidc" if subject else "account.unlink_oidc",
+            object_type="account",
+            object_id=account.username,
+            actor=actor,
+            actor_ip=actor_ip,
+            before={"oidc_subject": previous},
+            after={"oidc_subject": account.oidc_subject},
+        )
+        await self.session.commit()
+        return AccountOut.model_validate(account)
+
     async def change_password(
         self,
         account_id: int,

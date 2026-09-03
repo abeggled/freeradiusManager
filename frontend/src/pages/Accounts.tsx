@@ -20,6 +20,7 @@ export function AccountsPage() {
   const [creating, setCreating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<Account | null>(null);
   const [confirmTotpReset, setConfirmTotpReset] = useState<Account | null>(null);
+  const [confirmDeactivate, setConfirmDeactivate] = useState<Account | null>(null);
 
   const { data, isLoading, error } = useAccounts({ limit: LIMIT, offset });
   const update = useUpdateAccount();
@@ -79,12 +80,15 @@ export function AccountsPage() {
                         type="checkbox"
                         aria-label={t("accounts.active")}
                         checked={account.is_active}
-                        onChange={(event) =>
-                          update.mutate({
-                            id: account.id,
-                            body: { is_active: event.target.checked },
-                          })
-                        }
+                        onChange={(event) => {
+                          // Deaktivieren beendet laufende Sitzungen und lässt
+                          // sich vom Betroffenen nicht rückgängig machen.
+                          if (!event.target.checked) {
+                            setConfirmDeactivate(account);
+                            return;
+                          }
+                          update.mutate({ id: account.id, body: { is_active: true } });
+                        }}
                       />
                     </td>
                     <td>{account.totp_enabled ? t("common.yes") : t("common.no")}</td>
@@ -116,6 +120,21 @@ export function AccountsPage() {
       )}
 
       {creating ? <CreateAccountDialog onClose={() => setCreating(false)} /> : null}
+      {confirmDeactivate ? (
+        <ConfirmDialog
+          title={t("accounts.deactivate")}
+          message={t("accounts.deactivateConfirm", { name: confirmDeactivate.username })}
+          onConfirm={() =>
+            update.mutate(
+              { id: confirmDeactivate.id, body: { is_active: false } },
+              { onSuccess: () => setConfirmDeactivate(null) },
+            )
+          }
+          onCancel={() => setConfirmDeactivate(null)}
+          busy={update.isPending}
+        />
+      ) : null}
+
       {confirmTotpReset ? (
         <ConfirmDialog
           title={t("accounts.resetTotp")}

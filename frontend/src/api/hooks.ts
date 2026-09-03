@@ -83,10 +83,12 @@ export function useLoginTotp() {
 
 export function useTotpEnroll() {
   return useMutation({
+    // Die Challenge geht in den Rumpf, nicht in die URL: sonst stünde dieses
+    // kurzlebige Zugangsmerkmal in jedem Zugriffsprotokoll.
     mutationFn: (challenge: string) =>
       request<{ secret: string; provisioning_uri: string }>("/auth/totp/enroll", {
         method: "POST",
-        query: { challenge },
+        body: { challenge },
       }),
   });
 }
@@ -428,6 +430,18 @@ export function useDeleteAccount() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => request<void>(`/accounts/${id}`, { method: "DELETE" }),
+    onSuccess: invalidator(client, ["accounts"]),
+  });
+}
+
+export function useLinkOidc() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, subject }: { id: number; subject: string | null }) =>
+      request<Account>(`/accounts/${id}/oidc`, {
+        method: "PUT",
+        body: { oidc_subject: subject },
+      }),
     onSuccess: invalidator(client, ["accounts"]),
   });
 }

@@ -72,6 +72,16 @@ class CoAService:
         session_row = await self._resolve_session(payload)
         target = await self.nas.coa_target(session_row.nasipaddress)
         if target is None:
+            # Auch der nicht abgeschickte Versuch gehoert ins Protokoll: sonst
+            # bliebe eine Reihe fehlgeleiteter Trennversuche unsichtbar (FR-9).
+            await self._log(
+                payload,
+                session_row,
+                actor,
+                actor_ip,
+                AuditResult.FAILURE,
+                "kein CoA konfiguriert",
+            )
             raise CoAError(
                 code="error.coa_not_configured",
                 details={"nas": session_row.nasipaddress},

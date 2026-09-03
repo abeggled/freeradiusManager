@@ -121,7 +121,7 @@ async def test_administrator_without_totp_must_enroll(session, client: AsyncClie
     assert response.json()["status"] == "totp_setup_required"
 
     challenge = response.json()["challenge"]
-    setup = await client.post(f"/api/v1/auth/totp/enroll?challenge={challenge}")
+    setup = await client.post("/api/v1/auth/totp/enroll", json={"challenge": challenge})
     assert setup.status_code == 200
     secret = setup.json()["secret"]
     assert setup.json()["provisioning_uri"].startswith("otpauth://totp/")

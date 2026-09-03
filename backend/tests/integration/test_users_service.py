@@ -25,6 +25,16 @@ from app.services.users import UserService
 pytestmark = pytest.mark.asyncio
 
 
+async def _ensure_groups(session, actor, *names: str) -> None:
+    """Mitgliedschaften setzen vorhandene Gruppen voraus (Phantomgruppen-Schutz)."""
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    service = GroupService(session)
+    for index, name in enumerate(names):
+        await service.create(GroupCreate(groupname=name, vlan=str(100 + index)), actor=actor)
+
+
 async def _create(session, actor, **kwargs):
     payload = UserCreate(username="anna", password="geheim123", **kwargs)
     return await UserService(session).create(payload, actor=actor)
@@ -109,6 +119,7 @@ async def test_expiry_is_written_as_freeradius_date(session, admin_principal) ->
 
 async def test_rename_moves_radius_and_metadata(session, admin_principal) -> None:
     service = UserService(session)
+    await _ensure_groups(session, admin_principal, "mitarbeiter")
     await _create(session, admin_principal, groups=[MembershipIn(groupname="mitarbeiter")])
     await service.update("anna", UserUpdate(username="anna.neu"), actor=admin_principal)
 
@@ -130,6 +141,7 @@ async def test_duplicate_username_is_rejected(session, admin_principal) -> None:
 
 async def test_delete_removes_all_radius_rows(session, admin_principal) -> None:
     service = UserService(session)
+    await _ensure_groups(session, admin_principal, "g1")
     await _create(session, admin_principal, vlan="10", groups=[MembershipIn(groupname="g1")])
     await service.delete("anna", actor=admin_principal)
 
@@ -142,6 +154,7 @@ async def test_delete_removes_all_radius_rows(session, admin_principal) -> None:
 
 async def test_search_filters_by_note_and_group(session, admin_principal) -> None:
     service = UserService(session)
+    await _ensure_groups(session, admin_principal, "mitarbeiter")
     await service.create(
         UserCreate(
             username="anna",

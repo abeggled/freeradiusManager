@@ -26,6 +26,16 @@ from app.services.users import UserService
 pytestmark = pytest.mark.asyncio
 
 
+async def _ensure_groups(session, actor, *names: str) -> None:
+    """Mitgliedschaften setzen vorhandene Gruppen voraus (Phantomgruppen-Schutz)."""
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    service = GroupService(session)
+    for index, name in enumerate(names):
+        await service.create(GroupCreate(groupname=name, vlan=str(100 + index)), actor=actor)
+
+
 # --- Schema-Treue ----------------------------------------------------------
 
 
@@ -37,6 +47,7 @@ async def test_radusergroup_needs_no_id_column(engine) -> None:
 
 
 async def test_membership_operations_work_without_id(session, admin_principal) -> None:
+    await _ensure_groups(session, admin_principal, "mitarbeiter")
     service = UserService(session)
     await service.create(
         UserCreate(

@@ -26,6 +26,7 @@ from app.schemas.accounts import (
     LoginRequest,
     LoginResponse,
     TotpActivate,
+    TotpEnrollRequest,
     TotpLoginRequest,
     TotpSetupResponse,
 )
@@ -35,6 +36,13 @@ from app.services.oidc import OidcService
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 OIDC_STATE_COOKIE = "frm_oidc"
+
+
+def _bounded(value: object, limit: int) -> str | None:
+    """Kuerzt einen Claim auf die Spaltenbreite."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value.strip()[:limit]
 
 
 def _issue_session(
@@ -110,12 +118,16 @@ async def login_totp(
 
 
 @router.post("/totp/enroll", response_model=TotpSetupResponse)
-async def enroll_totp(session: SessionDep, challenge: str | None = None) -> TotpSetupResponse:
-    """Startet die TOTP-Einrichtung im Rahmen einer Anmeldung mit Pflicht-2FA."""
-    if not challenge:
+async def enroll_totp(payload: TotpEnrollRequest, session: SessionDep) -> TotpSetupResponse:
+    """Startet die TOTP-Einrichtung im Rahmen einer Anmeldung mit Pflicht-2FA.
+
+    Die Challenge kommt bewusst im Rumpf: als Query-Parameter stuende dieses
+    kurzlebige Zugangsmerkmal in jedem Zugriffsprotokoll.
+    """
+    if not payload.challenge:
         raise ValidationError(code="error.validation", details={"field": "challenge"})
     service = AccountService(session)
-    account = await service.account_from_challenge(challenge, scope=TOTP_ENROLL_SCOPE)
+    account = await service.account_from_challenge(payload.challenge, scope=TOTP_ENROLL_SCOPE)
     return await service.start_totp_enrollment(account)
 
 
@@ -231,10 +243,12 @@ async def oidc_callback(
             raise AuthenticationError(
                 code="error.oidc_account_conflict", details={"username": username}
             )
+        # Claims koennen laenger sein als die Spalten; gekuerzt statt mit einem
+        # Datenbankfehler abgebrochen.
         account = MgrAccount(
             username=username,
-            email=claims.get("email"),
-            display_name=claims.get("name"),
+            email=_bounded(claims.get("email"), 255),
+            display_name=_bounded(claims.get("name"), 128),
             role=Role(mapped),
             oidc_subject=subject,
             password_hash=hash_password(secrets.token_urlsafe(32)),

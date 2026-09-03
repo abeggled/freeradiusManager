@@ -226,9 +226,7 @@ class UserService:
         if payload.disabled:
             await self.attrs.set_check(payload.username, AUTH_TYPE, ":=", REJECT)
 
-        await self.groups.set_memberships(
-            payload.username, [(g.groupname, g.priority) for g in payload.groups]
-        )
+        await self._set_memberships(payload.username, payload.groups)
 
         subject = MgrSubject(
             username=payload.username,
@@ -300,9 +298,7 @@ class UserService:
             )
 
         if payload.groups is not None:
-            await self.groups.set_memberships(
-                username, [(g.groupname, g.priority) for g in payload.groups]
-            )
+            await self._set_memberships(username, payload.groups)
 
         if payload.meta is not None:
             for key, value in payload.meta.model_dump(exclude_unset=True).items():
@@ -397,6 +393,10 @@ class UserService:
         if subject is None and not exists:
             raise NotFoundError(code="error.not_found", details={"username": username})
         object_type = subject.subject_type.value if subject else SubjectType.USER.value
+        # Der vollstaendige Zustand wird vor dem Loeschen festgehalten - danach
+        # liesse er sich nicht mehr rekonstruieren (FR-9). Passwortwerte sind in
+        # der Detailansicht bereits maskiert und werden zusaetzlich redigiert.
+        before = (await self.get(username)).model_dump(mode="json")
         await self.attrs.delete_user(username)
         await self.subjects.delete(username)
         await self.audit.log(
@@ -405,13 +405,27 @@ class UserService:
             object_id=username,
             actor=actor,
             actor_ip=actor_ip,
-            before={"username": username},
+            before=before,
         )
         await self.session.commit()
 
     # ------------------------------------------------------------------
     # Hilfsfunktionen
     # ------------------------------------------------------------------
+
+    async def _set_memberships(self, username: str, groups: list[MembershipIn]) -> None:
+        """Setzt die Mitgliedschaften und prueft dabei die Gruppen.
+
+        Das RADIUS-Schema kennt keine Fremdschluessel: ein Tippfehler wuerde
+        sonst eine Phantomgruppe erzeugen, die anschliessend in der
+        Gruppenliste auftaucht.
+        """
+        for membership in groups:
+            if not await self.groups.exists(membership.groupname):
+                raise NotFoundError(
+                    code="error.not_found", details={"groupname": membership.groupname}
+                )
+        await self.groups.set_memberships(username, [(g.groupname, g.priority) for g in groups])
 
     async def _rename(self, old: str, new: str) -> None:
         """Umbenennung fasst beide Seiten in einer Transaktion an (Abschnitt 4.1).

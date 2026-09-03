@@ -10,6 +10,7 @@ from app.schemas.accounts import (
     AccountCreate,
     AccountOut,
     AccountUpdate,
+    OidcLink,
     PasswordChange,
 )
 from app.schemas.common import PagedResponse, PageMeta
@@ -47,6 +48,24 @@ async def update_account(
     actor_ip: ClientIp,
 ) -> AccountOut:
     return await AccountService(session).update(account_id, payload, actor=actor, actor_ip=actor_ip)
+
+
+@router.put("/{account_id}/oidc", response_model=AccountOut)
+async def link_oidc(
+    account_id: int,
+    payload: OidcLink,
+    session: SessionDep,
+    actor: AdminUser,
+    actor_ip: ClientIp,
+) -> AccountOut:
+    """Verknuepft ein bestehendes Konto mit einer OIDC-Identitaet (FR-10).
+
+    Ohne diesen Weg bliebe eine OIDC-Einfuehrung fuer Bestandskonten blockiert:
+    der Callback lehnt eine automatische Bindung bewusst ab.
+    """
+    return await AccountService(session).set_oidc_subject(
+        account_id, payload.oidc_subject, actor=actor, actor_ip=actor_ip
+    )
 
 
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -104,7 +104,7 @@ async def test_password_alone_cannot_replace_existing_totp(session, client) -> N
     assert first.json()["status"] == "totp_required"
     challenge = first.json()["challenge"]
 
-    hijack = await client.post(f"/api/v1/auth/totp/enroll?challenge={challenge}")
+    hijack = await client.post("/api/v1/auth/totp/enroll", json={"challenge": challenge})
     assert hijack.status_code == 401
     assert hijack.json()["code"] == "error.unauthenticated"
 

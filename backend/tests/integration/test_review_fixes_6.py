@@ -109,7 +109,7 @@ async def test_enrollment_login_clears_failures(session, client) -> None:
         "/api/v1/auth/login", json={"username": "admin", "password": "ein-sicheres-passwort"}
     )
     challenge = first.json()["challenge"]
-    setup = await client.post(f"/api/v1/auth/totp/enroll?challenge={challenge}")
+    setup = await client.post("/api/v1/auth/totp/enroll", json={"challenge": challenge})
     confirmed = await client.post(
         "/api/v1/auth/totp/confirm",
         json={
