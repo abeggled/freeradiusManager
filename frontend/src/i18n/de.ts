@@ -155,6 +155,7 @@ export const de = {
   "nas.coaEnabled": "CoA aktiviert",
   "nas.coaPort": "CoA-Port",
   "nas.coaSecret": "CoA-Secret",
+  "nas.clearCoaSecret": "CoA-Secret entfernen",
   "nas.coaSecretSet": "hinterlegt",
   "nas.reloadHint":
     "Änderungen an NAS-Clients wirken erst nach einem Neustart bzw. clients-Reload von radiusd.",

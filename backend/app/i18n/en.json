@@ -2,6 +2,7 @@
   "error.generic": "An error occurred.",
   "error.not_found": "The requested record was not found.",
   "error.conflict": "The record already exists or was modified in the meantime.",
+  "error.busy": "This resource is currently being modified. Please try again.",
   "error.validation": "The input is invalid.",
   "error.unauthenticated": "Authentication required.",
   "error.reauthentication_required": "Your permissions changed. Please sign in again.",

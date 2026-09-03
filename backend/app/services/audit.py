@@ -38,6 +38,9 @@ SENSITIVE_KEYS = frozenset(
         "password_hash",
         "totp_secret_enc",
         "coa_secret_enc",
+        # SNMP-Community ist ein Zugangsmerkmal und wird auch sonst nicht
+        # ausgeliefert - im Audit-Log darf es erst recht nicht stehen.
+        "community",
         "value",  # Attributwerte von Passwort-Attributen, siehe redact()
     }
 )

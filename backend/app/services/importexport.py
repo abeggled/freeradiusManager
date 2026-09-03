@@ -13,6 +13,7 @@ import io
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dates import from_expiration, to_expiration
@@ -180,6 +181,17 @@ def _meta_from(row: dict[str, str]) -> SubjectMeta:
         field: (row[field] or None) for field in META_FIELDS if field in row
     }
     return SubjectMeta(**present)
+
+
+def _sanitised(error: PydanticValidationError) -> str:
+    """Feld und Fehlerart ohne den eingereichten Wert."""
+    return (
+        "; ".join(
+            f"{'.'.join(str(part) for part in item['loc'])}: {item['type']}"
+            for item in error.errors()
+        )
+        or "error.validation"
+    )
 
 
 def _unescape(value: str) -> str:
@@ -352,6 +364,19 @@ class ImportExportService:
                         values=parsed.summary(),
                     )
                 )
+            except PydanticValidationError as exc:
+                # Pydantic nennt in der Meldung den Eingabewert - bei einem zu
+                # langen Passwort stuende es damit in der API-Antwort.
+                await self.session.rollback()
+                report.errors += 1
+                report.rows.append(
+                    ImportRow(
+                        line=index,
+                        action="error",
+                        username=row.get("username") or row.get("mac", ""),
+                        message=_sanitised(exc),
+                    )
+                )
             except Exception as exc:  # noqa: BLE001 - jede Zeile wird einzeln gemeldet
                 # Ein abgewiesener Schreibvorgang laesst die Sitzung in einem
                 # Fehlerzustand zurueck; ohne Rollback scheiterte danach jede
@@ -420,6 +445,7 @@ class ImportExportService:
 
         payloads: list[object] = [
             UserUpdate(
+                credential_type=parsed.credential_type,
                 expires_at=parsed.expires_at,
                 groups=parsed.groups if parsed.groups_supplied else None,
                 vlan=parsed.vlan,
@@ -457,6 +483,9 @@ class ImportExportService:
         await self.users.update(
             parsed.username,
             UserUpdate(
+                # Der Credential-Typ wird mitgefuehrt: sonst bliebe eine Zeile,
+                # die nur ihn aendert, ohne jede Wirkung.
+                credential_type=parsed.credential_type,
                 expires_at=parsed.expires_at,
                 # Vorhandene, aber leere Zelle: ausdruecklich loeschen.
                 clear_expiry=parsed.expiry_supplied and parsed.expires_at is None,

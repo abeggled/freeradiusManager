@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import ConflictError
 from app.core.logging import get_logger
 
 LOCK_PREFIX = "frm"
@@ -22,25 +23,24 @@ log = get_logger("locking")
 
 
 @contextlib.asynccontextmanager
-async def named_lock(session: AsyncSession, name: str) -> AsyncIterator[bool]:
+async def named_lock(session: AsyncSession, name: str) -> AsyncIterator[None]:
     """Haelt eine MariaDB-``GET_LOCK``-Sperre fuer die Dauer des Blocks.
 
-    Kann die Sperre nicht erlangt werden, laeuft der Block trotzdem weiter: die
-    Serialisierung ist eine Absicherung gegen ein seltenes Wettrennen, kein
-    Grund, den Aufruf scheitern zu lassen.
+    Laesst sich die Sperre nicht erlangen, wird abgebrochen. Den Block trotzdem
+    zu betreten waere schlimmer als ein Fehler: genau dann laeuft eine zweite,
+    noch nicht festgeschriebene Anlage - und beide wuerden schreiben.
     """
     key = f"{LOCK_PREFIX}:{name}"[:64]
-    acquired = False
-    try:
-        acquired = bool(
-            await session.scalar(
-                text("SELECT GET_LOCK(:key, :timeout)"),
-                {"key": key, "timeout": LOCK_TIMEOUT_SECONDS},
-            )
+    acquired = bool(
+        await session.scalar(
+            text("SELECT GET_LOCK(:key, :timeout)"),
+            {"key": key, "timeout": LOCK_TIMEOUT_SECONDS},
         )
-        if not acquired:
-            log.warning("named_lock_timeout", key=key)
-        yield acquired
+    )
+    if not acquired:
+        log.warning("named_lock_timeout", key=key)
+        raise ConflictError(code="error.busy", details={"resource": name})
+    try:
+        yield
     finally:
-        if acquired:
-            await session.execute(text("SELECT RELEASE_LOCK(:key)"), {"key": key})
+        await session.execute(text("SELECT RELEASE_LOCK(:key)"), {"key": key})

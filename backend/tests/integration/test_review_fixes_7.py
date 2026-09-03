@@ -881,3 +881,151 @@ async def test_preview_reports_unknown_groups(session, admin_principal) -> None:
     )
     assert preview.errors == 1
     assert preview.to_create == 0
+
+
+# --- Vierzehnte Runde ------------------------------------------------------
+
+
+async def test_totp_reset_survives_re_enrollment(session, client) -> None:
+    """Nach dem Zurücksetzen darf ein altes Cookie auch später nicht gelten."""
+    account, secret = await _account(session, "admin", Role.ADMINISTRATOR, totp=True)
+    first = await client.post(
+        "/api/v1/auth/login", json={"username": "admin", "password": "ein-sicheres-passwort"}
+    )
+    await client.post(
+        "/api/v1/auth/login/totp",
+        json={"challenge": first.json()["challenge"], "totp_code": pyotp.TOTP(secret).now()},
+    )
+    assert (await client.get("/api/v1/accounts")).status_code == 200
+
+    # Zurücksetzen und sofort einen neuen Faktor einrichten.
+    account.totp_enabled = True
+    account.totp_secret_enc = SecretBox(settings.coa_secret_key or settings.secret_key).encrypt(
+        pyotp.random_base32()
+    )
+    from app.core.dates import utcnow as _utcnow
+
+    account.totp_changed_at = _utcnow() + dt.timedelta(seconds=5)
+    await session.commit()
+
+    response = await client.get("/api/v1/accounts")
+    assert response.status_code == 401
+    assert response.json()["code"] == "error.reauthentication_required"
+
+
+async def test_login_in_the_same_second_stays_valid(session, client) -> None:
+    """Sekundengenaue Vergleiche dürfen eine frische Anmeldung nicht verwerfen."""
+    from app.core.dates import utcnow
+
+    account, _ = await _account(session, "operator", Role.OPERATOR)
+    # Der Manager schreibt Zeitstempel in UTC; lokale Zeit waere hier ein
+    # Testfehler und kein Produktfehler.
+    account.password_changed_at = utcnow()
+    await session.commit()
+
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+    assert (await client.get("/api/v1/auth/me")).status_code == 200
+
+
+async def test_password_change_failures_count_towards_lockout(session, admin_principal) -> None:
+    """Auch mit gültiger Sitzung darf nicht unbegrenzt geraten werden."""
+    from app.core.errors import AuthenticationError
+    from app.schemas.accounts import AccountCreate, PasswordChange
+    from app.services.accounts import LOCKOUT_THRESHOLD, AccountService
+
+    service = AccountService(session)
+    created = await service.create(
+        AccountCreate(username="anna", password="ein-sicheres-passwort"), actor=admin_principal
+    )
+    actor = admin_principal.__class__(
+        account_id=created.id,
+        username=created.username,
+        role=Role.ADMINISTRATOR,
+        language="de",
+        session_id="x",
+        absolute_expiry=0,
+    )
+    for _ in range(LOCKOUT_THRESHOLD):
+        with pytest.raises(AuthenticationError):
+            await service.change_password(
+                created.id,
+                PasswordChange(current_password="falsch", new_password="neues-sicheres-pw"),
+                actor=actor,
+            )
+    account = await service.get(created.id)
+    assert account.locked_until is not None
+
+
+async def test_community_is_redacted_in_audit(session, admin_principal) -> None:
+    """Die SNMP-Community ist ein Zugangsmerkmal."""
+    from app.models.mgr import MgrAudit
+
+    await NasService(session).create(
+        NasCreate(nasname="10.0.0.1", secret="s", community="geheime-community"),
+        actor=admin_principal,
+    )
+    entries = (await session.scalars(select(MgrAudit))).all()
+    payload = " ".join((e.after_json or "") for e in entries)
+    assert "geheime-community" not in payload
+    assert "<geaendert>" in payload
+
+
+async def test_nt_only_device_rename_rotates_the_hash(session, admin_principal) -> None:
+    """Auch ein reiner NT-Hash ist aus der MAC abgeleitet."""
+    from app.core.crypto import nt_hash
+    from app.models.mgr import CredentialType
+    from app.schemas.users import DeviceUpdate, PasswordSet
+
+    devices = DeviceService(session)
+    await devices.create(DeviceCreate(mac="aa:bb:cc:dd:ee:ff"), actor=admin_principal)
+    await UserService(session).set_password(
+        "aa:bb:cc:dd:ee:ff",
+        PasswordSet(password="aa:bb:cc:dd:ee:ff", credential_type=CredentialType.NT),
+        actor=admin_principal,
+    )
+
+    detail = await devices.update(
+        "aa:bb:cc:dd:ee:ff", DeviceUpdate(mac="11:22:33:44:55:66"), actor=admin_principal
+    )
+    assert detail.username == "11:22:33:44:55:66"
+    row = await session.scalar(
+        select(RadCheck).where(
+            RadCheck.username == "11:22:33:44:55:66", RadCheck.attribute == "NT-Password"
+        )
+    )
+    assert row.value == nt_hash("11:22:33:44:55:66")
+
+
+async def test_import_error_hides_the_submitted_value(session, admin_principal) -> None:
+    """Ein zu langes Passwort darf nicht in der Antwort auftauchen."""
+    secret = "x" * 300
+    report = await ImportExportService(session).import_csv(
+        f"username,password\nanna,{secret}\n",
+        kind="user",
+        dry_run=True,
+        actor=admin_principal,
+    )
+    assert report.errors == 1
+    assert secret not in (report.rows[0].message or "")
+    assert "password" in (report.rows[0].message or "")
+
+
+async def test_credential_type_only_import_takes_effect(session, admin_principal) -> None:
+    from app.models.mgr import CredentialType
+
+    users = UserService(session)
+    await users.create(
+        UserCreate(username="anna", password="geheim123", credential_type=CredentialType.BOTH),
+        actor=admin_principal,
+    )
+    await ImportExportService(session).import_csv(
+        "username,credential_type\nanna,nt\n",
+        kind="user",
+        dry_run=False,
+        actor=admin_principal,
+    )
+    rows = (await session.scalars(select(RadCheck).where(RadCheck.username == "anna"))).all()
+    assert {r.attribute for r in rows} == {"NT-Password"}

@@ -75,8 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Dreizehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
-12, 11, 10, 10, 9, 9 und 11 Befunde;
+Vierzehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
+12, 11, 10, 10, 9, 9, 11 und 12 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
@@ -385,6 +385,28 @@ Die dreizehnte Runde:
 * Das Audit-Log hält beim Löschen einer Gruppe deren Konfiguration fest; eine
   NAS-Notiz lässt sich wieder entfernen; der Credential-Typ ist beim Setzen
   eines Passworts in der Oberfläche wählbar.
+
+Die vierzehnte Runde:
+
+* **Ein zurückgesetztes TOTP entwertet Sitzungen dauerhaft.** Bisher galt eine
+  vorher gestohlene Sitzung wieder, sobald ein neuer Faktor eingerichtet war;
+  das Token trägt jetzt den Zeitpunkt der letzten TOTP-Änderung
+  (Migration 0004).
+* **Die SNMP-Community steht nicht mehr im Audit-Log.** Sie ist ein
+  Zugangsmerkmal und wird auch sonst nicht ausgeliefert.
+* Die benannte Sperre bricht bei Zeitüberschreitung ab, statt den serialisierten
+  Abschnitt ungeschützt zu betreten.
+* Ein Anmeldeversuch in derselben Sekunde wie eine Passwortänderung bleibt
+  gültig (sekundengenauer Vergleich).
+* Fehlversuche beim Ändern des eigenen Passworts zählen auf die Kontosperre ein
+  und stehen im Audit-Log.
+* Ein Gerät mit reinem NT-Hash bekommt beim Umbenennen den neuen Hash; ein
+  CSV-Import, der nur den Credential-Typ ändert, wirkt jetzt.
+* Importfehler nennen Feld und Fehlerart statt des eingereichten Werts – ein zu
+  langes Passwort stand sonst in der Antwort.
+* Überlange OIDC-Subjects werden abgewiesen; Gerätepasswörter und Prioritäten
+  sind bereits im Request begrenzt; das CoA-Secret lässt sich in der Oberfläche
+  entfernen.
 
 ## Prüfschritte
 

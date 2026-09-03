@@ -157,6 +157,7 @@ export const en: Record<TranslationKey, string> = {
   "nas.coaEnabled": "CoA enabled",
   "nas.coaPort": "CoA port",
   "nas.coaSecret": "CoA secret",
+  "nas.clearCoaSecret": "Remove CoA secret",
   "nas.coaSecretSet": "configured",
   "nas.reloadHint":
     "Changes to NAS clients take effect only after a radiusd restart or clients reload.",

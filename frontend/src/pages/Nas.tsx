@@ -166,6 +166,7 @@ function NasDialog({ nas, onClose }: { nas?: NasItem; onClose: () => void }) {
   const [coaEnabled, setCoaEnabled] = useState(nas?.coa_enabled ?? false);
   const [coaPort, setCoaPort] = useState(nas?.coa_port ?? 3799);
   const [coaSecret, setCoaSecret] = useState("");
+  const [clearCoaSecret, setClearCoaSecret] = useState(false);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -178,6 +179,9 @@ function NasDialog({ nas, onClose }: { nas?: NasItem; onClose: () => void }) {
       coa_enabled: coaEnabled,
       coa_port: coaPort,
       coa_secret: coaSecret || null,
+      // Das Backend behandelt null als "nicht geändert"; das Entfernen braucht
+      // deshalb ein eigenes Kennzeichen.
+      clear_coa_secret: clearCoaSecret,
     };
     if (nas) {
       update.mutate({ id: nas.id, body }, { onSuccess: onClose });
@@ -274,11 +278,25 @@ function NasDialog({ nas, onClose }: { nas?: NasItem; onClose: () => void }) {
                 id={id}
                 type="password"
                 value={coaSecret}
+                disabled={clearCoaSecret}
                 placeholder={nas?.has_coa_secret ? t("nas.coaSecretSet") : ""}
                 onChange={(event) => setCoaSecret(event.target.value)}
               />
             )}
           </Field>
+          {nas?.has_coa_secret ? (
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={clearCoaSecret}
+                onChange={(event) => {
+                  setClearCoaSecret(event.target.checked);
+                  if (event.target.checked) setCoaSecret("");
+                }}
+              />
+              {t("nas.clearCoaSecret")}
+            </label>
+          ) : null}
         </fieldset>
       </form>
     </Modal>

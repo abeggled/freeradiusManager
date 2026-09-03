@@ -85,6 +85,11 @@ class MgrAccount(TimestampMixin, Base):
     failed_logins: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     locked_until: Mapped[dt.datetime | None] = mapped_column(DateTime)
     password_changed_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
+    totp_changed_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
+    """Zeitpunkt der letzten Aenderung des zweiten Faktors.
+
+    Aeltere Sitzungen werden dadurch auch dann ungueltig, wenn nach einem
+    Zuruecksetzen sofort ein neuer Faktor eingerichtet wird."""
 
 
 class MgrAudit(Base):

@@ -266,6 +266,7 @@ class AccountService:
         secret = generate_totp_secret()
         account.totp_secret_enc = _box().encrypt(secret)
         account.totp_enabled = False
+        account.totp_changed_at = utcnow()
         await self.session.commit()
         return TotpSetupResponse(
             secret=secret, provisioning_uri=totp_provisioning_uri(secret, account.username)
@@ -363,6 +364,8 @@ class AccountService:
         if payload.reset_totp:
             account.totp_enabled = False
             account.totp_secret_enc = None
+            # Beendet auch bereits laufende Sitzungen dieses Kontos.
+            account.totp_changed_at = utcnow()
 
         await self.audit.log(
             action="account.update",
@@ -444,6 +447,20 @@ class AccountService:
         if account.id == actor.account_id and not verify_password(
             payload.current_password, account.password_hash
         ):
+            # Auch mit gueltiger Sitzung darf das aktuelle Passwort nicht
+            # unbegrenzt geraten werden.
+            account.failed_logins += 1
+            self._apply_lockout(account)
+            await self.audit.log(
+                action="account.change_password",
+                object_type="account",
+                object_id=account.username,
+                actor=actor,
+                actor_ip=actor_ip,
+                result=AuditResult.FAILURE,
+                message="falsches aktuelles Passwort",
+            )
+            await self.session.commit()
             raise AuthenticationError(code="error.invalid_credentials")
         account.password_hash = hash_password(payload.new_password)
         account.password_changed_at = utcnow()

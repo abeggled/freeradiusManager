@@ -53,7 +53,7 @@ class GroupUpdate(BaseModel):
 class MembershipChange(BaseModel):
     usernames: list[str] = Field(default_factory=list, max_length=5000)
     action: Literal["add", "remove"] = "add"
-    priority: int = 1
+    priority: int = Field(default=1, ge=0, le=10_000)
 
 
 class DictionaryEntry(BaseModel):

@@ -145,14 +145,23 @@ async def current_principal(request: Request, response: Response, session: Sessi
             code="error.reauthentication_required", details={"reason": "mfa_required"}
         )
 
-    # Eine Passwortaenderung verwirft aeltere Sitzungen - sonst bliebe ein
-    # gestohlenes Cookie bis zur absoluten Gueltigkeit brauchbar.
-    if account.password_changed_at is not None and claims.auth_at:
-        changed_at = account.password_changed_at.replace(tzinfo=UTC).timestamp()
-        if claims.auth_at < changed_at:
-            raise AuthenticationError(
-                code="error.reauthentication_required", details={"reason": "password_changed"}
-            )
+    # Eine Aenderung an Passwort oder zweitem Faktor verwirft aeltere Sitzungen -
+    # sonst bliebe ein gestohlenes Cookie bis zur absoluten Gueltigkeit brauchbar,
+    # und ein zurueckgesetztes TOTP waere nach der Neueinrichtung wieder wirkungslos.
+    if claims.auth_at:
+        for reason, changed in (
+            ("password_changed", account.password_changed_at),
+            ("totp_changed", account.totp_changed_at),
+        ):
+            if changed is None:
+                continue
+            # ``auth_at`` steht als ganze Sekunde im Token; der Vergleichswert
+            # wird gleich behandelt, damit eine Anmeldung in derselben Sekunde
+            # nicht sofort verworfen wird.
+            if claims.auth_at < int(changed.replace(tzinfo=UTC).timestamp()):
+                raise AuthenticationError(
+                    code="error.reauthentication_required", details={"reason": reason}
+                )
 
     principal = Principal(
         account_id=account.id,

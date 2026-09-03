@@ -440,11 +440,16 @@ class UserService:
 
         subject = await self.subjects.get(old)
         cleartext = await self.attrs.find_check(old, "Cleartext-Password")
+        nt = await self.attrs.find_check(old, "NT-Password")
+        # Auch ein reiner NT-Hash kann aus der alten MAC abgeleitet sein; ohne
+        # diese Erkennung schluege MAB nach dem Umbenennen sofort fehl.
         mac_is_password = (
             subject is not None
             and subject.subject_type is SubjectType.DEVICE
-            and cleartext is not None
-            and cleartext.value == old
+            and (
+                (cleartext is not None and cleartext.value == old)
+                or (cleartext is None and nt is not None and nt.value.upper() == nt_hash(old))
+            )
         )
 
         await self.attrs.rename(old, new)

@@ -2,6 +2,7 @@
   "error.generic": "Es ist ein Fehler aufgetreten.",
   "error.not_found": "Der angeforderte Datensatz wurde nicht gefunden.",
   "error.conflict": "Der Datensatz existiert bereits oder wurde zwischenzeitlich geändert.",
+  "error.busy": "Diese Ressource wird gerade bearbeitet. Bitte erneut versuchen.",
   "error.validation": "Die Eingabe ist ungültig.",
   "error.unauthenticated": "Anmeldung erforderlich.",
   "error.reauthentication_required": "Die Berechtigungen haben sich geändert. Bitte neu anmelden.",

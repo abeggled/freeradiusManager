@@ -224,6 +224,12 @@ async def oidc_callback(
         # Ohne stabiles "sub" landeten alle solchen Token auf demselben Konto.
         raise AuthenticationError(code="error.unauthenticated", details={"stage": "subject"})
     subject = raw_subject.strip()
+    if len(subject) > 255:
+        # mgr_account.oidc_subject fasst 255 Zeichen; gekuerzt waere die
+        # Identitaet nicht mehr eindeutig, deshalb wird abgewiesen.
+        raise AuthenticationError(
+            code="error.unauthenticated", details={"stage": "subject_too_long"}
+        )
     account = await service.repo.get_by_oidc_subject(subject)
     if account is None:
         username = str(claims.get("preferred_username") or claims.get("email") or subject)
