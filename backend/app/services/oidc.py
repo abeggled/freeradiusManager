@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,7 +21,10 @@ from app.core.config import settings as app_settings
 from app.core.errors import AuthenticationError
 
 _metadata_cache: dict[str, dict[str, Any]] = {}
-_jwks_cache: dict[str, Any] = {}
+_jwks_cache: dict[str, tuple[float, Any]] = {}
+
+JWKS_TTL_SECONDS = 3600
+"""Nach dieser Zeit wird der Schluesselsatz neu geladen."""
 
 
 @dataclass(frozen=True)
@@ -105,26 +109,29 @@ class OidcService:
         if not id_token:
             raise AuthenticationError(code="error.unauthenticated")
         jwks_uri = meta["jwks_uri"]
-        if jwks_uri not in _jwks_cache:
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.get(jwks_uri)
-                response.raise_for_status()
-                _jwks_cache[jwks_uri] = JsonWebKey.import_key_set(response.json())
+        key_set = await self._jwks(jwks_uri)
         # Der Aussteller wird gegen die Discovery-Metadaten geprueft. Ohne diese
         # Bindung akzeptierte ein Anbieter mit gemeinsamem Token-Endpunkt oder
         # JWKS auch ein korrekt signiertes Token eines fremden Issuers.
         expected_issuer = str(meta.get("issuer") or self.config.oidc_issuer).rstrip("/")
-        claims = jwt.decode(
-            id_token,
-            _jwks_cache[jwks_uri],
-            claims_options={
-                "iss": {"essential": True, "values": [expected_issuer]},
-                "aud": {"essential": True, "values": [self.config.oidc_client_id]},
-                "sub": {"essential": True},
-                "exp": {"essential": True},
-            },
-        )
-        claims.validate()
+        try:
+            claims = self._decode(id_token, key_set, expected_issuer)
+        except AuthenticationError:
+            raise
+        except Exception:  # noqa: BLE001 - unbekannter Schluessel oder Rotation
+            # Der Anbieter kann seinen Signierschluessel jederzeit wechseln.
+            # Ohne erneutes Laden waeren nach einer Rotation alle Anmeldungen
+            # bis zum Neustart des Managers unmoeglich.
+            key_set = await self._jwks(jwks_uri, force=True)
+            try:
+                claims = self._decode(id_token, key_set, expected_issuer)
+            except AuthenticationError:
+                raise
+            except Exception as exc:
+                raise AuthenticationError(
+                    code="error.unauthenticated", details={"stage": "signature"}
+                ) from exc
+
         if str(claims.get("iss", "")).rstrip("/") != expected_issuer:
             raise AuthenticationError(code="error.unauthenticated", details={"stage": "issuer"})
         if claims.get("nonce") != nonce:
@@ -136,6 +143,32 @@ class OidcService:
                     code="error.unauthenticated", details={"stage": "audience"}
                 )
         return dict(claims)
+
+    @staticmethod
+    async def _jwks(jwks_uri: str, *, force: bool = False) -> Any:
+        cached = _jwks_cache.get(jwks_uri)
+        if cached is not None and not force and time.monotonic() - cached[0] < JWKS_TTL_SECONDS:
+            return cached[1]
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(jwks_uri)
+            response.raise_for_status()
+            key_set = JsonWebKey.import_key_set(response.json())
+        _jwks_cache[jwks_uri] = (time.monotonic(), key_set)
+        return key_set
+
+    def _decode(self, id_token: str, key_set: Any, expected_issuer: str) -> Any:
+        claims = jwt.decode(
+            id_token,
+            key_set,
+            claims_options={
+                "iss": {"essential": True, "values": [expected_issuer]},
+                "aud": {"essential": True, "values": [self.config.oidc_client_id]},
+                "sub": {"essential": True},
+                "exp": {"essential": True},
+            },
+        )
+        claims.validate()
+        return claims
 
     def map_role(self, claims: dict[str, Any]) -> str | None:
         """Bildet den konfigurierten Claim auf eine Manager-Rolle ab."""

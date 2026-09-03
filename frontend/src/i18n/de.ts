@@ -176,6 +176,8 @@ export const de = {
   "sessions.coa": "VLAN neu zuweisen",
   "sessions.coaConfirm": "Neues VLAN per CoA an das NAS senden?",
   "sessions.newVlan": "Neues VLAN",
+  "sessions.from": "Beginn ab",
+  "sessions.to": "Beginn bis",
   "sessions.running": "läuft",
   "sessions.approximate": "mindestens {count}",
 

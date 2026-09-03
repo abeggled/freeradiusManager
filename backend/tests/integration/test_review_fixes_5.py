@@ -248,3 +248,154 @@ async def test_session_detail_endpoint_is_reachable(session, client) -> None:
     body = response.json()
     assert body["nasportid"] == "Gi1/0/7"
     assert body["ssid"] == "WLAN"
+
+
+# --- Sechste Runde ---------------------------------------------------------
+
+
+async def test_bulk_item_failure_does_not_poison_the_session(session, admin_principal) -> None:
+    """Ein von der Datenbank abgewiesener Gruppenname darf den Rest nicht mitreissen."""
+    from app.schemas.users import BulkAction
+
+    users = UserService(session)
+    for name in ("anna", "bruno"):
+        await users.create(UserCreate(username=name, password="geheim123"), actor=admin_principal)
+
+    requested, succeeded, errors = await ImportExportService(session).bulk(
+        BulkAction(action="assign_group", usernames=["anna", "bruno"], groupname="g" * 200),
+        SubjectFilter(),
+        actor=admin_principal,
+    )
+    assert requested == 2
+    assert succeeded == 0
+    assert len(errors) == 2
+
+
+async def test_bulk_audit_payload_is_capped(session, admin_principal) -> None:
+    """Die TEXT-Spalte fasst rund 64 KiB; die Namen werden begrenzt abgelegt."""
+    from sqlalchemy import select
+
+    from app.models.mgr import MgrAudit
+    from app.schemas.users import BulkAction
+    from app.services.importexport import AUDIT_NAME_LIMIT
+
+    users = UserService(session)
+    names = [f"user{index:04d}" for index in range(AUDIT_NAME_LIMIT + 5)]
+    for name in names:
+        await users.create(UserCreate(username=name, password="geheim123"), actor=admin_principal)
+
+    await ImportExportService(session).bulk(
+        BulkAction(action="disable", usernames=names), SubjectFilter(), actor=admin_principal
+    )
+    entry = await session.scalar(select(MgrAudit).where(MgrAudit.action == "bulk.disable"))
+    assert '"usernames_truncated": true' in (entry.after_json or "")
+    assert len(entry.after_json or "") < 60_000
+
+
+async def test_reply_only_subject_can_get_credentials(session, admin_principal) -> None:
+    """Was sichtbar und aufrufbar ist, muss auch ein Passwort erhalten können."""
+    from sqlalchemy import select
+
+    from app.models.radius import RadCheck, RadReply
+    from app.schemas.users import PasswordSet
+
+    session.add(RadReply(username="legacy", attribute="Filter-Id", op=":=", value="x"))
+    await session.commit()
+
+    users = UserService(session)
+    await users.set_password("legacy", PasswordSet(password="geheim123"), actor=admin_principal)
+    row = await session.scalar(
+        select(RadCheck).where(
+            RadCheck.username == "legacy", RadCheck.attribute == "Cleartext-Password"
+        )
+    )
+    assert row.value == "geheim123"
+
+    await users.set_disabled("legacy", True, actor=admin_principal)
+    assert (await users.get("legacy")).status == "disabled"
+
+
+async def test_status_filter_covers_expired_and_missing_credentials(
+    session, admin_principal
+) -> None:
+    """Der Aktiv-Filter darf keine abgelaufenen Objekte enthalten."""
+    from app.models.radius import RadReply
+
+    users = UserService(session)
+    await users.create(UserCreate(username="aktiv", password="geheim123"), actor=admin_principal)
+    await users.create(
+        UserCreate(
+            username="abgelaufen",
+            password="geheim123",
+            expires_at=dt.datetime(2020, 1, 1, 12, 0),
+        ),
+        actor=admin_principal,
+    )
+    session.add(RadReply(username="ohne-passwort", attribute="Filter-Id", op=":=", value="x"))
+    await session.commit()
+
+    active, _ = await users.search(SubjectFilter(status="active"))
+    expired, _ = await users.search(SubjectFilter(status="expired"))
+    without, _ = await users.search(SubjectFilter(status="no_credentials"))
+
+    assert [i.username for i in active] == ["aktiv"]
+    assert [i.username for i in expired] == ["abgelaufen"]
+    assert [i.username for i in without] == ["ohne-passwort"]
+
+
+async def test_broken_cursor_is_ignored(session, client) -> None:
+    """Ein manipulierter Cursor darf keinen Serverfehler erzeugen."""
+    import base64
+
+    await _account(session, "auditor", Role.AUDITOR)
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "auditor", "password": "ein-sicheres-passwort"},
+    )
+    broken = base64.urlsafe_b64encode(b'{"id":null}').decode().rstrip("=")
+    for path in (f"/api/v1/sessions?cursor={broken}", f"/api/v1/authlog?cursor={broken}"):
+        response = await client.get(path)
+        assert response.status_code == 200
+
+
+async def test_rate_limiter_evicts_expired_buckets() -> None:
+    """Frei wählbare Schlüssel dürfen den Speicher nicht unbegrenzt füllen."""
+    import time as time_module
+
+    from app.core.ratelimit import RateLimiter
+
+    limiter = RateLimiter(limit=5, window_seconds=0)
+    for index in range(50):
+        limiter.check(f"name{index}")
+    time_module.sleep(0.01)
+    limiter.check("noch-einer")
+    assert limiter.tracked_keys() <= 2
+
+
+async def test_jwks_is_reloaded_after_key_rotation(monkeypatch) -> None:
+    """Nach einer Schlüsselrotation dürfen Anmeldungen nicht dauerhaft scheitern."""
+    from app.services import oidc as oidc_module
+    from app.services.oidc import OidcService
+
+    oidc_module._jwks_cache.clear()
+    loads: list[bool] = []
+
+    async def fake_jwks(jwks_uri: str, *, force: bool = False) -> str:
+        loads.append(force)
+        return "neuer-schluesselsatz" if force else "alter-schluesselsatz"
+
+    def fake_decode(self, id_token: str, key_set: str, expected_issuer: str):
+        if key_set == "alter-schluesselsatz":
+            raise ValueError("unbekannte kid")
+        return {"iss": expected_issuer, "nonce": "n", "aud": "client", "sub": "s"}
+
+    monkeypatch.setattr(OidcService, "_jwks", staticmethod(fake_jwks))
+    monkeypatch.setattr(OidcService, "_decode", fake_decode)
+    settings.oidc_client_id = "client"
+
+    service = OidcService()
+    claims = await service._verify_id_token(
+        "token", "n", {"jwks_uri": "https://idp/jwks", "issuer": "https://idp"}
+    )
+    assert claims["sub"] == "s"
+    assert loads == [False, True]

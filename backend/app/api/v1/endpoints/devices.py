@@ -32,7 +32,7 @@ def _filter(
         location=location,
         device_type=device_type,
         subject_type=SubjectType.DEVICE,
-        disabled=True if status_ == "disabled" else False if status_ == "active" else None,
+        status=status_ or None,
     )
 
 

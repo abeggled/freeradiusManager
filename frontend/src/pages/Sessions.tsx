@@ -5,7 +5,7 @@ import type { SessionItem } from "@/api/types";
 import { ConfirmDialog, ErrorBox, Field, Modal, Spinner } from "@/components/ui";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n";
-import { formatBytes, formatDateTime, formatDuration } from "@/lib/format";
+import { formatBytes, formatDateTime, formatDuration, toIso } from "@/lib/format";
 
 const LIMIT = 50;
 
@@ -17,6 +17,8 @@ export function SessionsPage() {
   const [nas, setNas] = useState("");
   const [cause, setCause] = useState("");
   const [activeOnly, setActiveOnly] = useState(true);
+  const [startFrom, setStartFrom] = useState("");
+  const [startTo, setStartTo] = useState("");
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const [page, setPage] = useState(0);
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -30,6 +32,8 @@ export function SessionsPage() {
     calling_station_id: mac || undefined,
     nas_ip_address: nas || undefined,
     terminate_cause: cause || undefined,
+    start_from: toIso(startFrom) ?? undefined,
+    start_to: toIso(startTo) ?? undefined,
     active_only: activeOnly,
     limit: LIMIT,
     cursor: cursors[page] ?? undefined,
@@ -85,6 +89,28 @@ export function SessionsPage() {
             </option>
           ))}
         </select>
+        <label className="range">
+          <span>{t("sessions.from")}</span>
+          <input
+            type="datetime-local"
+            value={startFrom}
+            onChange={(event) => {
+              setStartFrom(event.target.value);
+              resetPaging();
+            }}
+          />
+        </label>
+        <label className="range">
+          <span>{t("sessions.to")}</span>
+          <input
+            type="datetime-local"
+            value={startTo}
+            onChange={(event) => {
+              setStartTo(event.target.value);
+              resetPaging();
+            }}
+          />
+        </label>
         <label className="checkbox">
           <input
             type="checkbox"
@@ -96,6 +122,20 @@ export function SessionsPage() {
           />
           {t("sessions.active")}
         </label>
+        <button
+          type="button"
+          onClick={() => {
+            setUsername("");
+            setMac("");
+            setNas("");
+            setCause("");
+            setStartFrom("");
+            setStartTo("");
+            resetPaging();
+          }}
+        >
+          {t("common.reset")}
+        </button>
       </div>
 
       <ErrorBox error={error ?? coa.error} />

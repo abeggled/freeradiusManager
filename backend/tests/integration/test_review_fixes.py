@@ -166,8 +166,8 @@ async def test_status_filter_uses_radcheck(session, admin_principal) -> None:
     await session.commit()
 
     service = UserService(session)
-    disabled, _ = await service.search(SubjectFilter(disabled=True))
-    active, _ = await service.search(SubjectFilter(disabled=False))
+    disabled, _ = await service.search(SubjectFilter(status="disabled"))
+    active, _ = await service.search(SubjectFilter(status="active"))
     assert [i.username for i in disabled] == ["legacy"]
     assert active == []
 

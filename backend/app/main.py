@@ -9,11 +9,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
@@ -123,6 +124,21 @@ def create_app() -> FastAPI:
     if STATIC_DIR.is_dir():
         app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
 
+        @lru_cache(maxsize=1)
+        def index_html() -> str:
+            """index.html mit dem konfigurierten Basispfad.
+
+            Die Oberflaeche leitet Asset- und API-Adressen aus ``<base href>`` ab;
+            hinter einem Reverse-Proxy-Praefix (``FRM_ROOT_PATH``) waeren sie
+            sonst am Origin verankert.
+            """
+            base = (settings.root_path.rstrip("/") + "/") or "/"
+            return (
+                (STATIC_DIR / "index.html")
+                .read_text(encoding="utf-8")
+                .replace('<base href="/" />', f'<base href="{base}" />')
+            )
+
         @app.get("/{full_path:path}", include_in_schema=False)
         async def spa(full_path: str) -> Response:
             """Ausliefern der gebauten Oberflaeche; Routing uebernimmt der Browser.
@@ -138,7 +154,7 @@ def create_app() -> FastAPI:
             candidate = (STATIC_DIR / full_path).resolve()
             if full_path and candidate.is_file() and candidate.is_relative_to(STATIC_DIR):
                 return FileResponse(candidate)
-            return FileResponse(STATIC_DIR / "index.html")
+            return HTMLResponse(index_html())
 
     return app
 

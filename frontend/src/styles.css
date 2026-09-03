@@ -159,6 +159,8 @@ input[type="checkbox"] { width: auto; }
 .field { margin-bottom: 0.75rem; }
 .field label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.2rem; }
 .checkbox { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; }
+.range { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; }
+.range input { width: auto; }
 
 fieldset {
   border: 1px solid var(--border);

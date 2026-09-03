@@ -11,6 +11,9 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  // Relative Asset-Pfade; aufgelöst wird über das <base>-Element, das das
+  // Backend auf den konfigurierten Root-Pfad setzt.
+  base: "./",
   build: {
     outDir: "../backend/static",
     emptyOutDir: true,

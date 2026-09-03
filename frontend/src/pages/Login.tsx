@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { API_BASE } from "@/api/client";
 import { useLogin, useLoginTotp, useOidcStatus, useTotpConfirm, useTotpEnroll } from "@/api/hooks";
 import { ErrorBox, Field } from "@/components/ui";
 import { useI18n } from "@/i18n";
@@ -97,7 +98,7 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
               {t("login.submit")}
             </button>
             {oidc.data?.enabled ? (
-              <a className="oidc" href="/api/v1/auth/oidc/login">
+              <a className="oidc" href={`${API_BASE}/auth/oidc/login`}>
                 {t("login.oidc")}
               </a>
             ) : null}

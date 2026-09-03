@@ -17,6 +17,21 @@ def encode_cursor(payload: dict[str, Any]) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
+def cursor_position(cursor: str | None) -> int | None:
+    """Liest die Position aus einem Keyset-Cursor.
+
+    Ein manipulierter oder defekter Cursor wird ignoriert statt zu einem
+    Serverfehler zu fuehren.
+    """
+    payload = decode_cursor(cursor)
+    if not payload:
+        return None
+    try:
+        return int(payload["id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def decode_cursor(cursor: str | None) -> dict[str, Any] | None:
     if not cursor:
         return None

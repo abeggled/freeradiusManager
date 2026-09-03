@@ -1,6 +1,13 @@
 import type { ApiErrorBody } from "./types";
 
-const BASE = "/api/v1";
+/**
+ * Basis aller API-Aufrufe. Abgeleitet aus dem <base>-Element, das das Backend
+ * auf ``FRM_ROOT_PATH`` setzt – sonst zielten die Aufrufe hinter einem
+ * Reverse-Proxy-Präfix auf die falsche Adresse.
+ */
+export const API_BASE = `${document.baseURI.replace(/\/$/, "")}/api/v1`;
+
+const BASE = API_BASE;
 
 export class ApiError extends Error {
   readonly code: string;

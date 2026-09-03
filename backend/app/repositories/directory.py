@@ -12,16 +12,21 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 
-from sqlalchemy import ColumnElement, and_, exists, func, or_, select, union
+from sqlalchemy import ColumnElement, and_, exists, func, or_, select, true, union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Subquery
 
 from app.core.errors import ValidationError
+from app.core.radius_dict import PASSWORD_ATTRIBUTES
 from app.models.mgr import MgrSubject, SubjectType
 from app.models.radius import RadCheck, RadReply, RadUserGroup
 
 AUTH_TYPE = "Auth-Type"
+EXPIRATION = "Expiration"
 REJECT = "Reject"
+
+# Format, in dem der Manager Expiration schreibt (siehe app/core/dates.py).
+EXPIRATION_SQL_FORMAT = "%d %b %Y %H:%i:%s"
 
 
 @dataclass(slots=True)
@@ -32,7 +37,11 @@ class SubjectFilter:
     owner: str | None = None
     location: str | None = None
     device_type: str | None = None
-    disabled: bool | None = None
+    status: str | None = None
+    """``active``, ``disabled``, ``expired`` oder ``no_credentials``.
+
+    Unbekannte Werte filtern nicht, statt eine leere Menge zu liefern.
+    """
     expiring_before: dt.datetime | None = None
 
 
@@ -87,19 +96,8 @@ class DirectoryRepository:
             conditions.append(MgrSubject.location == flt.location)
         if flt.device_type:
             conditions.append(MgrSubject.device_type == flt.device_type)
-        if flt.disabled is not None:
-            # Massgeblich ist der Zustand in radcheck, nicht die Manager-Notiz:
-            # Bestandsbenutzer ohne mgr_subject und direkt in der Datenbank
-            # geaenderte Eintraege wuerden sonst falsch einsortiert - und eine
-            # Sammelaktion traefe Objekte ausserhalb der angezeigten Menge.
-            blocked = exists(
-                select(RadCheck.id).where(
-                    RadCheck.username == names.c.username,
-                    RadCheck.attribute == AUTH_TYPE,
-                    RadCheck.value == REJECT,
-                )
-            )
-            conditions.append(blocked if flt.disabled else ~blocked)
+        if flt.status:
+            conditions.append(self._status_condition(flt.status, names))
         if flt.expiring_before:
             conditions.append(
                 and_(
@@ -117,6 +115,48 @@ class DirectoryRepository:
                 )
             )
         return names, conditions
+
+    @staticmethod
+    def _status_condition(status: str, names: Subquery) -> ColumnElement[bool]:
+        """Bildet die Statusberechnung der Anwendung in SQL nach.
+
+        Massgeblich ist ``radcheck`` und nicht die Manager-Notiz: sonst waeren
+        Bestandsbenutzer und direkt in der Datenbank geaenderte Eintraege falsch
+        einsortiert - und eine Sammelaktion traefe Objekte ausserhalb der
+        angezeigten Menge (NFR-4).
+        """
+        blocked = exists(
+            select(RadCheck.id).where(
+                RadCheck.username == names.c.username,
+                RadCheck.attribute == AUTH_TYPE,
+                RadCheck.value == REJECT,
+            )
+        )
+        # Nicht interpretierbare Datumswerte liefern NULL und gelten damit nicht
+        # als abgelaufen - die sichere Richtung.
+        expired = exists(
+            select(RadCheck.id).where(
+                RadCheck.username == names.c.username,
+                RadCheck.attribute == EXPIRATION,
+                func.str_to_date(RadCheck.value, EXPIRATION_SQL_FORMAT) < func.now(),
+            )
+        )
+        has_password = exists(
+            select(RadCheck.id).where(
+                RadCheck.username == names.c.username,
+                func.lower(RadCheck.attribute).in_(sorted(PASSWORD_ATTRIBUTES)),
+            )
+        )
+
+        if status == "disabled":
+            return blocked
+        if status == "expired":
+            return and_(~blocked, expired)
+        if status == "no_credentials":
+            return and_(~blocked, ~expired, ~has_password)
+        if status == "active":
+            return and_(~blocked, ~expired, has_password)
+        return true()
 
     async def search(
         self, flt: SubjectFilter, limit: int = 50, offset: int = 0

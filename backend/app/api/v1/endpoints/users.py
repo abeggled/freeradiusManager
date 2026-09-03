@@ -37,7 +37,7 @@ def _filter(
         group=group,
         owner=owner,
         subject_type=subject_type,
-        disabled=True if status_ == "disabled" else False if status_ == "active" else None,
+        status=status_ or None,
     )
 
 

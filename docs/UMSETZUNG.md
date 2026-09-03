@@ -75,7 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Fünf Runden eines automatisierten Reviews meldeten 19, 14, 13, 13 und 10 Befunde;
+Sechs Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10 und 11
+Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_5.py` unter
 `backend/tests/integration/`).
@@ -219,6 +220,28 @@ Die fünfte Runde:
 * Fehlermeldungen folgen der umgeschalteten Oberflächensprache; Exporte behalten
   abweichende Gruppenprioritäten; eine gewechselte Importdatei verwirft die alte
   Vorschau; Sessions haben eine Detailansicht.
+
+Die sechste Runde:
+
+* **Das Sammel-Audit sprengt die Spalte nicht mehr.** Bei mehreren tausend
+  Objekten hätten alle Namen die `TEXT`-Spalte überschritten und die Aktion wäre
+  nach vollständiger Wirkung mit 500 geendet. Die Namen sind jetzt begrenzt und
+  als gekürzt markiert; jede Einzeländerung hat ohnehin einen eigenen Eintrag.
+* **Der JWKS-Cache läuft ab und wird bei unbekanntem Schlüssel neu geladen.**
+  Nach einer routinemässigen Schlüsselrotation des Identity-Providers wären sonst
+  alle OIDC-Anmeldungen bis zum Neustart unmöglich gewesen.
+* **Der Aktiv-Filter bildet die vollständige Statusberechnung ab** – abgelaufene
+  Objekte und solche ohne Passwort zählen nicht mehr als aktiv, weder in der
+  Liste noch in einer daraus bestätigten Sammelaktion.
+* Der Rate-Limiter räumt abgelaufene Schlüssel auf; die Prüfung auf den letzten
+  Administrator läuft unter einer Zeilensperre; ein defekter Cursor führt nicht
+  mehr zu einem Serverfehler.
+* Bestandsnamen ohne `radcheck`-Eintrag lassen sich sperren, löschen und mit
+  einem Passwort versehen – sie waren sichtbar, aber nicht bedienbar.
+* Ein fehlgeschlagenes Element einer Sammelaktion setzt die Sitzung zurück.
+* Die Oberfläche leitet Asset- und API-Adressen aus `<base href>` ab, das das
+  Backend auf `FRM_ROOT_PATH` setzt; das Sprachcookie wird beim Start
+  abgeglichen; Sessions haben Zeitraumfilter.
 
 ## Prüfschritte
 

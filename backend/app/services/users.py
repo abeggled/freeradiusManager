@@ -329,7 +329,10 @@ class UserService:
         actor: Principal,
         actor_ip: str | None = None,
     ) -> None:
-        if not await self.attrs.exists(username) and not await self.subjects.get(username):
+        # Auch reine radreply-/radusergroup-Eintraege gelten als vorhanden: sie
+        # erscheinen in der Liste und lassen sich dort oeffnen, also muessen sie
+        # auch ein Passwort erhalten koennen.
+        if not await self.attrs.exists_anywhere(username) and not await self.subjects.get(username):
             raise NotFoundError(code="error.not_found", details={"username": username})
         subject = await self.subjects.ensure(username)
         credential_type = payload.credential_type or subject.credential_type
@@ -354,7 +357,7 @@ class UserService:
         actor_ip: str | None = None,
     ) -> None:
         """Sperren/Entsperren. Der uebrige Zustand bleibt unangetastet (FR-1)."""
-        if not await self.attrs.exists(username) and not await self.subjects.get(username):
+        if not await self.attrs.exists_anywhere(username) and not await self.subjects.get(username):
             raise NotFoundError(code="error.not_found", details={"username": username})
         subject = await self.subjects.ensure(username)
         if disabled:
@@ -377,7 +380,7 @@ class UserService:
 
     async def delete(self, username: str, *, actor: Principal, actor_ip: str | None = None) -> None:
         subject = await self.subjects.get(username)
-        exists = await self.attrs.exists(username)
+        exists = await self.attrs.exists_anywhere(username)
         if subject is None and not exists:
             raise NotFoundError(code="error.not_found", details={"username": username})
         object_type = subject.subject_type.value if subject else SubjectType.USER.value

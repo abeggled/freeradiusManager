@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.pagination import KeysetPage, clamp_limit, decode_cursor, encode_cursor
+from app.core.pagination import KeysetPage, clamp_limit, cursor_position, encode_cursor
 from app.models.radius import RadPostAuth
 
 ACCEPT_VALUES = ("Access-Accept", "Accept")
@@ -46,9 +46,9 @@ class PostAuthRepository:
     ) -> KeysetPage[RadPostAuth]:
         limit = clamp_limit(limit)
         stmt = select(RadPostAuth).where(*self._conditions(flt))
-        position = decode_cursor(cursor)
-        if position and "id" in position:
-            stmt = stmt.where(RadPostAuth.id < int(position["id"]))
+        position = cursor_position(cursor)
+        if position is not None:
+            stmt = stmt.where(RadPostAuth.id < position)
         stmt = stmt.order_by(RadPostAuth.id.desc()).limit(limit + 1)
         rows = list((await self.session.scalars(stmt)).all())
         next_cursor = None

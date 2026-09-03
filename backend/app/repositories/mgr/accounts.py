@@ -44,15 +44,25 @@ class AccountRepository:
             await self.session.scalar(count_stmt) or 0
         )
 
-    async def count_active_administrators(self, exclude_id: int | None = None) -> int:
-        stmt = (
-            select(func.count())
-            .select_from(MgrAccount)
-            .where(MgrAccount.role == Role.ADMINISTRATOR, MgrAccount.is_active.is_(True))
+    async def count_active_administrators(
+        self, exclude_id: int | None = None, *, lock: bool = False
+    ) -> int:
+        """Anzahl aktiver Administratoren.
+
+        Mit ``lock=True`` werden die betroffenen Zeilen bis zum Ende der
+        Transaktion gesperrt. Zwei gleichzeitige Herabstufungen saehen sonst
+        beide noch den jeweils anderen Administrator und die Instanz bliebe
+        ohne einen einzigen zurueck.
+        """
+        stmt = select(MgrAccount.id).where(
+            MgrAccount.role == Role.ADMINISTRATOR, MgrAccount.is_active.is_(True)
         )
         if exclude_id is not None:
             stmt = stmt.where(MgrAccount.id != exclude_id)
-        return int(await self.session.scalar(stmt) or 0)
+        if lock:
+            stmt = stmt.with_for_update()
+        rows = (await self.session.scalars(stmt)).all()
+        return len(rows)
 
     async def add(self, account: MgrAccount) -> MgrAccount:
         self.session.add(account)

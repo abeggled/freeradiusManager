@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.pagination import KeysetPage, clamp_limit, decode_cursor, encode_cursor
+from app.core.pagination import KeysetPage, clamp_limit, cursor_position, encode_cursor
 from app.models.radius import RadAcct
 
 
@@ -61,9 +61,9 @@ class AccountingRepository:
     ) -> KeysetPage[RadAcct]:
         limit = clamp_limit(limit)
         stmt = select(RadAcct).where(*self._conditions(flt))
-        position = decode_cursor(cursor)
-        if position and "id" in position:
-            stmt = stmt.where(RadAcct.radacctid < int(position["id"]))
+        position = cursor_position(cursor)
+        if position is not None:
+            stmt = stmt.where(RadAcct.radacctid < position)
         stmt = stmt.order_by(RadAcct.radacctid.desc()).limit(limit + 1)
         rows = list((await self.session.scalars(stmt)).all())
         next_cursor = None

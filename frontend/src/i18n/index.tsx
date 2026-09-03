@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { I18nContext, type Language, type Translate } from "./context";
@@ -18,11 +18,16 @@ function detectLanguage(): Language {
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<Language>(detectLanguage);
 
+  // Das Cookie ist sitzungsgebunden, die Auswahl steht dauerhaft im
+  // localStorage. Ohne diesen Abgleich kämen Fehlermeldungen nach einem
+  // Browser-Neustart in der Kontosprache, während die Oberfläche umgestellt ist.
+  useEffect(() => {
+    document.documentElement.lang = language;
+    document.cookie = `frm_lang=${language}; path=/; SameSite=Lax`;
+  }, [language]);
+
   const setLanguage = useCallback((next: Language) => {
     window.localStorage.setItem(STORAGE_KEY, next);
-    document.documentElement.lang = next;
-    // Das Backend uebersetzt Fehlercodes anhand desselben Cookies.
-    document.cookie = `frm_lang=${next}; path=/; SameSite=Lax`;
     setLanguageState(next);
   }, []);
 

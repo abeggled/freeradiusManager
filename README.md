@@ -106,6 +106,9 @@ docker compose exec freeradius radtest BENUTZER PASSWORT 127.0.0.1 0 testing123
   über die Anmeldung noch über das eigene Profil ersetzen.
 * **Aufbewahrung des Audit-Logs** setzt ein Hintergrundjob durch; das Intervall
   steuert `FRM_AUDIT_PURGE_INTERVAL_SECONDS` (Vorgabe: alle sechs Stunden).
+* **Betrieb unter einem Pfadpräfix** über `FRM_ROOT_PATH` (z. B. `/manager`): das
+  Backend setzt `<base href>` in der ausgelieferten `index.html`, woraus die
+  Oberfläche Asset- und API-Adressen ableitet.
 
 ## Entwicklung
 

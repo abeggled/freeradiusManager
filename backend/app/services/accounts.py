@@ -118,7 +118,7 @@ class AccountService:
         if (
             account.role is Role.ADMINISTRATOR
             and role is not Role.ADMINISTRATOR
-            and await self.repo.count_active_administrators(exclude_id=account.id) == 0
+            and await self.repo.count_active_administrators(exclude_id=account.id, lock=True) == 0
         ):
             raise ValidationError(code="error.last_administrator")
         account.role = role
@@ -306,7 +306,10 @@ class AccountService:
             and payload.role is not Role.ADMINISTRATOR
             and account.role is Role.ADMINISTRATOR
         ) or payload.is_active is False
-        if demoting and await self.repo.count_active_administrators(exclude_id=account.id) == 0:
+        if (
+            demoting
+            and await self.repo.count_active_administrators(exclude_id=account.id, lock=True) == 0
+        ):
             raise ValidationError(code="error.last_administrator")
 
         # ``model_fields_set`` trennt "nicht gesendet" von "ausdruecklich auf
@@ -343,7 +346,7 @@ class AccountService:
         account = await self.get(account_id)
         if (
             account.role is Role.ADMINISTRATOR
-            and await self.repo.count_active_administrators(exclude_id=account.id) == 0
+            and await self.repo.count_active_administrators(exclude_id=account.id, lock=True) == 0
         ):
             raise ValidationError(code="error.last_administrator")
         username = account.username

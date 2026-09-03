@@ -59,6 +59,9 @@ DEVICE_COLUMNS = (
     "note",
     "disabled",
 )
+AUDIT_NAME_LIMIT = 200
+"""Hoechstzahl im Sammel-Audit protokollierter Namen (TEXT-Spalte, ~64 KiB)."""
+
 EXPORT_COLUMNS = (
     "username",
     "subject_type",
@@ -570,6 +573,9 @@ class ImportExportService:
                 await self._bulk_one(username, payload, actor=actor, actor_ip=actor_ip)
                 succeeded.append(username)
             except Exception as exc:  # noqa: BLE001 - Sammelmeldung je Objekt
+                # Wie beim Import: ohne Rollback bliebe die Sitzung im
+                # Fehlerzustand und jede weitere Zeile scheiterte ebenfalls.
+                await self.session.rollback()
                 errors.append({"username": username, "error": str(exc)})
 
         await self.audit.log(
@@ -583,10 +589,13 @@ class ImportExportService:
                 "failed": len(errors),
                 "groupname": payload.groupname,
                 "expires_at": payload.expires_at,
-                # Die betroffenen Namen gehoeren ins Protokoll, sonst laesst sich
-                # eine Sammelaktion nachtraeglich keinem Objekt zuordnen (FR-9).
-                "usernames": succeeded,
-                "failed_usernames": [e["username"] for e in errors],
+                # Die betroffenen Namen gehoeren ins Protokoll (FR-9), aber
+                # begrenzt: ``mgr_audit.after_json`` ist eine TEXT-Spalte und
+                # fasst rund 64 KiB. Jede Einzelaenderung hat ohnehin einen
+                # eigenen Eintrag, ueber den sich die Zuordnung herstellen laesst.
+                "usernames": succeeded[:AUDIT_NAME_LIMIT],
+                "usernames_truncated": len(succeeded) > AUDIT_NAME_LIMIT,
+                "failed_usernames": [e["username"] for e in errors[:AUDIT_NAME_LIMIT]],
             },
         )
         await self.session.commit()
