@@ -107,6 +107,7 @@ docker compose exec freeradius radtest BENUTZER PASSWORT 127.0.0.1 0 testing123
    GRANT SELECT, INSERT, UPDATE, DELETE ON radius.mgr_nas_extra TO 'radmgr'@'%';
    GRANT SELECT, INSERT, UPDATE, DELETE ON radius.mgr_setting TO 'radmgr'@'%';
    GRANT SELECT, INSERT, UPDATE, DELETE ON radius.mgr_stats_snapshot TO 'radmgr'@'%';
+   GRANT SELECT, INSERT, UPDATE, DELETE ON radius.mgr_session_revocation TO 'radmgr'@'%';
    GRANT SELECT ON radius.alembic_version TO 'radmgr'@'%';
    DROP USER 'radmgr_migrate'@'%';
    ```

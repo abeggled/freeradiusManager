@@ -310,8 +310,9 @@ async def test_bulk_group_name_is_bounded() -> None:
 
     with pytest.raises(PydanticValidationError):
         BulkAction(action="assign_group", usernames=["anna"], groupname="g" * 65)
-    with pytest.raises(PydanticValidationError):
-        BulkAction(action="assign_group", usernames=["anna"], groupname="a:b")
+    # Trennzeichen sind seit der 32. Runde erlaubt: Bestandsnamen fuehren sie,
+    # die CSV-Spalte maskiert sie.
+    assert BulkAction(action="assign_group", usernames=["anna"], groupname="a:b").groupname
 
     assert BulkAction(action="assign_group", usernames=["anna"], groupname="wlan").groupname
 
@@ -2751,3 +2752,96 @@ async def test_minute_only_month_first_expiration_filters(session, admin_princip
     assert (await users.get("anna")).status == "expired"
     expired, _ = await users.search(SubjectFilter(status="expired"))
     assert [i.username for i in expired] == ["anna"]
+
+
+# --- Dreiunddreissigste Runde ---------------------------------------------
+
+
+async def test_enrollment_confirm_rechecks_the_password_time(session) -> None:
+    """Die anschliessend gesetzte totp_changed_at verdeckte sonst den Wechsel."""
+    import pyotp
+
+    from app.core.config import settings as app_settings
+    from app.core.crypto import SecretBox, hash_password
+    from app.core.dates import utcnow
+    from app.core.errors import AuthenticationError
+    from app.models.mgr import MgrAccount, Role
+    from app.services.accounts import AccountService
+
+    account = MgrAccount(
+        username="admin",
+        role=Role.ADMINISTRATOR,
+        password_hash=hash_password("ein-sicheres-passwort"),
+    )
+    session.add(account)
+    await session.commit()
+
+    service = AccountService(session)
+    setup = await service.start_totp_enrollment(account)
+    del setup
+    secret = SecretBox(app_settings.coa_secret_key or app_settings.secret_key).decrypt(
+        str(account.totp_secret_enc)
+    )
+    issued_at = dt.datetime.now(tz=dt.UTC).timestamp()
+
+    # Administrativer Passwortwechsel danach.
+    account.password_changed_at = utcnow() + dt.timedelta(seconds=1)
+    await session.commit()
+
+    with pytest.raises(AuthenticationError) as excinfo:
+        await service.confirm_totp(account, pyotp.TOTP(secret).now(), issued_at=issued_at)
+    assert excinfo.value.code == "error.reauthentication_required"
+
+
+async def test_own_block_can_be_cleared_despite_a_group_block(session, admin_principal) -> None:
+    """Sonst liesse sich eine zusaetzliche Einzelsperre nie aufheben."""
+    from app.schemas.groups import AttributeIn, GroupCreate
+    from app.services.groups import GroupService
+
+    await GroupService(session).create(
+        GroupCreate(
+            groupname="gesperrt",
+            check_attributes=[AttributeIn(attribute="Auth-Type", op=":=", value="Reject")],
+        ),
+        actor=admin_principal,
+    )
+    users = UserService(session)
+    await users.create(
+        UserCreate(
+            username="anna",
+            password="geheim123",
+            groups=[MembershipIn(groupname="gesperrt")],
+            disabled=True,
+        ),
+        actor=admin_principal,
+    )
+    assert (await users.get("anna")).disabled is True
+
+    await users.set_disabled("anna", False, actor=admin_principal)
+    detail = await users.get("anna")
+    # Die eigene Zeile ist weg, die Gruppensperre wirkt weiter.
+    assert detail.disabled is False
+    assert detail.status == "disabled"
+
+
+async def test_group_names_with_delimiters_round_trip() -> None:
+    """Bestandsnamen wie ``corp:guest`` muessen den Export ueberstehen."""
+    from app.services.importexport import _escape_groupname, _parse_groups
+
+    encoded = f"{_escape_groupname('corp:guest')},{_escape_groupname('a,b')}:7"
+    parsed = [(m.groupname, m.priority) for m in _parse_groups(encoded)]
+    assert parsed == [("corp:guest", 1), ("a,b", 7)]
+
+    # Der uebliche Fall bleibt unveraendert lesbar.
+    assert [(m.groupname, m.priority) for m in _parse_groups("wlan:3,staff")] == [
+        ("wlan", 3),
+        ("staff", 1),
+    ]
+
+
+async def test_readme_grants_the_revocation_table() -> None:
+    """``current_principal`` liest die Tabelle bei jeder Anfrage."""
+    from pathlib import Path
+
+    readme = (Path(__file__).resolve().parents[3] / "README.md").read_text(encoding="utf-8")
+    assert "mgr_session_revocation TO 'radmgr'@'%'" in readme

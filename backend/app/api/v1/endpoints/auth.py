@@ -186,7 +186,9 @@ async def confirm_totp(
         payload.challenge, scope=TOTP_ENROLL_SCOPE
     )
     login_limiter.check(f"totp:{account.id}")
-    await service.confirm_totp(account, payload.totp_code, actor_ip=actor_ip)
+    await service.confirm_totp(
+        account, payload.totp_code, actor_ip=actor_ip, issued_at=verified_at
+    )
     login_limiter.reset(f"totp:{account.id}")
     # Auch der Einrichtungsweg ist eine vollstaendige Anmeldung: der
     # zurueckgehaltene Fehlerzaehler wird jetzt geleert.

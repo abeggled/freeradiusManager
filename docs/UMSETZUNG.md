@@ -1141,6 +1141,23 @@ Die fünfundzwanzigste Runde:
 * Die Schaltfläche zum Entsperren richtet sich nach der eigenen Sperre: stammt
   der Reject aus einer Gruppe, ist sie deaktiviert und nennt den Grund.
 
+### Dreiunddreissigste Runde
+
+* **Die Bestätigung der TOTP-Einrichtung prüft den Zeitstempel der Challenge
+  unter der Kontosperre.** Die anschliessend gesetzte `totp_changed_at`
+  verdeckte sonst einen dazwischen liegenden Passwortwechsel, und die Sitzung
+  blieb gültig.
+* **Das Betriebskonto braucht Rechte auf `mgr_session_revocation`.** Die
+  Anleitung für Bestandsinstallationen liess die Tabelle aus; ohne sie
+  scheiterte jede authentifizierte Anfrage nach dem Anmelden.
+* **Eine eigene Sperre lässt sich auch neben einer Gruppensperre aufheben.** Die
+  Prüfung wies das Entsperren bisher immer ab, sobald eine Gruppe blockierte –
+  die zusätzliche Einzelsperre blieb dauerhaft bestehen.
+* **Gruppennamen mit Trennzeichen überstehen den CSV-Weg.** Bestandsnamen wie
+  `corp:guest` sind in einem bestehenden FreeRADIUS-Schema gültig; die Spalte
+  `groups` maskiert die Trennzeichen jetzt mit Rückstrich, statt solche Namen
+  beim Anlegen zu verbieten (das half Bestandsdaten nicht).
+
 ## Prüfschritte
 
 ```bash

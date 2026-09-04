@@ -124,11 +124,86 @@ def _parse_date(value: str | None) -> dt.datetime | None:
         raise ValidationError(code="error.validation", details={"expires_at": value}) from exc
 
 
+GROUP_DELIMITERS = ",;:"
+"""Trennzeichen der Mitgliedschaftsspalte.
+
+Neue Gruppennamen duerfen sie nicht enthalten (``validate_groupname``). In einer
+Bestandsinstallation koennen sie aber vorkommen - dort ist ``corp:guest`` ein
+gueltiger Name. Deshalb werden sie beim Export maskiert.
+"""
+
+
+def _escape_groupname(name: str) -> str:
+    """Maskiert Trennzeichen mit einem Rueckstrich."""
+    escaped = name.replace("\\", "\\\\")
+    for character in GROUP_DELIMITERS:
+        escaped = escaped.replace(character, f"\\{character}")
+    return escaped
+
+
+def _split_groups(value: str) -> list[str]:
+    """Teilt an unmaskierten Kommata und Semikola."""
+    chunks: list[str] = []
+    current: list[str] = []
+    escaped = False
+    for character in value:
+        if escaped:
+            current.append(character)
+            escaped = False
+            continue
+        if character == "\\":
+            escaped = True
+            current.append(character)
+            continue
+        if character in ",;":
+            chunks.append("".join(current))
+            current = []
+            continue
+        current.append(character)
+    chunks.append("".join(current))
+    return chunks
+
+
+def _split_priority(chunk: str) -> tuple[str, str]:
+    """Trennt am letzten unmaskierten Doppelpunkt."""
+    position = -1
+    escaped = False
+    for index, character in enumerate(chunk):
+        if escaped:
+            escaped = False
+            continue
+        if character == "\\":
+            escaped = True
+            continue
+        if character == ":":
+            position = index
+    if position < 0:
+        return chunk, ""
+    return chunk[:position], chunk[position + 1 :]
+
+
+def _unescape_groupname(name: str) -> str:
+    out: list[str] = []
+    escaped = False
+    for character in name:
+        if escaped:
+            out.append(character)
+            escaped = False
+            continue
+        if character == "\\":
+            escaped = True
+            continue
+        out.append(character)
+    return "".join(out)
+
+
 def _format_groups(item: UserListItem) -> str:
     """Serialisiert Mitgliedschaften inklusive abweichender Prioritaet."""
     priorities = {m.groupname: m.priority for m in item.memberships}
     return ",".join(
-        name if priorities.get(name, 1) == 1 else f"{name}:{priorities[name]}"
+        _escape_groupname(name)
+        if priorities.get(name, 1) == 1
+        else f"{_escape_groupname(name)}:{priorities[name]}"
         for name in item.groups
     )
 
@@ -137,13 +212,16 @@ def _parse_groups(value: str | None) -> list[MembershipIn]:
     if not value:
         return []
     out: list[MembershipIn] = []
-    for chunk in str(value).replace(";", ",").split(","):
-        name = _unescape(chunk.strip())
+    for chunk in _split_groups(str(value)):
+        raw = _unescape(chunk.strip())
+        if not raw:
+            continue
+        name, priority = _split_priority(raw)
+        name = _unescape_groupname(name).strip()
         if not name:
             continue
-        if ":" in name:
-            group, _, priority = name.partition(":")
-            out.append(MembershipIn(groupname=group.strip(), priority=int(priority or 1)))
+        if priority:
+            out.append(MembershipIn(groupname=name, priority=int(priority or 1)))
         else:
             out.append(MembershipIn(groupname=name))
     return out

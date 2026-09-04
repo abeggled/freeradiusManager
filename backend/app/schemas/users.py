@@ -43,17 +43,15 @@ def validate_identifier(value: str, field: str) -> str:
 
 
 def validate_groupname(value: str) -> str:
-    """Gruppennamen zusaetzlich ohne CSV-Trennzeichen.
+    """Gruppennamen wie andere Bezeichner.
 
-    Der Import kodiert Mitgliedschaften als ``gruppe:prioritaet``, getrennt durch
-    Komma oder Semikolon. Ein Name mit diesen Zeichen liesse sich nicht mehr
-    eindeutig lesen (FR-8).
+    Die CSV-Spalte ``groups`` kodiert Mitgliedschaften als
+    ``gruppe:prioritaet``, getrennt durch Komma oder Semikolon - diese Zeichen
+    maskiert der Export im Namen (siehe ``app/services/importexport.py``).
+    Bestandsinstallationen fuehren solche Namen bereits; sie hier abzuweisen
+    machte den Weg Export-Bearbeiten-Import fuer sie unbenutzbar (FR-8).
     """
-    value = validate_identifier(value, "groupname")
-    for character in (":", ",", ";"):
-        if character in value:
-            raise ValueError(f"groupname darf kein '{character}' enthalten")
-    return value
+    return validate_identifier(value, "groupname")
 
 
 UserStatus = Literal["active", "disabled", "expired", "no_credentials"]

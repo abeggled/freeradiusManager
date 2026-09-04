@@ -432,15 +432,37 @@ async def test_set_password_removes_duplicate_credential_rows(session, admin_pri
     assert [r.value for r in rows] == ["neu"]
 
 
-async def test_group_names_reject_csv_delimiters() -> None:
-    """Sonst liesse sich ``gruppe:prioritaet`` beim Import nicht mehr lesen."""
-    from pydantic import ValidationError as PydanticValidationError
+async def test_group_names_with_delimiters_survive_the_csv(session, admin_principal) -> None:
+    """Bestandsnamen mit Trennzeichen werden maskiert statt abgewiesen.
 
+    Ein Verbot machte den Weg Export-Bearbeiten-Import fuer sie unbenutzbar; die
+    Spalte kodiert sie deshalb mit Rueckstrich (32. Runde).
+    """
+    from app.repositories.directory import SubjectFilter
     from app.schemas.groups import GroupCreate
+    from app.schemas.users import MembershipIn, UserCreate
+    from app.services.groups import GroupService
+    from app.services.importexport import ImportExportService
 
+    groups = GroupService(session)
     for name in ("staff:west", "a,b", "a;b"):
-        with pytest.raises(PydanticValidationError):
-            GroupCreate(groupname=name, vlan="10")
+        await groups.create(GroupCreate(groupname=name, vlan="10"), actor=admin_principal)
+
+    users = UserService(session)
+    await users.create(
+        UserCreate(
+            username="anna",
+            password="geheim123",
+            groups=[MembershipIn(groupname=name) for name in ("staff:west", "a,b", "a;b")],
+        ),
+        actor=admin_principal,
+    )
+
+    csv = await ImportExportService(session).export(SubjectFilter())
+    report = await ImportExportService(session).import_csv(
+        csv, kind="user", dry_run=True, actor=admin_principal
+    )
+    assert report.errors == 0
 
 
 async def test_empty_groups_column_clears_memberships(session, admin_principal) -> None:

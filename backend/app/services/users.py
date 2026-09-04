@@ -563,7 +563,11 @@ class UserService:
                 for check in await self.groups.check_attributes(membership.groupname)
                 if check.attribute.lower() == AUTH_TYPE.lower() and is_reject(check.value)
             ]
-            if inherited:
+            # Nur wenn es nichts Eigenes zu entfernen gibt: sonst liesse sich
+            # eine zusaetzliche Einzelsperre nie aufheben, obwohl die
+            # Oberflaeche sie ausweist.
+            own_reject = [row for row in rows if is_reject(row.value)]
+            if inherited and not own_reject:
                 raise ValidationError(
                     code="error.disabled_by_group",
                     details={

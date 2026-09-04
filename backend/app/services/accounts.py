@@ -374,13 +374,27 @@ class AccountService:
         *,
         actor_ip: str | None = None,
         actor: Principal | None = None,
+        issued_at: float | None = None,
     ) -> None:
+        """Schliesst die Einrichtung ab.
+
+        ``issued_at`` ist der Zeitpunkt der Passwortpruefung aus der Challenge.
+        Er wird unter der Sperre erneut gegen ``password_changed_at`` geprueft:
+        eine Aenderung dazwischen darf nicht durch die anschliessend gesetzte
+        ``totp_changed_at`` verdeckt werden.
+        """
         # Unter derselben Sperre wie das Zuruecksetzen durch einen Administrator:
         # sonst koennte dieses zwischen Pruefung und Schreiben das Geheimnis
         # loeschen und das Konto bliebe als "TOTP aktiv, ohne Geheimnis" zurueck -
         # eine Anmeldung waere danach unmoeglich.
         async with named_lock(self.session, f"account-totp:{account.id}"):
             await self.session.refresh(account)
+            if (
+                issued_at is not None
+                and account.password_changed_at is not None
+                and issued_at < account.password_changed_at.replace(tzinfo=dt.UTC).timestamp()
+            ):
+                raise AuthenticationError(code="error.reauthentication_required")
             await self._confirm_totp_locked(account, code, actor_ip=actor_ip, actor=actor)
 
     async def _confirm_totp_locked(
