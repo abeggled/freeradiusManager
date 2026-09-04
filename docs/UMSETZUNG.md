@@ -701,6 +701,32 @@ Die fünfundzwanzigste Runde:
 * Der Gruppendialog speichert nicht, solange die Details noch laden: ein Klick in
   diesem Moment hätte VLAN und Attribute der Gruppe geleert.
 
+### Dreizehnte Runde
+
+* **Ein TOTP-Code gilt nur einmal.** `mgr_account.totp_last_counter` hält das
+  zuletzt angenommene Zeitfenster fest (Migration 0007). Ein abgefangener Code
+  liess sich bisher innerhalb des Prüffensters ein zweites Mal einlösen und
+  erzeugte eine weitere Sitzung.
+* **Der Sitzungsentzug arbeitet mit Sekundenbruchteilen.** `password_changed_at`
+  und `totp_changed_at` sind jetzt `DATETIME(6)`, `auth_at` steht als
+  Gleitkommazahl im Token. Eine Passwortänderung oder ein TOTP-Reset in
+  derselben Sekunde, in der die Sitzung ausgestellt wurde, verwarf diese sonst
+  nicht – das Cookie blieb bis zur absoluten Gültigkeit brauchbar.
+  Migration 0007 wurde gegen eine echte MariaDB in beide Richtungen geprüft.
+* **Eine abgelaufene Kontosperre setzt den Fehlerzähler zurück.** Sonst löste der
+  erste Fehlversuch danach – auch am zweiten Faktor – sofort die nächste
+  15-Minuten-Sperre aus.
+* **Der Vergleich von Bezeichnern ignoriert auch Akzente**, wie die
+  Standardkollation. `café` und `cafe` ergaben sonst verschiedene
+  Sperrschlüssel, obwohl die Datenbank dieselbe Zeile meint.
+* **Der Schutz der letzten Mitgliedschaft vergleicht wie die Datenbank.** Ein
+  gespeichertes `Alice` liess sich mit `alice` entfernen, ohne dass die Prüfung
+  es als letzte Mitgliedschaft erkannte – die attributlose Gruppe verschwand
+  ohne `group.delete`.
+* **Mitgliedschaftsänderungen halten auch die Lebenszyklus-Sperre der Benutzer.**
+  Ein gleichzeitiges Löschen liess sonst einen Phantom-Benutzer ohne
+  Anmeldedaten zurück.
+
 ## Prüfschritte
 
 ```bash

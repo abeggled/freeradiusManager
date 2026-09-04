@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConflictError, NotFoundError, ValidationError
+from app.core.identifiers import fold
 from app.core.locking import named_lock
 from app.core.security import Principal
 from app.repositories.mgr.subjects import SubjectRepository
@@ -265,7 +266,12 @@ class GroupService:
         # beim Entfernen saehen zwei gleichzeitige Aufrufe beide noch zwei
         # Mitglieder und loeschten anschliessend beide - die attributlose Gruppe
         # verschwaende trotz der Schutzpruefung.
-        async with named_lock(self.session, f"group:{groupname}"):
+        # Zusaetzlich die Lebenszyklus-Sperren der Benutzer: sonst koennte ein
+        # gleichzeitiges Loeschen zwischen Existenzpruefung und Einfuegen liegen
+        # und die neue radusergroup-Zeile liesse den Benutzer als Phantom ohne
+        # Anmeldedaten wieder auferstehen.
+        names = [f"group:{groupname}", *(f"user:{name}" for name in set(payload.usernames))]
+        async with named_lock(self.session, *names):
             return await self._change_membership_locked(
                 groupname, payload, actor=actor, actor_ip=actor_ip
             )
@@ -326,8 +332,11 @@ class GroupService:
             groupname
         ):
             return
+        # Verglichen wird in der Vergleichsform der Datenbank: das anschliessende
+        # DELETE trifft ``Alice`` auch bei der Eingabe ``alice``; ein exakter
+        # Zeichenvergleich erkennte diese Zeile nicht als letzte.
         members = await self.repo.members(groupname, limit=2, offset=0)
-        if members == [username]:
+        if len(members) == 1 and fold(members[0]) == fold(username):
             raise ValidationError(code="error.group_last_member", details={"groupname": groupname})
 
     async def _write_attributes(

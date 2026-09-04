@@ -155,10 +155,10 @@ async def current_principal(request: Request, response: Response, session: Sessi
         ):
             if changed is None:
                 continue
-            # ``auth_at`` steht als ganze Sekunde im Token; der Vergleichswert
-            # wird gleich behandelt, damit eine Anmeldung in derselben Sekunde
-            # nicht sofort verworfen wird.
-            if claims.auth_at < int(changed.replace(tzinfo=UTC).timestamp()):
+            # Beide Werte fuehren Sekundenbruchteile (``mgr_account`` als
+            # DATETIME(6)): eine Aenderung in derselben Sekunde, in der die
+            # Sitzung ausgestellt wurde, verwirft diese sonst nicht.
+            if claims.auth_at < changed.replace(tzinfo=UTC).timestamp():
                 raise AuthenticationError(
                     code="error.reauthentication_required", details={"reason": reason}
                 )

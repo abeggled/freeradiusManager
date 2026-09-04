@@ -807,7 +807,10 @@ class ImportExportService:
                 # alten Namen entstehen und die Gruppe wiederauferstehen lassen.
                 # Die Sperre umschliesst Einfuegen *und* Commit: sonst saehe die
                 # naechste Anfrage die Zeile nicht und legte eine zweite an.
-                async with named_lock(self.session, f"group:{groupname}"):
+                # Auch die Lebenszyklus-Sperre des Benutzers: sonst legte ein
+                # gleichzeitiges Loeschen und dieses Einfuegen zusammen einen
+                # Phantom-Benutzer ohne Anmeldedaten an.
+                async with named_lock(self.session, f"group:{groupname}", f"user:{username}"):
                     await self.users.groups.add_membership(username, groupname, payload.priority)
                     await self._log_membership(payload.action, username, groupname, actor, actor_ip)
                     await self.session.commit()
@@ -816,7 +819,7 @@ class ImportExportService:
                 # Entfernungen saehen sonst beide noch zwei Mitglieder und
                 # loeschten anschliessend beide - die attributlose Gruppe
                 # verschwaende trotz der Schutzpruefung.
-                async with named_lock(self.session, f"group:{groupname}"):
+                async with named_lock(self.session, f"group:{groupname}", f"user:{username}"):
                     await self.users.guard_last_membership(groupname, username)
                     await self.users.groups.remove_membership(username, groupname)
                     await self._log_membership(payload.action, username, groupname, actor, actor_ip)

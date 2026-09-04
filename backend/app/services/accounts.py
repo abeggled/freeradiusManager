@@ -77,6 +77,17 @@ class AccountService:
         # Zeilensperre: gleichzeitige Fehlversuche muessen den Zaehler
         # nacheinander erhoehen, sonst bliebe die Sperre wirkungslos.
         account = await self.repo.get_by_username(username, lock=True)
+        if (
+            account is not None
+            and account.locked_until is not None
+            and account.locked_until <= utcnow()
+        ):
+            # Abgelaufene Sperre vollstaendig aufheben. Bliebe der Zaehler auf
+            # dem Schwellwert stehen, loeste der naechste Fehlversuch - auch der
+            # erste am zweiten Faktor - sofort die naechste Sperre aus; das
+            # Konto waere praktisch dauerhaft gesperrt.
+            account.locked_until = None
+            account.failed_logins = 0
         if account is None:
             # Gleicher Aufwand wie bei einem vorhandenen Konto.
             verify_password(password, _DUMMY_HASH)
@@ -230,7 +241,17 @@ class AccountService:
         if not account.totp_secret_enc:
             raise AuthenticationError(code="error.totp_required")
         secret = _box().decrypt(account.totp_secret_enc)
-        if not verify_totp(secret, code):
+        counter = verify_totp(secret, code)
+        # Ein bereits angenommenes Zeitfenster wird nicht erneut akzeptiert: ein
+        # abgefangener Code liesse sich sonst innerhalb des Prueffensters ein
+        # zweites Mal einloesen und erzeugte eine weitere Sitzung. Die Marke
+        # steht unter derselben Zeilensperre wie der Fehlerzaehler.
+        replayed = (
+            counter is not None
+            and account.totp_last_counter is not None
+            and counter <= account.totp_last_counter
+        )
+        if counter is None or replayed:
             # Fehlversuche am zweiten Faktor zaehlen auf dieselbe Sperre ein wie
             # falsche Passwoerter - sonst waere der TOTP-Schritt frei ratbar.
             account.failed_logins += 1
@@ -241,10 +262,11 @@ class AccountService:
                 object_id=account.username,
                 actor_ip=actor_ip,
                 result=AuditResult.FAILURE,
-                message="invalid totp code",
+                message="replayed totp code" if replayed else "invalid totp code",
             )
             await self.session.commit()
             raise AuthenticationError(code="error.totp_invalid")
+        account.totp_last_counter = counter
         account.failed_logins = 0
         account.locked_until = None
         await self.session.commit()
@@ -314,8 +336,11 @@ class AccountService:
         if not account.totp_secret_enc:
             raise ValidationError(code="error.totp_setup_required")
         secret = _box().decrypt(account.totp_secret_enc)
-        if not verify_totp(secret, code):
+        counter = verify_totp(secret, code)
+        if counter is None:
             raise AuthenticationError(code="error.totp_invalid")
+        # Auch der Einrichtungscode gilt nur einmal.
+        account.totp_last_counter = counter
         account.totp_enabled = True
         account.totp_changed_at = utcnow()
         await self.audit.log(

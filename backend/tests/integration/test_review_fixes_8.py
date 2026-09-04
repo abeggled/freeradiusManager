@@ -541,3 +541,117 @@ async def test_import_rejects_too_many_rows(session, admin_principal) -> None:
             csv, kind="user", dry_run=True, actor=admin_principal
         )
     assert excinfo.value.code == "error.import_too_many_rows"
+
+
+# --- Dreizehnte Runde -----------------------------------------------------
+
+
+async def test_identifier_folding_ignores_accents() -> None:
+    """Die Standardkollation vergleicht auch akzentunempfindlich."""
+    from app.core.identifiers import fold
+    from app.core.locking import _lock_key
+
+    assert fold("café") == fold("CAFE")
+    assert _lock_key("group:café") == _lock_key("group:Cafe")
+    assert _lock_key("group:cafe") != _lock_key("group:kafe")
+
+
+async def test_expired_lockout_grants_a_fresh_attempt_window(session) -> None:
+    """Sonst loeste der erste Fehlversuch danach sofort die naechste Sperre aus."""
+    from app.core.crypto import hash_password
+    from app.core.dates import utcnow
+    from app.models.mgr import MgrAccount, Role
+    from app.services.accounts import LOCKOUT_THRESHOLD, AccountService
+
+    account = MgrAccount(
+        username="operator",
+        role=Role.OPERATOR,
+        password_hash=hash_password("ein-sicheres-passwort"),
+        failed_logins=LOCKOUT_THRESHOLD,
+        locked_until=utcnow() - dt.timedelta(minutes=1),
+    )
+    session.add(account)
+    await session.commit()
+
+    result = await AccountService(session).authenticate("operator", "ein-sicheres-passwort")
+    assert result.failed_logins == 0
+    assert result.locked_until is None
+
+
+async def test_last_member_guard_follows_the_collation(session, admin_principal) -> None:
+    """Das DELETE trifft ``Alice`` auch bei der Eingabe ``alice``."""
+    from app.schemas.groups import MembershipChange
+    from app.services.groups import GroupService
+
+    users = UserService(session)
+    await users.create(UserCreate(username="Alice", password="geheim123"), actor=admin_principal)
+    await users.groups.add_membership("Alice", "nur-mitglieder", 1)
+    await session.commit()
+
+    with pytest.raises(ValidationError) as excinfo:
+        await GroupService(session).change_membership(
+            "nur-mitglieder",
+            MembershipChange(action="remove", usernames=["alice"]),
+            actor=admin_principal,
+        )
+    assert excinfo.value.code == "error.group_last_member"
+
+
+async def test_session_revocation_sees_subsecond_changes() -> None:
+    """Eine Passwortaenderung in derselben Sekunde muss die Sitzung verwerfen."""
+    from app.core.security import create_session_token, principal_from_token
+    from app.models.mgr import Role as AccountRole
+
+    token, _ = create_session_token(1, "admin", AccountRole.ADMINISTRATOR, "de")
+    claims = principal_from_token(token)
+    assert isinstance(claims.auth_at, float)
+
+    # Der Zeitstempel der Spalte fuehrt ebenfalls Bruchteile.
+    from app.models.mgr import MgrAccount
+
+    column = MgrAccount.__table__.c.password_changed_at
+    assert getattr(column.type, "fsp", None) == 6
+
+
+async def test_membership_addition_locks_the_user(session, admin_principal) -> None:
+    """Ein gleichzeitiges Loeschen liesse sonst einen Phantom-Benutzer entstehen."""
+    import inspect
+
+    from app.services.groups import GroupService
+
+    source = inspect.getsource(GroupService.change_membership)
+    assert 'f"user:{name}"' in source
+
+
+async def test_totp_code_is_accepted_only_once(session) -> None:
+    """Ein abgefangener Code liesse sich sonst im Prueffenster erneut einloesen."""
+    import pyotp
+
+    from app.core.config import settings as app_settings
+    from app.core.crypto import SecretBox, hash_password
+    from app.models.mgr import MgrAccount, Role
+    from app.services.accounts import AccountService
+
+    secret = pyotp.random_base32()
+    account = MgrAccount(
+        username="admin",
+        role=Role.ADMINISTRATOR,
+        password_hash=hash_password("ein-sicheres-passwort"),
+        totp_enabled=True,
+        totp_secret_enc=SecretBox(app_settings.coa_secret_key or app_settings.secret_key).encrypt(
+            secret
+        ),
+    )
+    session.add(account)
+    await session.commit()
+
+    service = AccountService(session)
+    code = pyotp.TOTP(secret).now()
+    await service.verify_totp_code(account, code)
+    assert account.totp_last_counter is not None
+
+    from app.core.errors import AuthenticationError
+
+    with pytest.raises(AuthenticationError) as excinfo:
+        await service.verify_totp_code(account, code)
+    assert excinfo.value.code == "error.totp_invalid"

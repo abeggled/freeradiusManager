@@ -6,6 +6,7 @@ import datetime as dt
 import enum
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
     Enum,
@@ -84,12 +85,19 @@ class MgrAccount(TimestampMixin, Base):
     last_login_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
     failed_logins: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     locked_until: Mapped[dt.datetime | None] = mapped_column(DateTime)
-    password_changed_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
-    totp_changed_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
+    # Mit Sekundenbruchteilen: sonst verwirft eine Aenderung in derselben
+    # Sekunde, in der die Sitzung ausgestellt wurde, diese nicht.
+    password_changed_at: Mapped[dt.datetime | None] = mapped_column(mysql.DATETIME(fsp=6))
+    totp_changed_at: Mapped[dt.datetime | None] = mapped_column(mysql.DATETIME(fsp=6))
     """Zeitpunkt der letzten Aenderung des zweiten Faktors.
 
     Aeltere Sitzungen werden dadurch auch dann ungueltig, wenn nach einem
     Zuruecksetzen sofort ein neuer Faktor eingerichtet wird."""
+    totp_last_counter: Mapped[int | None] = mapped_column(BigInteger)
+    """Zuletzt angenommenes TOTP-Zeitfenster.
+
+    Ohne diese Marke liesse sich ein abgefangener Code innerhalb des
+    Prueffensters ein zweites Mal einloesen und eine weitere Sitzung erzeugen."""
 
 
 class MgrAudit(Base):

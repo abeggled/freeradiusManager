@@ -20,6 +20,7 @@ from app.core.crypto import nt_hash
 from app.core.dates import from_expiration, to_expiration, utcnow
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.i18n import translate
+from app.core.identifiers import fold
 from app.core.locking import named_lock
 from app.core.security import Principal
 from app.models.mgr import CredentialType, MgrSubject, SubjectType
@@ -667,8 +668,9 @@ class UserService:
             groupname
         ):
             return
+        # Wie in ``GroupService``: der Vergleich folgt der Kollation.
         members = await self.groups.members(groupname, limit=2, offset=0)
-        if members == [username]:
+        if len(members) == 1 and fold(members[0]) == fold(username):
             raise ValidationError(code="error.group_last_member", details={"groupname": groupname})
 
     async def _rename(self, old: str, new: str) -> None:

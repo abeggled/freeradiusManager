@@ -9,13 +9,24 @@ als verschieden, waehrend die Datenbank dieselbe Zeile meint.
 
 from __future__ import annotations
 
+import unicodedata
+
 
 def fold(name: str) -> str:
     """Vergleichsform eines Bezeichners.
 
-    ``casefold`` deckt die hier vorkommenden Namen ab (Kennungen, Gruppennamen,
-    MAC-Adressen). Eine vollstaendige Nachbildung der Kollation - etwa deren
-    Behandlung von Akzenten - waere ohne die Datenbank nicht moeglich; die
-    verbleibenden Faelle werden dort ueber die Existenzpruefung erkannt.
+    Nachgebildet werden beide Eigenschaften der Standardkollation: sie
+    unterscheidet weder Gross- und Kleinschreibung noch Akzente. ``cafe`` und
+    ``cafe`` mit Accent aigu bezeichnen dort dieselbe Zeile; ein reiner
+    ``casefold``-Vergleich ergaebe zwei verschiedene Sperrschluessel und beide
+    Aufrufer liefen gleichzeitig durch die Sperre.
+
+    Die Richtung ist bewusst grosszuegig: fasst diese Form zwei Namen zusammen,
+    die die Datenbank unterscheidet, wird lediglich mehr serialisiert. Der
+    umgekehrte Fehler waere der gefaehrliche.
     """
-    return name.strip().casefold()
+    # NFKD zerlegt Zeichen in Grundzeichen und kombinierende Marken; die Marken
+    # (Kategorie ``Mn``) entfallen, wie beim akzentunempfindlichen Vergleich.
+    decomposed = unicodedata.normalize("NFKD", name.strip())
+    without_marks = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return without_marks.casefold()
