@@ -19,7 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings as app_settings
 from app.core.errors import CoAError, NotFoundError, ValidationError
-from app.core.i18n import translate
 from app.core.logging import get_logger
 from app.core.security import Principal
 from app.models.mgr import AuditResult
@@ -31,8 +30,10 @@ from app.services.nas import NasService
 DICTIONARY_PATH = Path(__file__).resolve().parent.parent / "resources" / "dictionary"
 log = get_logger("coa")
 
-_ACK_CODES = {DisconnectACK, CoAACK}
-_NAK_CODES = {DisconnectNAK, CoANAK}
+# Je Aktion die passende Antwort. Ein Disconnect, das mit CoA-ACK beantwortet
+# wird, hat die angeforderte Operation nicht ausgefuehrt.
+_ACK_CODES = {True: DisconnectACK, False: CoAACK}
+_NAK_CODES = {True: DisconnectNAK, False: CoANAK}
 
 
 def _send_blocking(
@@ -69,6 +70,7 @@ class CoAService:
         actor_ip: str | None = None,
         language: str = "de",
     ) -> CoAResponse:
+        del language  # Meldungen entstehen jetzt ausschliesslich ueber Fehlercodes
         session_row = await self._resolve_session(payload)
         target = await self.nas.coa_target(session_row.nasipaddress)
         if target is None:
@@ -121,28 +123,31 @@ class CoAService:
             await self._log(payload, session_row, actor, actor_ip, AuditResult.FAILURE, str(exc))
             raise CoAError(code="error.coa_failed", details={"nas": host}) from exc
 
-        ok = code in _ACK_CODES
-        if not ok and code in _NAK_CODES:
-            await self._log(payload, session_row, actor, actor_ip, AuditResult.FAILURE, "NAK")
+        ok = code == _ACK_CODES[disconnect]
+        if not ok:
+            # Auch eine gueltig signierte Antwort des falschen Typs bestaetigt
+            # nicht die angeforderte Operation.
+            is_nak = code in (_NAK_CODES[disconnect], _NAK_CODES[not disconnect])
+            await self._log(
+                payload,
+                session_row,
+                actor,
+                actor_ip,
+                AuditResult.FAILURE,
+                "NAK" if is_nak else f"unerwartete Antwort {code}",
+            )
             raise CoAError(
-                code="error.coa_nak",
-                details={"nas": host, "reply": reply_attributes},
+                code="error.coa_nak" if is_nak else "error.coa_failed",
+                details={"nas": host, "code": str(code), "reply": reply_attributes},
             )
 
-        await self._log(
-            payload,
-            session_row,
-            actor,
-            actor_ip,
-            AuditResult.SUCCESS if ok else AuditResult.FAILURE,
-            f"code={code}",
-        )
+        await self._log(payload, session_row, actor, actor_ip, AuditResult.SUCCESS, f"code={code}")
         return CoAResponse(
-            ok=ok,
+            ok=True,
             action=payload.action,
             nas=host,
             code=str(code),
-            message=translate("error.coa_failed", language) if not ok else "ACK",
+            message="ACK",
             attributes=reply_attributes,
         )
 

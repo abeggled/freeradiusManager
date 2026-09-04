@@ -118,8 +118,10 @@ class Settings(BaseSettings):
     # Pause und belasteten die Datenbank dauerhaft.
     stats_refresh_seconds: int = Field(default=300, ge=1)
     audit_purge_interval_seconds: int = Field(default=6 * 3600, ge=1)
-    coa_timeout_seconds: float = 5.0
-    coa_retries: int = 2
+    # Positiv erzwungen: ohne Zeitgrenze waere der Socket nicht blockierend,
+    # ohne Versuch gaebe es keinen Sendevorgang.
+    coa_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    coa_retries: int = Field(default=2, ge=1, le=10)
 
     @model_validator(mode="after")
     def _require_production_keys(self) -> Settings:

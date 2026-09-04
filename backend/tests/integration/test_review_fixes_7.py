@@ -1904,3 +1904,137 @@ async def test_schema_check_detects_wrong_column_types(engine) -> None:
     finally:
         async with engine.begin() as connection:
             await connection.execute(text("ALTER TABLE radacct MODIFY acctstarttime DATETIME"))
+
+
+# --- Dreiundzwanzigste Runde ----------------------------------------------
+
+
+async def test_disable_snapshot_fits_long_values(session, admin_principal) -> None:
+    """Mehrere lange Auth-Type-Werte müssen in den gemerkten Zustand passen."""
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    for index in range(3):
+        await users.attrs.add_check("anna", "Auth-Type", ":=", f"{index}" + "x" * 250)
+    await session.commit()
+
+    await users.set_disabled("anna", True, actor=admin_principal)
+    await users.set_disabled("anna", False, actor=admin_principal)
+    rows = [
+        r for r in await users.attrs.check_attributes("anna") if r.attribute.lower() == "auth-type"
+    ]
+    assert len(rows) == 3
+
+
+async def test_host_networks_match_exactly(session, admin_principal) -> None:
+    """Ein /32-Eintrag muss die konkrete Adresse treffen."""
+    from app.repositories.radius.acct import SessionFilter
+
+    await NasService(session).create(
+        NasCreate(nasname="192.0.2.1/32", shortname="einzeln", secret="s"),
+        actor=admin_principal,
+    )
+    session.add(
+        RadAcct(
+            acctsessionid="s1",
+            acctuniqueid="u1",
+            username="anna",
+            nasipaddress="192.0.2.1",
+            acctstarttime=dt.datetime(2026, 9, 1, 8, 0),
+            callingstationid="AA-BB-CC-DD-EE-FF",
+        )
+    )
+    await session.commit()
+
+    items, _, _ = await SessionService(session).search(SessionFilter(nas_ip_address="einzeln"))
+    assert [i.username for i in items] == ["anna"]
+
+
+async def test_coa_rejects_the_wrong_ack_type(session, admin_principal, monkeypatch) -> None:
+    """Ein Disconnect, das mit CoA-ACK beantwortet wird, hat nichts getrennt."""
+    from app.core.errors import CoAError
+    from app.schemas.nas import CoARequest
+    from app.services import coa as coa_module
+    from app.services.coa import CoAService
+
+    await NasService(session).create(
+        NasCreate(nasname="10.0.0.1", secret="s", coa_enabled=True, coa_secret="x"),
+        actor=admin_principal,
+    )
+    session.add(
+        RadAcct(
+            acctsessionid="s1",
+            acctuniqueid="u1",
+            username="anna",
+            nasipaddress="10.0.0.1",
+            acctstarttime=dt.datetime(2026, 9, 1, 8, 0),
+            callingstationid="AA-BB-CC-DD-EE-FF",
+        )
+    )
+    await session.commit()
+
+    # 44 = CoA-ACK, angefordert wird aber ein Disconnect.
+    monkeypatch.setattr(coa_module, "_send_blocking", lambda *a, **k: (44, {}))
+    with pytest.raises(CoAError):
+        await CoAService(session).execute(
+            CoARequest(action="disconnect", acctuniqueid="u1"), actor=admin_principal
+        )
+
+    # 41 = Disconnect-ACK: der richtige Fall bleibt erfolgreich.
+    monkeypatch.setattr(coa_module, "_send_blocking", lambda *a, **k: (41, {}))
+    result = await CoAService(session).execute(
+        CoARequest(action="disconnect", acctuniqueid="u1"), actor=admin_principal
+    )
+    assert result.ok
+
+
+async def test_coa_transport_settings_are_bounded() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(PydanticValidationError):
+        Settings(coa_timeout_seconds=0)
+    with pytest.raises(PydanticValidationError):
+        Settings(coa_retries=0)
+
+
+async def test_duplicate_masked_group_values_are_kept(session, admin_principal) -> None:
+    """Zwei Passwortzeilen mit gleichem Namen dürfen nicht verschmelzen."""
+    from app.schemas.groups import GroupCreate, GroupUpdate
+    from app.schemas.users import AttributeIn
+    from app.services.groups import GroupService
+
+    service = GroupService(session)
+    await service.create(
+        GroupCreate(
+            groupname="g1",
+            check_attributes=[
+                AttributeIn(attribute="Cleartext-Password", op=":=", value="erstes"),
+                AttributeIn(attribute="Cleartext-Password", op=":=", value="zweites"),
+            ],
+        ),
+        actor=admin_principal,
+    )
+    detail = await service.get("g1")
+    await service.update(
+        "g1",
+        GroupUpdate(
+            check_attributes=[
+                AttributeIn(attribute=a.attribute, op=a.op, value=a.value)
+                for a in detail.check_attributes
+            ]
+        ),
+        actor=admin_principal,
+    )
+    values = sorted(r.value for r in await service.repo.check_attributes("g1"))
+    assert values == ["erstes", "zweites"]
+
+
+async def test_orm_metadata_matches_the_migration_indexes() -> None:
+    """Sonst schlüge eine spätere Autogenerierung ihr Löschen vor."""
+    from app.models import Base
+
+    audit = {index.name for index in Base.metadata.tables["mgr_audit"].indexes}
+    subject = {index.name for index in Base.metadata.tables["mgr_subject"].indexes}
+    assert "ix_mgr_audit_action" in audit
+    assert {"ix_mgr_subject_type", "ix_mgr_subject_owner", "ix_mgr_subject_expires"} <= subject

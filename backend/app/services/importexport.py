@@ -724,6 +724,23 @@ class ImportExportService:
         await self.session.commit()
         return len(usernames), len(succeeded), errors
 
+    async def _log_membership(
+        self,
+        action: str,
+        username: str,
+        groupname: str,
+        actor: Principal,
+        actor_ip: str | None,
+    ) -> None:
+        await self.audit.log(
+            action=f"user.{action}",
+            object_type="user",
+            object_id=username,
+            actor=actor,
+            actor_ip=actor_ip,
+            after={"groupname": groupname},
+        )
+
     async def _bulk_one(
         self,
         username: str,
@@ -752,19 +769,16 @@ class ImportExportService:
                 # Dieselbe Sperre wie Umbenennen und Loeschen der Gruppe: sonst
                 # koennte eine Mitgliedschaft nach einer Umbenennung unter dem
                 # alten Namen entstehen und die Gruppe wiederauferstehen lassen.
+                # Die Sperre umschliesst Einfuegen *und* Commit: sonst saehe die
+                # naechste Anfrage die Zeile nicht und legte eine zweite an.
                 async with named_lock(self.session, f"group:{groupname}"):
                     await self.users.groups.add_membership(username, groupname, payload.priority)
+                    await self._log_membership(payload.action, username, groupname, actor, actor_ip)
+                    await self.session.commit()
             else:
                 await self.users.groups.remove_membership(username, groupname)
-            await self.audit.log(
-                action=f"user.{payload.action}",
-                object_type="user",
-                object_id=username,
-                actor=actor,
-                actor_ip=actor_ip,
-                after={"groupname": groupname},
-            )
-            await self.session.commit()
+                await self._log_membership(payload.action, username, groupname, actor, actor_ip)
+                await self.session.commit()
         elif payload.action == "set_expiry":
             expires = payload.expires_at
             if expires is None:

@@ -77,6 +77,6 @@ async def import_csv(
 
 def _preview_rows(report: ImportReport) -> list[ImportRow]:
     """Fehlerzeilen vollstaendig, danach so viele Erfolgszeilen wie moeglich."""
-    errors = [row for row in report.rows if row.action == "error"]
+    errors = [row for row in report.rows if row.action == "error"][:PREVIEW_ROWS]
     others = [row for row in report.rows if row.action != "error"]
     return errors + others[: max(0, PREVIEW_ROWS - len(errors))]

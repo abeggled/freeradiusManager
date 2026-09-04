@@ -6,6 +6,9 @@ die haeufigste Aufgabe: die VLAN-Zuweisung.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConflictError, NotFoundError, ValidationError
@@ -28,6 +31,15 @@ from app.services.audit import AuditService
 from app.services.masking import is_masked, mask_attributes
 
 VLAN_ATTRIBUTE = "tunnel-private-group-id"
+
+
+def _stored_values(rows: Sequence[Any]) -> dict[tuple[str, str], list[str]]:
+    """Vorhandene Werte je (Attribut, Operator) in ihrer Reihenfolge."""
+    stored: dict[tuple[str, str], list[str]] = {}
+    for row in rows:
+        stored.setdefault((row.attribute.lower(), row.op), []).append(row.value)
+    return stored
+
 
 AUDIT_NAME_LIMIT = 200
 """Hoechstzahl protokollierter Namen je Eintrag."""
@@ -311,25 +323,26 @@ class GroupService:
         def convert(
             items: list[AttributeIn],
             table: str,
-            existing: dict[tuple[str, str], str],
+            existing: dict[tuple[str, str], list[str]],
         ) -> list[tuple[str, str, str]]:
             rows: list[tuple[str, str, str]] = []
             for item in items:
                 if is_masked(item.attribute, item.value):
                     # Der Client hat den maskierten Wert unveraendert
-                    # zurueckgeschickt: bestehenden Wert beibehalten.
-                    kept = existing.get((item.attribute.lower(), item.op))
-                    if kept is None:
-                        kept = next(
+                    # zurueckgeschickt: bestehenden Wert beibehalten - der Reihe
+                    # nach, damit Duplikate ihre eigenen Werte behalten.
+                    queue = existing.get((item.attribute.lower(), item.op))
+                    if not queue:
+                        queue = next(
                             (
-                                value
-                                for (name, _op), value in existing.items()
-                                if name == item.attribute.lower()
+                                values
+                                for (name, _op), values in existing.items()
+                                if name == item.attribute.lower() and values
                             ),
                             None,
                         )
-                    if kept is not None:
-                        rows.append((item.attribute, item.op, kept))
+                    if queue:
+                        rows.append((item.attribute, item.op, queue.pop(0)))
                         continue
                 for w in validate_triple(
                     item.attribute, item.op, item.value, table=table, language=language
@@ -340,14 +353,11 @@ class GroupService:
                 rows.append((item.attribute, item.op, item.value))
             return rows
 
-        stored_checks = {
-            (r.attribute.lower(), r.op): r.value
-            for r in await self.repo.check_attributes(groupname)
-        }
-        stored_replies = {
-            (r.attribute.lower(), r.op): r.value
-            for r in await self.repo.reply_attributes(groupname)
-        }
+        # Je Vorkommen, nicht je Attribut: mehrere Zeilen mit gleichem Namen und
+        # Operator, aber verschiedenen Werten wuerden sonst beim Speichern alle
+        # auf denselben Wert gesetzt.
+        stored_checks = _stored_values(await self.repo.check_attributes(groupname))
+        stored_replies = _stored_values(await self.repo.reply_attributes(groupname))
 
         if checks is None:
             check_rows = [

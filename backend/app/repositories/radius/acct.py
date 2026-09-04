@@ -18,6 +18,17 @@ from app.core.pagination import KeysetPage, clamp_limit, cursor_position, encode
 from app.models.radius import RadAcct
 
 
+def _network_host(network: str) -> str | None:
+    """Einzeladresse eines ``/32``-Eintrags - dort ist Gleichheit richtig."""
+    try:
+        parsed = ipaddress.ip_network(network, strict=False)
+    except ValueError:
+        return None
+    if parsed.version == 4 and parsed.prefixlen == 32:
+        return str(parsed.network_address)
+    return None
+
+
 def _network_prefix(network: str) -> str | None:
     """Gemeinsamer Anfang aller Adressen eines Netzes.
 
@@ -68,6 +79,10 @@ class AccountingRepository:
             if flt.nas_ip_addresses:
                 matches.append(RadAcct.nasipaddress.in_(flt.nas_ip_addresses))
             for network in flt.nas_networks or []:
+                exact = _network_host(network)
+                if exact is not None:
+                    matches.append(RadAcct.nasipaddress == exact)
+                    continue
                 prefix = _network_prefix(network)
                 if prefix is not None:
                     matches.append(RadAcct.nasipaddress.like(f"{prefix}%"))

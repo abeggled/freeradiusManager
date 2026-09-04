@@ -75,8 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Zweiundzwanzig Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10,
-11, 12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11, 8, 10, 8, 7 und 7 Befunde;
+Dreiundzwanzig Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10,
+11, 12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11, 8, 10, 8, 7, 7 und 9 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
@@ -543,6 +543,20 @@ Die zweiundzwanzigste Runde (keine P1-Befunde):
 * Ein Name darf in einer Importdatei nur einmal vorkommen.
 * Die Startprüfung vergleicht auch die Spaltentypen des RADIUS-Schemas.
 * Die Namensliste im Audit-Eintrag einer Mitgliedschaftsänderung ist begrenzt.
+
+Die dreiundzwanzigste Runde (keine P1-Befunde):
+
+* Eine CoA-Antwort des falschen Typs gilt nicht mehr als Erfolg – ein Disconnect,
+  das mit einem CoA-ACK beantwortet wird, hat nichts getrennt.
+* CoA-Zeitgrenze und Versuchszahl müssen positiv sein.
+* Der gemerkte `Auth-Type`-Zustand liegt in einer `TEXT`-Spalte (Migration 0006);
+  mehrere lange Werte sprengten die bisherige Grenze.
+* Ein `/32`-NAS wird als Gleichheit statt als Präfix gefiltert.
+* Die Sperre der Sammelaktion hält bis zum Commit; die Fehlerzeilen der Vorschau
+  sind begrenzt.
+* Doppelte maskierte Gruppenattribute behalten ihre einzelnen Werte.
+* Die im Modell deklarierten Indizes entsprechen den Migrationen, damit eine
+  spätere Autogenerierung sie nicht zum Löschen vorschlägt.
 
 ## Prüfschritte
 

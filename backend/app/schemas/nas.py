@@ -91,8 +91,11 @@ class CoARequest(BaseModel):
     radacctid: str | None = Field(default=None, max_length=32)
     """BIGINT als Zeichenkette - siehe ``SessionItem.radacctid``."""
     username: str | None = None
-    vlan: str | None = None
-    """Nur fuer ``action = coa``: neue VLAN-Zuweisung."""
+    vlan: str | None = Field(default=None, max_length=64)
+    """Nur fuer ``action = coa``: neue VLAN-Zuweisung.
+
+    Begrenzt wie die gespeicherten VLAN-Felder; der Wert geht in ein einzelnes
+    RADIUS-Attribut."""
 
 
 class CoAResponse(BaseModel):

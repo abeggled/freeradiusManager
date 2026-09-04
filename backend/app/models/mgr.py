@@ -99,6 +99,7 @@ class MgrAudit(Base):
     __table_args__ = (
         Index("ix_mgr_audit_object", "object_type", "object_id"),
         Index("ix_mgr_audit_ts_id", "ts", "id"),
+        Index("ix_mgr_audit_action", "action"),
     )
 
     id: Mapped[int] = mapped_column(mysql.INTEGER(unsigned=True), primary_key=True)
@@ -121,7 +122,14 @@ class MgrSubject(TimestampMixin, Base):
     """Metadaten zu Benutzern und MAB-Geraeten, verknuepft ueber ``username``."""
 
     __tablename__ = "mgr_subject"
-    __table_args__ = (UniqueConstraint("username", name="uq_mgr_subject_username"),)
+    # Die Indizes stehen auch in der Migration; ohne sie hier wuerde eine
+    # spaetere Autogenerierung ihr Loeschen vorschlagen.
+    __table_args__ = (
+        UniqueConstraint("username", name="uq_mgr_subject_username"),
+        Index("ix_mgr_subject_type", "subject_type"),
+        Index("ix_mgr_subject_owner", "owner"),
+        Index("ix_mgr_subject_expires", "expires_at"),
+    )
 
     id: Mapped[int] = mapped_column(mysql.INTEGER(unsigned=True), primary_key=True)
     username: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -141,7 +149,7 @@ class MgrSubject(TimestampMixin, Base):
     inventory_no: Mapped[str | None] = mapped_column(String(64))
     expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
     disabled_at: Mapped[dt.datetime | None] = mapped_column(DateTime)
-    disabled_state: Mapped[str | None] = mapped_column(String(300))
+    disabled_state: Mapped[str | None] = mapped_column(Text)
     """Vor dem Sperren vorhandenes ``Auth-Type``-Tripel als JSON.
 
     Ohne diese Notiz wuerde eine voruebergehende Sperre eine bestehende
