@@ -1943,3 +1943,174 @@ async def test_import_preserves_whitespace_in_notes(session, admin_principal) ->
     subject = await UserService(session).subjects.get("anna")
     assert subject is not None
     assert subject.note == "  mit Rand  "
+
+
+# --- Sechsundzwanzigste Runde ---------------------------------------------
+
+
+async def test_scoped_ipv6_is_rejected() -> None:
+    """Eine Zone beliebiger Laenge ergaebe je Versuch einen neuen Limiter-Schluessel."""
+    from starlette.datastructures import Headers
+    from starlette.requests import Request
+
+    from app.api import deps
+    from app.core.config import settings as app_settings
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/",
+            "client": ("127.0.0.1", 1234),
+            "headers": Headers({"x-forwarded-for": "fe80::1%" + "a" * 100}).raw,
+            "query_string": b"",
+        }
+    )
+    original = app_settings.trusted_proxies
+    app_settings.trusted_proxies = ["127.0.0.0/8"]
+    deps._trusted_networks.cache_clear()
+    try:
+        assert deps.client_ip(request) == "127.0.0.1"
+    finally:
+        app_settings.trusted_proxies = original
+        deps._trusted_networks.cache_clear()
+
+
+async def test_oidc_admin_needs_a_provider_mfa_claim(session, client, monkeypatch) -> None:
+    """Ein Provider mit reiner Passwortanmeldung umginge sonst die 2FA-Pflicht."""
+    from app.api.v1.endpoints import auth as auth_endpoint
+    from app.core.config import settings as app_settings
+    from app.services.oidc import OidcService
+
+    async def _claims() -> dict[str, object]:
+        return {"sub": "idp-admin", "preferred_username": "idp-admin"}
+
+    app_settings.oidc_enabled = True
+    monkeypatch.setattr(OidcService, "exchange", lambda self, code, verifier, nonce: _claims())
+    monkeypatch.setattr(OidcService, "map_role", lambda self, claims: "administrator")
+    try:
+        client.cookies.set(auth_endpoint.OIDC_STATE_COOKIE, "state|verifier|nonce")
+        response = await client.get(
+            "/api/v1/auth/oidc/callback?code=abc&state=state", follow_redirects=False
+        )
+        assert response.status_code == 401
+        assert response.json()["code"] == "error.reauthentication_required"
+    finally:
+        app_settings.oidc_enabled = False
+
+
+async def test_provider_mfa_claim_detection() -> None:
+    """``amr`` nach RFC 8176, ergaenzend ``acr``."""
+    from app.core.config import settings as app_settings
+    from app.services.oidc import provider_confirmed_mfa
+
+    assert provider_confirmed_mfa({"amr": ["pwd", "otp"]}) is True
+    assert provider_confirmed_mfa({"amr": ["pwd"]}) is False
+    assert provider_confirmed_mfa({}) is False
+
+    original = app_settings.oidc_mfa_acr_values
+    app_settings.oidc_mfa_acr_values = ["urn:example:2fa"]
+    try:
+        assert provider_confirmed_mfa({"acr": "urn:example:2fa"}) is True
+    finally:
+        app_settings.oidc_mfa_acr_values = original
+
+
+async def test_session_carries_the_verification_time(session, client) -> None:
+    """Eine Passwortaenderung waehrend der Anmeldung muss die Sitzung verwerfen."""
+    from app.core.crypto import hash_password
+    from app.core.dates import utcnow
+    from app.models.mgr import MgrAccount, Role
+
+    account = MgrAccount(
+        username="operator",
+        role=Role.OPERATOR,
+        password_hash=hash_password("ein-sicheres-passwort"),
+    )
+    session.add(account)
+    await session.commit()
+
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+    assert login.status_code == 200
+
+    # Aenderung *nach* der Ausstellung: die Sitzung ist zu verwerfen.
+    account.password_changed_at = utcnow() + dt.timedelta(seconds=1)
+    await session.commit()
+    blocked = await client.get("/api/v1/auth/me")
+    assert blocked.status_code == 401
+
+
+async def test_self_service_confirmation_is_rate_limited(session, client) -> None:
+    """Mit gestohlener Sitzung liess sich ein begonnener Faktor unbegrenzt raten."""
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, Role
+
+    session.add(
+        MgrAccount(
+            username="operator",
+            role=Role.OPERATOR,
+            password_hash=hash_password("ein-sicheres-passwort"),
+        )
+    )
+    await session.commit()
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+    await client.post(
+        "/api/v1/auth/me/totp/enroll",
+        json={"current_password": "ein-sicheres-passwort"},
+    )
+
+    from app.core.config import settings as app_settings
+
+    codes = set()
+    for _ in range(app_settings.login_rate_limit + 1):
+        response = await client.post("/api/v1/auth/me/totp/confirm", json={"code": "000000"})
+        codes.add(response.json().get("code"))
+        if response.status_code == 429:
+            break
+    # Entweder das Kontingent oder die Kontosperre greift - unbegrenztes Raten
+    # ist in keinem Fall moeglich.
+    assert "error.rate_limited" in codes or "error.account_locked" in codes
+
+
+async def test_oidc_only_account_cannot_be_unlinked(session) -> None:
+    """Ohne lokales Passwort waere die Verknuepfung der einzige Zugang."""
+    from app.models.mgr import MgrAccount, Role
+    from app.services.accounts import AccountService
+
+    account = MgrAccount(
+        username="idp-user",
+        role=Role.OPERATOR,
+        oidc_subject="subject-1",
+        password_hash=None,
+    )
+    session.add(account)
+    await session.commit()
+
+    principal = Principal(
+        account_id=account.id,
+        username="admin",
+        role=Role.ADMINISTRATOR,
+        language="de",
+        session_id="test",
+        absolute_expiry=0,
+    )
+    with pytest.raises(ValidationError) as excinfo:
+        await AccountService(session).set_oidc_subject(account.id, None, actor=principal)
+    assert excinfo.value.code == "error.oidc_unlink_without_password"
+
+
+async def test_group_can_be_renamed_by_case_only(session, admin_principal) -> None:
+    """Sonst liesse sich die Schreibweise nur ueber Loeschen und Neuanlegen aendern."""
+    from app.schemas.groups import GroupCreate, GroupUpdate
+    from app.services.groups import GroupService
+
+    groups = GroupService(session)
+    await groups.create(GroupCreate(groupname="Staff", vlan="10"), actor=admin_principal)
+    detail = await groups.update("Staff", GroupUpdate(groupname="staff"), actor=admin_principal)
+    assert detail.groupname == "staff"

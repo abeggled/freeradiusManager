@@ -390,6 +390,21 @@ class AccountService:
         # Auch der Einrichtungscode gilt nur einmal: sonst liesse sich Challenge
         # und Code innerhalb des Prueffensters erneut einloesen.
         if counter is None or counter <= (account.totp_last_counter or -1):
+            # Fehlversuche zaehlen auf dieselbe Kontosperre ein wie an der
+            # Anmeldung: sonst liesse sich ein begonnener Faktor mit einer
+            # gestohlenen Sitzung unbegrenzt erraten.
+            account.failed_logins += 1
+            self._apply_lockout(account)
+            await self.audit.log(
+                action="account.totp_confirm",
+                object_type="account",
+                object_id=account.username,
+                actor=actor,
+                actor_ip=actor_ip,
+                result=AuditResult.FAILURE,
+                message="invalid totp code",
+            )
+            await self.session.commit()
             raise AuthenticationError(code="error.totp_invalid")
         account.totp_last_counter = counter
         account.totp_enabled = True
@@ -563,6 +578,14 @@ class AccountService:
                     code="error.oidc_subject_taken",
                     details={"oidc_subject": subject, "username": existing.username},
                 )
+        if not subject and previous and not account.password_hash:
+            # Ohne lokales Passwort waere die Verknuepfung der einzige Zugang;
+            # sie zu loesen sperrte das Konto dauerhaft aus. Ein Administrator
+            # kann vorher ueber die Kontenverwaltung ein Passwort setzen.
+            raise ValidationError(
+                code="error.oidc_unlink_without_password",
+                details={"username": account.username},
+            )
         account.oidc_subject = subject or None
         if account.oidc_subject != previous:
             # Das Loesen der Verknuepfung soll sofort wirken; sonst blieben die

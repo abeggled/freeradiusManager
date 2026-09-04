@@ -996,6 +996,31 @@ Die fünfundzwanzigste Runde:
 * **Freitextfelder behalten ihre Leerzeichen beim Import.** Der Weg
   Export → Bearbeiten → Import beschnitt Notizen stillschweigend.
 
+### Sechsundzwanzigste Runde
+
+* **Eine OIDC-Administratorsitzung gilt nur mit belegtem zweitem Faktor als
+  mehrstufig.** Der Rückruf setzte `mfa` bedingungslos, und `current_principal`
+  nimmt OIDC-Sitzungen von der TOTP-Pflicht aus – ein Provider mit reiner
+  Passwortanmeldung umging sie damit. Ausgewertet werden jetzt `amr` (RFC 8176)
+  und optional `acr`, konfigurierbar über `FRM_OIDC_MFA_AMR_VALUES` und
+  `FRM_OIDC_MFA_ACR_VALUES`.
+* **Das Token trägt den Zeitpunkt der Prüfung der Anmeldedaten**, nicht den der
+  Ausstellung. Eine Passwortänderung dazwischen liess sonst eine Sitzung
+  bestehen, die mit dem bereits entwerteten Passwort zustande kam.
+* **IPv6-Adressen mit Zone werden abgewiesen.** Python nimmt eine beliebig lange
+  Zone an; ein frei wählbarer Anhang ergab je Versuch einen neuen Schlüssel im
+  Rate-Limiter und sprengte `mgr_audit.actor_ip`.
+* **Die Bestätigung im eigenen Profil ist begrenzt** wie der Anmeldeweg, und
+  Fehlversuche zählen auf die Kontosperre ein. Mit einer gestohlenen Sitzung
+  liess sich ein begonnener Faktor sonst unbegrenzt erraten.
+* **Ein OIDC-Konto ohne lokales Passwort lässt sich nicht entkoppeln.** Solche
+  Konten bekommen jetzt gar kein lokales Passwort (statt eines zufälligen, das
+  wie ein Zugang aussieht); das Lösen der Verknüpfung wird abgewiesen, bis ein
+  Administrator ein Passwort gesetzt hat.
+* **Eine Gruppe lässt sich in ihrer Schreibweise umbenennen.** Die
+  Existenzprüfung fand unter der Kollation die Gruppe selbst und meldete
+  `group_exists`.
+
 ## Prüfschritte
 
 ```bash

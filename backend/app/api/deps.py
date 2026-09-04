@@ -95,6 +95,11 @@ def _as_address(value: str) -> str | None:
         value = value.partition("]")[0].removeprefix("[")
     elif value.count(":") == 1:
         value = value.partition(":")[0]
+    # Zonenangaben wie ``fe80::1%eth0`` nimmt Python an und behaelt sie in
+    # beliebiger Laenge. Ein frei waehlbarer Anhang ergaebe je Versuch einen
+    # neuen Schluessel im Rate-Limiter und sprengte ``mgr_audit.actor_ip``.
+    if "%" in value:
+        return None
     try:
         return str(ipaddress.ip_address(value))
     except ValueError:
@@ -185,12 +190,12 @@ async def current_principal(request: Request, response: Response, session: Sessi
         raise AuthenticationError(
             code="error.unauthenticated", details={"reason": "logged_out"}
         )
-    # Bei OIDC verantwortet der Identity-Provider den zweiten Faktor; die
-    # lokale TOTP-Pflicht gilt fuer lokale Anmeldungen.
+    # Bei OIDC verantwortet der Identity-Provider den zweiten Faktor - aber nur,
+    # wenn das Token ihn belegt hat (``mfa``). Sonst gilt die lokale Pflicht.
     if (
         account.role is Role.ADMINISTRATOR
         and settings.require_totp_for_admin
-        and not claims.oidc
+        and not (claims.oidc and claims.mfa)
         and not (claims.mfa and account.totp_enabled)
     ):
         raise AuthenticationError(

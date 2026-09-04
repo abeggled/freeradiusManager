@@ -22,6 +22,7 @@
   "error.account_disabled": "The account is disabled.",
   "error.oidc_account_conflict": "A local account with this name already exists. Linking it to the OIDC identity must be done by an administrator.",
   "error.oidc_subject_taken": "This OIDC identity is already linked to the account “{username}”.",
+  "error.oidc_unlink_without_password": "This account has no local password; the OIDC link is its only way in. Please set a password first.",
   "error.user_exists": "A user with this name already exists.",
   "error.subject_exists": "RADIUS entries already exist for this name.",
   "error.group_exists": "A group with this name already exists.",

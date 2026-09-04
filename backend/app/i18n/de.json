@@ -22,6 +22,7 @@
   "error.account_disabled": "Das Konto ist deaktiviert.",
   "error.oidc_account_conflict": "Es existiert bereits ein lokales Konto mit diesem Namen. Die Verknüpfung mit der OIDC-Identität muss ein Administrator vornehmen.",
   "error.oidc_subject_taken": "Diese OIDC-Identität ist bereits mit dem Konto „{username}“ verknüpft.",
+  "error.oidc_unlink_without_password": "Dieses Konto hat kein lokales Passwort; die OIDC-Verknüpfung ist der einzige Zugang. Bitte zuerst ein Passwort setzen.",
   "error.user_exists": "Ein Benutzer mit diesem Namen existiert bereits.",
   "error.subject_exists": "Für diesen Namen bestehen bereits RADIUS-Einträge.",
   "error.group_exists": "Eine Gruppe mit diesem Namen existiert bereits.",

@@ -172,7 +172,13 @@ class GroupService:
     ) -> GroupDetail:
         before = await self.get(groupname)
         if payload.groupname and payload.groupname != groupname:
-            if await self.repo.exists(payload.groupname):
+            # Eine reine Schreibweisenaenderung findet die Existenzpruefung als
+            # die Gruppe selbst wieder: die Kollation vergleicht ohne Ruecksicht
+            # auf Gross- und Kleinschreibung. Ohne diese Ausnahme liesse sich
+            # eine Gross-/Kleinschreibung nur ueber Loeschen und Neuanlegen
+            # korrigieren.
+            renaming_case_only = fold(payload.groupname) == fold(groupname)
+            if not renaming_case_only and await self.repo.exists(payload.groupname):
                 raise ConflictError(
                     code="error.group_exists", details={"groupname": payload.groupname}
                 )

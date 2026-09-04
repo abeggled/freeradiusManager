@@ -98,6 +98,12 @@ class Settings(BaseSettings):
     oidc_scopes: str = "openid profile email"
     oidc_role_claim: str = "roles"
     oidc_role_map: dict[str, str] = Field(default_factory=dict)
+    oidc_mfa_amr_values: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["mfa", "otp", "hwk", "swk", "pop"]
+    )
+    """``amr``-Werte, die einen zweiten Faktor beim Provider belegen (RFC 8176)."""
+    oidc_mfa_acr_values: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    """Zusaetzlich akzeptierte ``acr``-Werte; providerspezifisch."""
 
     # --- Fachliche Defaults ---------------------------------------------
     default_mac_format: str = "colon_lower"
@@ -203,7 +209,14 @@ class Settings(BaseSettings):
             )
         return value
 
-    @field_validator("cors_origins", "trusted_proxies", "allowed_origins", mode="before")
+    @field_validator(
+        "cors_origins",
+        "trusted_proxies",
+        "allowed_origins",
+        "oidc_mfa_amr_values",
+        "oidc_mfa_acr_values",
+        mode="before",
+    )
     @classmethod
     def _split_origins(cls, value: object) -> object:
         """Kommagetrennte Liste aus der Umgebung.

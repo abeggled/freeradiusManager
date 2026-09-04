@@ -40,6 +40,27 @@ def _challenge(verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
+def provider_confirmed_mfa(claims: dict[str, Any], config: Settings | None = None) -> bool:
+    """Ob das Token einen zweiten Faktor beim Provider belegt.
+
+    Ausgewertet werden ``amr`` (RFC 8176) und ``acr``. Ohne diesen Nachweis
+    darf eine OIDC-Sitzung nicht als mehrstufig gelten: ``current_principal``
+    nimmt solche Sitzungen von der TOTP-Pflicht fuer Administratoren aus, und
+    ein Provider, der nur ein Passwort verlangt hat, umginge sie damit.
+    """
+    config = config or app_settings
+    amr = claims.get("amr")
+    values = {str(v).lower() for v in amr} if isinstance(amr, list) else set()
+    if values & {v.lower() for v in config.oidc_mfa_amr_values}:
+        return True
+    acr = claims.get("acr")
+    return bool(
+        isinstance(acr, str)
+        and config.oidc_mfa_acr_values
+        and acr.lower() in {v.lower() for v in config.oidc_mfa_acr_values}
+    )
+
+
 class OidcService:
     def __init__(self, config: Settings | None = None) -> None:
         self.config = config or app_settings

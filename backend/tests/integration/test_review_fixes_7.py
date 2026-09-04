@@ -88,7 +88,7 @@ async def test_password_change_invalidates_older_sessions(session, client) -> No
 
 
 async def test_oidc_administrator_passes_the_mfa_gate(session, client, monkeypatch) -> None:
-    """Bei OIDC verantwortet der Provider den zweiten Faktor."""
+    """Bei OIDC verantwortet der Provider den zweiten Faktor - wenn er ihn belegt."""
     from app.api.v1.endpoints import auth as auth_endpoint
     from app.services.oidc import OidcService
 
@@ -112,8 +112,11 @@ async def test_oidc_administrator_passes_the_mfa_gate(session, client, monkeypat
     assert (await client.get("/api/v1/accounts")).status_code == 200
 
 
-async def _admin_claims() -> dict[str, str]:
-    return {"sub": "idp-admin", "preferred_username": "idp-admin"}
+async def _admin_claims() -> dict[str, object]:
+    # ``amr`` belegt den zweiten Faktor beim Provider; ohne ihn gilt die lokale
+    # TOTP-Pflicht auch fuer OIDC-Administratoren (siehe fuenfundzwanzigste
+    # Runde).
+    return {"sub": "idp-admin", "preferred_username": "idp-admin", "amr": ["pwd", "otp"]}
 
 
 # --- Benutzer --------------------------------------------------------------

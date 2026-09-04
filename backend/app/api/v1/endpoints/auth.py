@@ -19,7 +19,6 @@ from app.api.deps import (
     set_session_cookie,
 )
 from app.core.config import settings
-from app.core.crypto import hash_password_async
 from app.core.errors import AuthenticationError, ValidationError
 from app.core.identifiers import fold
 from app.core.security import TOTP_ENROLL_SCOPE, create_session_token, principal_from_token
@@ -36,7 +35,7 @@ from app.schemas.accounts import (
     TotpSetupResponse,
 )
 from app.services.accounts import AccountService
-from app.services.oidc import OidcService
+from app.services.oidc import OidcService, provider_confirmed_mfa
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -51,8 +50,20 @@ def _bounded(value: object, limit: int) -> str | None:
 
 
 def _issue_session(
-    response: Response, account: MgrAccount, *, mfa: bool = False, oidc: bool = False
+    response: Response,
+    account: MgrAccount,
+    *,
+    mfa: bool = False,
+    oidc: bool = False,
+    verified_at: float | None = None,
 ) -> None:
+    """Stellt das Sitzungscookie aus.
+
+    ``verified_at`` ist der Zeitpunkt *vor* der Pruefung der Anmeldedaten. Aus
+    der Ausstellungszeit abgeleitet erschiene das Token neuer als eine
+    Passwortaenderung, die dazwischen liegt - die Sitzung waere mit dem alten,
+    inzwischen entwerteten Passwort zustande gekommen und bliebe gueltig.
+    """
     token, _ = create_session_token(
         account.id,
         account.username,
@@ -61,6 +72,7 @@ def _issue_session(
         mfa=mfa,
         oidc=oidc,
         epoch=account.session_epoch,
+        auth_at=verified_at,
     )
     set_session_cookie(response, token)
 
@@ -81,6 +93,9 @@ async def login(
     login_limiter.check(f"{actor_ip}:{fold(payload.username)}")
     service = AccountService(session)
     mfa_completed = False
+    # Vor der Pruefung festgehalten: eine Passwortaenderung, die waehrend der
+    # Anmeldung festgeschrieben wird, muss die entstehende Sitzung verwerfen.
+    verified_at = dt.datetime.now(tz=dt.UTC).timestamp()
     account = await service.authenticate(
         payload.username, payload.password, actor_ip=actor_ip, reset_failures=False
     )
@@ -106,7 +121,7 @@ async def login(
     # Kontingent bleibt bestehen: sonst genuegte eine eigene gueltige Kennung,
     # um nach jedem Erfolg wieder beliebig viele fremde Namen zu probieren.
     login_limiter.reset(f"{actor_ip}:{fold(payload.username)}")
-    _issue_session(response, account, mfa=mfa_completed)
+    _issue_session(response, account, mfa=mfa_completed, verified_at=verified_at)
     return LoginResponse(status="authenticated", account=AccountOut.model_validate(account))
 
 
@@ -121,6 +136,7 @@ async def login_totp(
     # Zaehlung und liesse sich unbegrenzt oft durch die Signaturpruefung
     # schicken, ohne das Kontingent zu verbrauchen.
     login_ip_limiter.check(str(actor_ip))
+    verified_at = dt.datetime.now(tz=dt.UTC).timestamp()
     service = AccountService(session)
     account = await service.account_from_challenge(payload.challenge)
     # Je Konto zusaetzlich begrenzen: hinter einem NAT teilen sich sonst alle
@@ -134,7 +150,7 @@ async def login_totp(
     login_limiter.reset(f"{actor_ip}:{fold(account.username)}")
     await service.clear_failures(account)
     await service.mark_login(account, actor_ip)
-    _issue_session(response, account, mfa=True)
+    _issue_session(response, account, mfa=True, verified_at=verified_at)
     return LoginResponse(status="authenticated", account=AccountOut.model_validate(account))
 
 
@@ -159,14 +175,25 @@ async def confirm_totp(
     session: SessionDep,
     actor_ip: ClientIp,
 ) -> LoginResponse:
+    login_ip_limiter.check(str(actor_ip))
+    verified_at = dt.datetime.now(tz=dt.UTC).timestamp()
     service = AccountService(session)
     account = await service.account_from_challenge(payload.challenge, scope=TOTP_ENROLL_SCOPE)
+    login_limiter.check(f"totp:{account.id}")
     await service.confirm_totp(account, payload.totp_code, actor_ip=actor_ip)
+    login_limiter.reset(f"totp:{account.id}")
     # Auch der Einrichtungsweg ist eine vollstaendige Anmeldung: der
     # zurueckgehaltene Fehlerzaehler wird jetzt geleert.
     await service.clear_failures(account)
     await service.mark_login(account, actor_ip)
-    _issue_session(response, account, mfa=True)
+    # Dieser Vorgang setzt selbst ``totp_changed_at``; die eigene Sitzung darf
+    # daran nicht scheitern. Eine gleichzeitige Passwortaenderung faellt
+    # weiterhin auf, weil ``password_changed_at`` unberuehrt bleibt.
+    if account.totp_changed_at is not None:
+        verified_at = max(
+            verified_at, account.totp_changed_at.replace(tzinfo=dt.UTC).timestamp()
+        )
+    _issue_session(response, account, mfa=True, verified_at=verified_at)
     return LoginResponse(status="authenticated", account=AccountOut.model_validate(account))
 
 
@@ -227,9 +254,17 @@ async def enroll_own_totp(
 async def confirm_own_totp(
     payload: TotpActivate, principal: CurrentUser, session: SessionDep, actor_ip: ClientIp
 ) -> None:
+    """Schliesst die Einrichtung im eigenen Profil ab.
+
+    Begrenzt wie der Anmeldeweg: mit einer gestohlenen Sitzung liesse sich ein
+    begonnener Faktor sonst unbegrenzt oft erraten (FR-10).
+    """
+    login_ip_limiter.check(str(actor_ip))
+    login_limiter.check(f"totp:{principal.account_id}")
     service = AccountService(session)
     account = await service.get(principal.account_id)
     await service.confirm_totp(account, payload.code, actor_ip=actor_ip, actor=principal)
+    login_limiter.reset(f"totp:{principal.account_id}")
 
 
 # --- OIDC ----------------------------------------------------------------
@@ -317,7 +352,11 @@ async def oidc_callback(
             display_name=_bounded(claims.get("name"), 128),
             role=Role(mapped),
             oidc_subject=subject,
-            password_hash=await hash_password_async(secrets.token_urlsafe(32)),
+            # Kein lokales Passwort: ein zufaelliger, niemandem bekannter Hash
+            # sieht aus wie ein Zugang, ist aber keiner. Ohne Passwort ist der
+            # Zustand sichtbar - und das Loesen der Verknuepfung wird abgewiesen,
+            # solange kein Administrator eines gesetzt hat.
+            password_hash=None,
         )
         await service.repo.add(account)
         # Auch die automatische Anlage ist eine schreibende Aktion (FR-9).
@@ -336,6 +375,20 @@ async def oidc_callback(
     if not account.is_active:
         # Ein deaktiviertes Konto darf sich auch ueber OIDC nicht neu anmelden.
         raise AuthenticationError(code="error.account_disabled")
+
+    # Eine OIDC-Sitzung gilt als mehrstufig und ist damit von der lokalen
+    # TOTP-Pflicht ausgenommen. Das darf nur gelten, wenn das Token einen
+    # zweiten Faktor belegt - sonst umginge ein Provider mit reiner
+    # Passwortanmeldung die Pflicht fuer Administratoren (FR-10).
+    provider_mfa = provider_confirmed_mfa(claims)
+    if (
+        Role(mapped) is Role.ADMINISTRATOR
+        and settings.require_totp_for_admin
+        and not provider_mfa
+    ):
+        raise AuthenticationError(
+            code="error.reauthentication_required", details={"stage": "mfa_required"}
+        )
     await service.apply_mapped_role(account, Role(mapped), actor_ip=actor_ip)
     await service.mark_login(account, actor_ip)
 
@@ -344,7 +397,9 @@ async def oidc_callback(
     )
     # Der Identity-Provider hat die Anmeldung vollstaendig durchgefuehrt; die
     # lokale TOTP-Pflicht gilt fuer diese Sitzung nicht.
-    _issue_session(redirect, account, mfa=True, oidc=True)
+    # ``oidc`` bleibt wahr - die Sitzung kam ueber den Provider. Ob sie als
+    # mehrstufig gilt, sagt ``mfa``.
+    _issue_session(redirect, account, mfa=provider_mfa, oidc=True)
     redirect.delete_cookie(OIDC_STATE_COOKIE, path=cookie_path())
     return redirect
 
