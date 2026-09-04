@@ -858,6 +858,31 @@ Die fünfundzwanzigste Runde:
 * Die Benutzerdetailansicht zeigt die Warnungen der Speicherung; die
   anschliessend neu geladene Ansicht enthält sie nicht mehr.
 
+### Neunzehnte Runde
+
+* **Ein Passwortwechsel entfernt alle bisherigen Anmeldedaten.** Bisher wurden
+  nur `Cleartext-Password` und `NT-Password` gelöscht; ein importierter Benutzer
+  mit `Crypt-`, `MD5-` oder `SSHA-Password` behielt sein altes Geheimnis, und je
+  nach Authentifizierungsmethode galt weiterhin das alte Passwort.
+* **Maskierte `radreply`-Werte bleiben erhalten.** Der neue Expertenmodus
+  schickt alle Reply-Zeilen zurück; ein Passwort-Attribut dort wurde dabei
+  dauerhaft durch Sternchen ersetzt. Die Auflösung liegt jetzt in
+  `app/services/masking.py` und wird von Gruppen und Benutzern geteilt.
+* **Exportiert wird das wirksame, also früheste Ablaufdatum.** Bei mehreren
+  `Expiration`-Zeilen zeigte die Ansicht ein künftiges Datum zu einem
+  abgelaufenen Status – ein Reimport dieses Exports reaktivierte den Benutzer.
+* **Die Import-Vorschau prüft den Schutz der letzten Mitgliedschaft.** Eine
+  Zeile mit leerer Gruppenspalte galt als gültig und scheiterte erst beim
+  Schreiben.
+* **Eine vollständige TOTP-Anmeldung gibt auch das Kontingent der Passwortstufe
+  frei.** Sonst blieb je Anmeldung ein Treffer stehen und die elfte korrekte
+  Anmeldung innerhalb des Fensters wurde abgewiesen.
+* **Eine abgelaufene Sperre wird auch vor dem Passwortwechsel aufgehoben** – wie
+  beim Anmelden; sonst löste der erste Tippfehler danach sofort die nächste
+  Sperre aus.
+* Der Gruppendialog zeigt nach einer Umbenennung mit Warnung auf den neuen
+  Namen; jede Korrektur lief sonst als PATCH auf den alten Pfad.
+
 ## Prüfschritte
 
 ```bash

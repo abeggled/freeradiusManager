@@ -121,6 +121,10 @@ async def login_totp(
     login_limiter.check(f"totp:{account.id}")
     await service.verify_totp_code(account, payload.totp_code, actor_ip=actor_ip)
     login_limiter.reset(f"totp:{account.id}")
+    # Auch den Treffer der Passwortstufe: sonst bliebe je vollstaendig
+    # erfolgreicher Anmeldung einer stehen und die elfte korrekte Anmeldung
+    # innerhalb des Fensters waere abgewiesen.
+    login_limiter.reset(f"{actor_ip}:{account.username}")
     await service.clear_failures(account)
     await service.mark_login(account, actor_ip)
     _issue_session(response, account, mfa=True)

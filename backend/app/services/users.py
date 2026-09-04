@@ -46,7 +46,7 @@ from app.schemas.users import (
 )
 from app.services.attributes import validate_triple, vlan_triples
 from app.services.audit import AuditService
-from app.services.masking import mask_attributes
+from app.services.masking import mask_attributes, stored_values, unmask
 from app.services.settings_service import SettingsService
 
 AUTH_TYPE = "Auth-Type"
@@ -810,9 +810,17 @@ class UserService:
         self, username: str, password: str, credential_type: CredentialType
     ) -> None:
         wanted = CREDENTIAL_ATTRIBUTES[credential_type]
-        for attribute in ("Cleartext-Password", "NT-Password"):
-            if attribute not in wanted:
-                await self.attrs.delete_check(username, attribute)
+        wanted_lower = {a.lower() for a in wanted}
+        # Alle Passwort-Attribute aus dem Woerterbuch, nicht nur die beiden
+        # eigenen: ein Bestandsbenutzer mit Crypt-, MD5- oder SSHA-Password
+        # behielte sonst sein altes Geheimnis, und je nach
+        # Authentifizierungsmethode gaelte weiterhin das alte Passwort.
+        for row in await self.attrs.check_attributes(username):
+            if (
+                radius_dict.is_password_attribute(row.attribute)
+                and row.attribute.lower() not in wanted_lower
+            ):
+                await self.attrs.delete_check_row(row.id)
         for attribute in wanted:
             value = password if attribute == "Cleartext-Password" else nt_hash(password)
             await self.attrs.set_check(username, attribute, ":=", value)
@@ -867,7 +875,15 @@ class UserService:
         rows: list[tuple[str, str, str]] = []
 
         if attributes is not None:
+            # Passwort-Attribute sind auch in ``radreply` moeglich und werden
+            # maskiert ausgeliefert. Unveraendert zurueckgeschickt duerfen sie
+            # den gespeicherten Wert nicht durch Sternchen ersetzen.
+            stored = stored_values(existing)
             for item in attributes:
+                kept = unmask(item.attribute, item.op, item.value, stored)
+                if kept is not None:
+                    rows.append((item.attribute, item.op, kept))
+                    continue
                 for w in validate_triple(
                     item.attribute, item.op, item.value, table="radreply", language=language
                 ):
@@ -934,11 +950,22 @@ class UserService:
 
     @staticmethod
     def _expiry(checks: Sequence[RadCheck], subject: MgrSubject | None) -> dt.datetime | None:
-        for row in checks:
-            if row.attribute.lower() == EXPIRATION.lower():
-                parsed = from_expiration(row.value)
-                if parsed is not None:
-                    return parsed
+        """Das wirksame, also frueheste Ablaufdatum.
+
+        Bestandsdaten koennen mehrere ``Expiration``-Zeilen fuehren; die
+        Statusberechnung wertet den Benutzer schon als abgelaufen, wenn *eine*
+        davon vergangen ist. Gaebe man hier die erste zurueck, zeigte die
+        Oberflaeche ein kuenftiges Datum zu einem abgelaufenen Status - und ein
+        Reimport des Exports reaktivierte den Benutzer.
+        """
+        parsed_rows = [
+            parsed
+            for row in checks
+            if row.attribute.lower() == EXPIRATION.lower()
+            and (parsed := from_expiration(row.value)) is not None
+        ]
+        if parsed_rows:
+            return min(parsed_rows)
         return subject.expires_at if subject else None
 
     async def last_reply(self, username: str) -> str | None:

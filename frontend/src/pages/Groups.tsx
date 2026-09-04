@@ -130,7 +130,9 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
   // Mit dem Wechsel in den Bearbeitungsmodus wird `update` zur aktiven Mutation;
   // deren `data` ist noch leer und die Warnung der Anlage verschwände sofort.
   const [createdWarnings, setCreatedWarnings] = useState<ApiWarning[] | null>(null);
-  const editing = groupname ?? created;
+  // ``created`` zuerst: nach einer Umbenennung mit Warnung zeigt der Dialog auf
+  // den neuen Namen, nicht mehr auf den ursprünglich geöffneten.
+  const editing = created ?? groupname;
   const existing = useGroup(editing ?? "", Boolean(editing));
   const create = useCreateGroup();
   const update = useUpdateGroup(editing ?? "");
@@ -169,27 +171,24 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
     };
     // Der Dialog bleibt offen, wenn der Server Warnungen zurückgibt: sonst
     // verschwände der Hinweis auf ein unbekanntes Attribut ungelesen.
+    // Ohne Warnung schliesst der Dialog. Mit Warnung bleibt er offen, damit der
+    // Hinweis lesbar ist – und zeigt dann auf den tatsächlich gespeicherten
+    // Namen: eine Anlage liefe sonst erneut als POST („group_exists“), eine
+    // Umbenennung als PATCH auf den alten Pfad (404).
     const close = (result: GroupDetail) => {
-      if (result.warnings.length === 0) onClose();
+      if (result.warnings.length === 0) {
+        onClose();
+        return;
+      }
+      setCreatedWarnings(result.warnings);
+      setCreated(result.groupname);
     };
     if (editing) {
       update.mutate(body, { onSuccess: close });
     } else {
       create.mutate(
         { ...body, check_attributes: currentChecks, reply_attributes: currentReplies },
-        {
-          onSuccess: (result) => {
-            // Die Gruppe ist angelegt, auch mit Warnung. Bliebe der Dialog im
-            // Anlegemodus, liefe der nächste Speichervorgang erneut in POST
-            // und scheiterte mit "group_exists".
-            if (result.warnings.length === 0) {
-              onClose();
-              return;
-            }
-            setCreatedWarnings(result.warnings);
-            setCreated(result.groupname);
-          },
-        },
+        { onSuccess: close },
       );
     }
   };

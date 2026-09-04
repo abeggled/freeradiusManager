@@ -569,6 +569,12 @@ class AccountService:
         account = locked if locked is not None else await self.get(account_id)
         if account.id != actor.account_id and not actor.is_admin:
             raise PermissionDeniedError(code="error.forbidden")
+        # Wie bei der Anmeldung: eine abgelaufene Sperre wird vollstaendig
+        # aufgehoben. Bliebe der Zaehler auf dem Schwellwert stehen, loeste der
+        # erste Tippfehler danach sofort die naechste Sperre aus.
+        if account.locked_until is not None and account.locked_until <= utcnow():
+            account.locked_until = None
+            account.failed_logins = 0
         # Die Sperre muss auch hier greifen: sonst liesse sich mit einer noch
         # gueltigen Sitzung unbegrenzt weiterraten.
         if account.locked_until is not None and account.locked_until > utcnow():

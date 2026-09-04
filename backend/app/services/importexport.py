@@ -445,6 +445,16 @@ class ImportExportService:
                             code="error.not_found",
                             details={"groupname": membership.groupname},
                         )
+                # Der Schutz der letzten Mitgliedschaft haengt vom Bestand ab
+                # und griffe sonst erst beim Schreiben - die Vorschau meldete
+                # eine Zeile als gueltig, die der Import abweist.
+                if exists and parsed.groups_supplied:
+                    wanted = {fold(g.groupname) for g in parsed.groups}
+                    for current in await self.users.groups.memberships(username):
+                        if fold(current.groupname) not in wanted:
+                            await self.users.guard_last_membership(
+                                current.groupname, username
+                            )
 
                 if not dry_run:
                     # Erst schreiben, dann zaehlen: ein von der Datenbank

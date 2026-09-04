@@ -1207,3 +1207,152 @@ async def test_octet_counters_are_serialised_as_text(session) -> None:
     items, _, _ = await SessionService(session).search(SessionFilter())
     assert items[0].acctinputoctets == str(huge)
     assert items[0].acctoutputoctets == str(huge)
+
+
+# --- Neunzehnte Runde -----------------------------------------------------
+
+
+async def test_password_reset_removes_legacy_credentials(session, admin_principal) -> None:
+    """Ein alter Crypt-Hash galt sonst je nach Methode weiter."""
+    from app.schemas.users import PasswordSet
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.attrs.add_check("anna", "Crypt-Password", ":=", "$1$alt")
+    await session.commit()
+
+    await users.set_password("anna", PasswordSet(password="neu-geheim123"), actor=admin_principal)
+
+    rows = (await session.scalars(select(RadCheck).where(RadCheck.username == "anna"))).all()
+    assert not any(r.attribute.lower() == "crypt-password" for r in rows)
+
+
+async def test_masked_reply_values_are_preserved(session, admin_principal) -> None:
+    """Der Expertenmodus schickt alle Reply-Zeilen zurueck, auch die maskierten."""
+    from app.models.radius import RadReply
+    from app.schemas.users import AttributeIn, UserUpdate
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.attrs.add_reply("anna", "Cleartext-Password", ":=", "reply-geheim")
+    await session.commit()
+
+    detail = await users.get("anna")
+    masked = [
+        AttributeIn(attribute=a.attribute, op=a.op, value=a.value) for a in detail.reply_attributes
+    ]
+    masked.append(AttributeIn(attribute="Filter-Id", op=":=", value="std"))
+    await users.update("anna", UserUpdate(reply_attributes=masked), actor=admin_principal)
+
+    stored = await session.scalar(
+        select(RadReply.value).where(
+            RadReply.username == "anna", RadReply.attribute == "Cleartext-Password"
+        )
+    )
+    assert stored == "reply-geheim"
+
+
+async def test_effective_expiration_is_exported(session, admin_principal) -> None:
+    """Sonst zeigte die Ansicht ein kuenftiges Datum zu einem abgelaufenen Status."""
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.attrs.add_check("anna", "Expiration", ":=", "31 Dec 2030 00:00:00")
+    await users.attrs.add_check("anna", "Expiration", ":=", "01 Jan 2020 00:00:00")
+    await session.commit()
+
+    detail = await users.get("anna")
+    assert detail.status == "expired"
+    assert detail.expires_at is not None
+    assert detail.expires_at.year == 2020
+
+
+async def test_dry_run_reports_the_last_membership_guard(session, admin_principal) -> None:
+    """Die Vorschau meldete eine Zeile als gueltig, die der Import abweist."""
+    from app.services.importexport import ImportExportService
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.groups.add_membership("anna", "nur-mitglieder", 1)
+    await session.commit()
+
+    report = await ImportExportService(session).import_csv(
+        "username,groups\nanna,\n", kind="user", dry_run=True, actor=admin_principal
+    )
+    assert report.errors == 1
+
+
+async def test_successful_totp_login_frees_the_password_quota(session, client) -> None:
+    """Sonst blieb je vollstaendiger Anmeldung ein Treffer der Passwortstufe stehen."""
+    import pyotp
+
+    from app.api.deps import login_limiter
+    from app.core.config import settings as app_settings
+    from app.core.crypto import SecretBox, hash_password
+    from app.models.mgr import MgrAccount, Role
+
+    secret = pyotp.random_base32()
+    session.add(
+        MgrAccount(
+            username="admin",
+            role=Role.ADMINISTRATOR,
+            password_hash=hash_password("ein-sicheres-passwort"),
+            totp_enabled=True,
+            totp_secret_enc=SecretBox(
+                app_settings.coa_secret_key or app_settings.secret_key
+            ).encrypt(secret),
+        )
+    )
+    await session.commit()
+
+    first = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "ein-sicheres-passwort"},
+    )
+    assert first.json()["status"] == "totp_required"
+    done = await client.post(
+        "/api/v1/auth/login/totp",
+        json={"challenge": first.json()["challenge"], "totp_code": pyotp.TOTP(secret).now()},
+    )
+    assert done.status_code == 200, done.text
+
+    # Kein Treffer der Passwortstufe bleibt zurueck; die Schluessel enthalten
+    # neben der Adresse den Kontonamen.
+    assert login_limiter.tracked_keys() == 0
+
+
+async def test_expired_lockout_is_cleared_before_password_change(session) -> None:
+    """Sonst loeste der erste Tippfehler danach sofort die naechste Sperre aus."""
+    from app.core.crypto import hash_password
+    from app.core.dates import utcnow
+    from app.models.mgr import MgrAccount, Role
+    from app.schemas.accounts import PasswordChange
+    from app.services.accounts import LOCKOUT_THRESHOLD, AccountService
+
+    account = MgrAccount(
+        username="operator",
+        role=Role.OPERATOR,
+        password_hash=hash_password("ein-sicheres-passwort"),
+        failed_logins=LOCKOUT_THRESHOLD,
+        locked_until=utcnow() - dt.timedelta(minutes=1),
+    )
+    session.add(account)
+    await session.commit()
+
+    principal = Principal(
+        account_id=account.id,
+        username=account.username,
+        role=Role.OPERATOR,
+        language="de",
+        session_id="test",
+        absolute_expiry=0,
+    )
+    await AccountService(session).change_password(
+        account.id,
+        PasswordChange(
+            current_password="ein-sicheres-passwort", new_password="noch-ein-sicheres-passwort"
+        ),
+        actor=principal,
+    )
+    await session.refresh(account)
+    assert account.failed_logins == 0
+    assert account.locked_until is None
