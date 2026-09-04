@@ -142,6 +142,8 @@ PASSWORD_ATTRIBUTES = frozenset(
         "ssha1-password",
         "ssha2-password",
         "ssha3-password",
+        # Antwortattribut, traegt aber ein Geheimnis (RFC 2868).
+        "tunnel-password",
         "user-password",
     }
 )

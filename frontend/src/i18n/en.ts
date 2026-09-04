@@ -92,6 +92,7 @@ export const en: Record<TranslationKey, string> = {
   "users.status": "Status",
   "users.groups": "Groups",
   "users.expires": "Expires",
+  "users.inheritedExpiry": "Inherited from a group: {date}. It cannot be changed here.",
   "users.credentialType": "Credential type",
   "users.credentialType.cleartext": "Cleartext-Password",
   "users.credentialType.nt": "NT-Password",

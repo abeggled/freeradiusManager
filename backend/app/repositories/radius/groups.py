@@ -92,15 +92,21 @@ class GroupRepository:
         return grouped
 
     async def member_counts(self) -> dict[str, int]:
-        stmt = select(RadUserGroup.groupname, func.count()).group_by(RadUserGroup.groupname)
+        """Mitgliederzahl je Gruppe - verschiedene Benutzer, nicht Zeilen.
+
+        ``radusergroup`` kennt keine Eindeutigkeit; doppelte Zeilen desselben
+        Benutzers meldeten sonst mehrere Betroffene, auch in der Rueckfrage vor
+        dem Loeschen.
+        """
+        stmt = select(
+            RadUserGroup.groupname, func.count(func.distinct(RadUserGroup.username))
+        ).group_by(RadUserGroup.groupname)
         rows = (await self.session.execute(stmt)).all()
         return {str(name): int(count) for name, count in rows}
 
     async def member_count(self, groupname: str) -> int:
-        stmt = (
-            select(func.count())
-            .select_from(RadUserGroup)
-            .where(RadUserGroup.groupname == groupname)
+        stmt = select(func.count(func.distinct(RadUserGroup.username))).where(
+            RadUserGroup.groupname == groupname
         )
         return int(await self.session.scalar(stmt) or 0)
 

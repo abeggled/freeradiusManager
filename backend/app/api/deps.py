@@ -141,14 +141,17 @@ def set_session_cookie(response: Response, token: str, max_age: int | None = Non
         httponly=True,
         secure=settings.cookie_secure,
         samesite="lax",
-        domain=settings.cookie_domain,
+        # Bewusst ohne ``Domain``: ein Cookie fuer die uebergeordnete Domain
+        # ginge an jeden Host darunter. Ein kompromittierter Nachbar koennte es
+        # aus seinen eigenen Anfragen lesen und ohne ``Origin`` direkt gegen den
+        # Manager wiederverwenden - die Herkunftspruefung greift dort nicht.
         max_age=max_age or settings.session_idle_minutes * 60,
         path=cookie_path(),
     )
 
 
 def clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(settings.cookie_name, domain=settings.cookie_domain, path=cookie_path())
+    response.delete_cookie(settings.cookie_name, path=cookie_path())
 
 
 async def current_principal(request: Request, response: Response, session: SessionDep) -> Principal:

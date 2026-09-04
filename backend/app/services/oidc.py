@@ -51,7 +51,13 @@ def provider_confirmed_mfa(claims: dict[str, Any], config: Settings | None = Non
     config = config or app_settings
     amr = claims.get("amr")
     values = {str(v).lower() for v in amr} if isinstance(amr, list) else set()
-    if values & {v.lower() for v in config.oidc_mfa_amr_values}:
+    # ``mfa`` ist der einzige Wert, der mehrere Faktoren *behauptet*. Ein
+    # einzelnes ``otp`` oder ``hwk`` benennt nur eine Methode - als Beleg
+    # genuegt es erst zusammen mit einer zweiten (RFC 8176, Abschnitt 2).
+    if "mfa" in values:
+        return True
+    methods = values & {v.lower() for v in config.oidc_mfa_amr_values}
+    if len(methods) >= 2:
         return True
     acr = claims.get("acr")
     return bool(

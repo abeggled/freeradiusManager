@@ -18,7 +18,10 @@ from app.repositories.radius.acct import AccountingRepository, SessionFilter
 from app.repositories.radius.nas import NasRepository
 from app.schemas.sessions import SessionItem
 
-_SSID_PATTERN = re.compile(r"[:\-]?([^:\-]{2,})$")
+_BSSID_PREFIX = re.compile(
+    r"^(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}[:-]|^[0-9A-Fa-f]{12}[:-]"
+)
+"""Fuehrende BSSID in den ueblichen Schreibweisen, samt Trennzeichen."""
 
 
 def extract_ssid(called_station_id: str | None) -> str | None:
@@ -30,9 +33,12 @@ def extract_ssid(called_station_id: str | None) -> str | None:
     value = (called_station_id or "").strip()
     if not value or is_mac(value):
         return None
-    if ":" not in value:
+    # Das BSSID-Praefix abtrennen statt am letzten Doppelpunkt zu teilen: eine
+    # SSID darf selbst Doppelpunkte enthalten (``...:Corp:Guest``).
+    match = _BSSID_PREFIX.match(value)
+    if match is None:
         return None
-    candidate = value.rsplit(":", 1)[-1].strip()
+    candidate = value[match.end() :].strip()
     if candidate and not is_mac(candidate) and len(candidate) > 1:
         return candidate
     return None

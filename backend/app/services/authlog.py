@@ -17,7 +17,7 @@ from app.repositories.mgr.subjects import SubjectRepository
 from app.repositories.radius.acct import AccountingRepository
 from app.repositories.radius.groups import GroupRepository
 from app.repositories.radius.nas import NasRepository
-from app.repositories.radius.postauth import ACCEPT_VALUES, AuthLogFilter, PostAuthRepository
+from app.repositories.radius.postauth import AuthLogFilter, PostAuthRepository, is_accept
 from app.repositories.radius.users import UserAttributeRepository
 from app.schemas.sessions import AuthLogItem, Diagnosis, DiagnosisHint, SessionItem
 from app.services.sessions import extract_ssid
@@ -42,7 +42,7 @@ class AuthLogService:
         items = []
         for row in page.items:
             item = AuthLogItem.model_validate(row)
-            item.accepted = row.reply in ACCEPT_VALUES
+            item.accepted = is_accept(row.reply)
             items.append(item)
         return items, page.next_cursor
 
@@ -203,7 +203,7 @@ class AuthLogService:
                 )
             )
         else:
-            rejects = [r for r in recent if r.reply not in ACCEPT_VALUES]
+            rejects = [r for r in recent if not is_accept(r.reply)]
             if len(rejects) == len(recent):
                 hints.append(
                     DiagnosisHint(
@@ -217,7 +217,7 @@ class AuthLogService:
                         severity="error",
                     )
                 )
-            elif recent[0].reply in ACCEPT_VALUES:
+            elif is_accept(recent[0].reply):
                 hints.append(
                     DiagnosisHint(
                         code="diag.ok",
@@ -242,7 +242,7 @@ class AuthLogService:
         attempt_items = []
         for row in recent:
             item = AuthLogItem.model_validate(row)
-            item.accepted = row.reply in ACCEPT_VALUES
+            item.accepted = is_accept(row.reply)
             attempt_items.append(item)
 
         return Diagnosis(

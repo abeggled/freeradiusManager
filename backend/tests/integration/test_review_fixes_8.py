@@ -243,51 +243,30 @@ async def test_bootstrap_username_is_validated(session) -> None:
     assert account is not None
 
 
-async def test_cookie_domain_ignores_the_request_host_for_csrf() -> None:
-    """Ein Cookie fuer die Elterndomain geht an jeden Host darunter."""
-    from starlette.datastructures import Headers
-    from starlette.requests import Request
+async def test_session_cookie_is_host_only(session, client) -> None:
+    """Ein Cookie fuer die Elterndomain ginge an jeden Host darunter.
 
-    from app.api.csrf import _expected
-    from app.core.config import settings as app_settings
+    Ein kompromittierter Nachbar koennte es aus seinen eigenen Anfragen lesen
+    und ohne ``Origin`` direkt gegen den Manager wiederverwenden - die
+    Herkunftspruefung greift dort nicht (28. Runde).
+    """
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, Role
 
-    scope = {
-        "type": "http",
-        "method": "POST",
-        "path": "/",
-        "scheme": "https",
-        "server": ("radius.example.org", 443),
-        "client": ("10.0.0.1", 1234),
-        "headers": Headers({"host": "evil.example.org"}).raw,
-        "query_string": b"",
-    }
-    request = Request(scope)
-
-    original_domain = app_settings.cookie_domain
-    original_allowed = app_settings.allowed_origins
-    try:
-        app_settings.cookie_domain = None
-        assert "https://evil.example.org" in _expected(request)
-
-        app_settings.cookie_domain = ".example.org"
-        app_settings.allowed_origins = ["https://radius.example.org"]
-        expected = _expected(request)
-        assert expected == {"https://radius.example.org"}
-    finally:
-        app_settings.cookie_domain = original_domain
-        app_settings.allowed_origins = original_allowed
-
-
-async def test_cookie_domain_requires_configured_origins() -> None:
-    """Ohne eingetragene Herkunft wiese die Pruefung jeden Schreibzugriff ab."""
-    from pydantic import ValidationError as PydanticValidationError
-
-    from app.core.config import Settings
-
-    with pytest.raises(PydanticValidationError):
-        Settings(cookie_domain=".example.org", allowed_origins=[], cors_origins=[])
-
-    Settings(cookie_domain=".example.org", allowed_origins=["https://radius.example.org"])
+    session.add(
+        MgrAccount(
+            username="operator",
+            role=Role.OPERATOR,
+            password_hash=hash_password("ein-sicheres-passwort"),
+        )
+    )
+    await session.commit()
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+    assert response.status_code == 200
+    assert "domain=" not in response.headers.get("set-cookie", "").lower()
 
 
 # --- Elfte Runde ----------------------------------------------------------
@@ -2339,3 +2318,158 @@ async def test_removing_from_a_missing_group_is_rejected(session, admin_principa
             MembershipChange(action="remove", usernames=["anna"]),
             actor=admin_principal,
         )
+
+
+# --- Neunundzwanzigste Runde ----------------------------------------------
+
+
+async def test_tunnel_password_is_masked(session, admin_principal) -> None:
+    """Ein Antwortattribut, das ein Geheimnis traegt (RFC 2868)."""
+    from app.core import radius_dict
+    from app.schemas.users import MASKED
+
+    assert radius_dict.is_password_attribute("Tunnel-Password")
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.attrs.add_reply("anna", "Tunnel-Password", ":=", "geheim-tunnel")
+    await session.commit()
+
+    detail = await users.get("anna")
+    value = next(a.value for a in detail.reply_attributes if a.attribute == "Tunnel-Password")
+    assert value == MASKED
+
+
+async def test_single_amr_method_is_not_multi_factor() -> None:
+    """``otp`` allein benennt eine Methode, behauptet aber keine zwei Faktoren."""
+    from app.services.oidc import provider_confirmed_mfa
+
+    assert provider_confirmed_mfa({"amr": ["otp"]}) is False
+    assert provider_confirmed_mfa({"amr": ["hwk"]}) is False
+    assert provider_confirmed_mfa({"amr": ["mfa"]}) is True
+    assert provider_confirmed_mfa({"amr": ["pwd", "otp"]}) is True
+
+
+async def test_argon2_concurrency_is_bounded() -> None:
+    """Jede Berechnung belegt rund 64 MiB; ohne Grenze fuellt sie den Container."""
+    import inspect
+
+    from app.core import crypto
+
+    assert "asyncio.Semaphore" in inspect.getsource(crypto._slots)
+    assert "async with _slots():" in inspect.getsource(crypto.verify_password_async)
+
+
+async def test_whitespace_rename_is_not_a_case_change() -> None:
+    """ " Staff" und "Staff" sind fuer die Datenbank zwei Namen.
+
+    ``fold`` entfernt Leerzeichen; als Schreibweisenaenderung eingestuft wuerden
+    beim Umbenennen zwei Bestandsgruppen zusammengefuehrt.
+    """
+    import inspect
+
+    from app.core.identifiers import is_case_variant
+    from app.services.groups import GroupService
+
+    assert is_case_variant(" Staff", "Staff") is False
+    assert is_case_variant("Staff", "staff") is True
+    assert is_case_variant("Staff", "Staff") is False
+
+    source = inspect.getsource(GroupService._update_locked)
+    assert "is_case_variant(" in source
+    assert "fold(payload.groupname)" not in source
+
+
+async def test_member_counts_are_distinct(session, admin_principal) -> None:
+    """Doppelte Zeilen meldeten sonst mehrere Betroffene."""
+    from sqlalchemy import insert
+
+    from app.models.radius import RadUserGroup
+    from app.services.groups import GroupService
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await session.execute(
+        insert(RadUserGroup),
+        [
+            {"username": "anna", "groupname": "wlan", "priority": 1},
+            {"username": "anna", "groupname": "wlan", "priority": 2},
+        ],
+    )
+    await session.commit()
+
+    groups = GroupService(session)
+    assert await groups.repo.member_count("wlan") == 1
+    assert (await groups.repo.member_counts())["wlan"] == 1
+
+
+async def test_accept_reply_comparison_ignores_case() -> None:
+    """Der SQL-Filter erkennt die Zeile; Python meldete sie als Ablehnung."""
+    from app.repositories.radius.postauth import is_accept
+
+    assert is_accept("Access-Accept") is True
+    assert is_accept("access-accept") is True
+    assert is_accept("Access-Reject") is False
+    assert is_accept(None) is False
+
+
+async def test_oversized_csv_field_is_a_validation_error(session, admin_principal) -> None:
+    """Sonst kaeme ein allgemeiner 500 statt des angekuendigten Berichts."""
+    import csv as csv_module
+
+    from app.services.importexport import ImportExportService
+
+    huge = "x" * (csv_module.field_size_limit() + 10)
+    with pytest.raises(ValidationError) as excinfo:
+        await ImportExportService(session).import_csv(
+            f'username,note\nanna,"{huge}"\n',
+            kind="user",
+            dry_run=True,
+            actor=admin_principal,
+        )
+    assert excinfo.value.code == "error.import_invalid"
+
+
+async def test_own_expiry_is_reported_separately(session, admin_principal) -> None:
+    """Ein geerbtes Datum liesse sich beim Benutzer weder setzen noch loeschen."""
+    from app.schemas.groups import AttributeIn, GroupCreate
+    from app.services.groups import GroupService
+
+    await GroupService(session).create(
+        GroupCreate(
+            groupname="befristet",
+            check_attributes=[
+                AttributeIn(attribute="Expiration", op=":=", value="01 Jan 2020 00:00:00")
+            ],
+        ),
+        actor=admin_principal,
+    )
+    users = UserService(session)
+    await users.create(
+        UserCreate(
+            username="anna",
+            password="geheim123",
+            groups=[MembershipIn(groupname="befristet")],
+        ),
+        actor=admin_principal,
+    )
+
+    detail = await users.get("anna")
+    assert detail.expires_at is not None and detail.expires_at.year == 2020
+    assert detail.own_expires_at is None
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("00:11:22:33:44:55:Corp:Guest", "Corp:Guest"),
+        ("00-11-22-33-44-55:WLAN", "WLAN"),
+        ("001122334455:WLAN", "WLAN"),
+        ("00:11:22:33:44:55", None),
+    ],
+)
+async def test_ssid_keeps_its_colons(value: str, expected: str | None) -> None:
+    """Am letzten Doppelpunkt geteilt blieb von "Corp:Guest" nur "Guest"."""
+    from app.services.sessions import extract_ssid
+
+    assert extract_ssid(value) == expected

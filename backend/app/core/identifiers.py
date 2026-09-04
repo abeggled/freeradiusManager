@@ -12,6 +12,18 @@ from __future__ import annotations
 import unicodedata
 
 
+def is_case_variant(old: str, new: str) -> bool:
+    """Ob sich zwei Namen ausschliesslich in der Gross-/Kleinschreibung
+    unterscheiden.
+
+    Bewusst ohne ``fold``: das entfernt auch Leerzeichen und Akzente. ``" Staff"``
+    und ``"Staff"`` sind fuer die Datenbank zwei Namen - als
+    Schreibweisenaenderung behandelt wuerden beim Umbenennen zwei Gruppen
+    zusammengefuehrt.
+    """
+    return old != new and old.casefold() == new.casefold()
+
+
 def fold(name: str) -> str:
     """Vergleichsform eines Bezeichners.
 

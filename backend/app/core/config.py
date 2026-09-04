@@ -66,7 +66,6 @@ class Settings(BaseSettings):
     fuer den Browser als "same-site" und duerfte das Cookie sonst mitsenden.
     """
     cookie_secure: bool = True
-    cookie_domain: str | None = None
     require_totp_for_admin: bool = True
 
     trusted_proxies: Annotated[list[str], NoDecode] = Field(default_factory=list)
@@ -79,6 +78,11 @@ class Settings(BaseSettings):
 
     # Positive Werte erzwungen: bei 0 waere jede Anmeldung sofort "ueber dem
     # Limit" und der Zaehler liefe auf einen leeren Puffer.
+    password_hash_concurrency: int = Field(default=4, ge=1, le=64)
+    """Gleichzeitige Argon2-Berechnungen.
+
+    Jede belegt rund 64 MiB. Ohne Grenze koennten gleichzeitige Anmeldeversuche
+    den Standard-Executor fuellen und den Container erschoepfen (NFR-2)."""
     login_rate_limit: int = Field(default=10, ge=1)
     login_rate_window_seconds: int = Field(default=300, ge=1)
     login_ip_rate_limit: int = Field(default=30, ge=1)
@@ -100,9 +104,12 @@ class Settings(BaseSettings):
     oidc_role_claim: str = "roles"
     oidc_role_map: dict[str, str] = Field(default_factory=dict)
     oidc_mfa_amr_values: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["mfa", "otp", "hwk", "swk", "pop"]
+        default_factory=lambda: ["pwd", "otp", "hwk", "swk", "pop", "sms", "tel", "face", "fpt"]
     )
-    """``amr``-Werte, die einen zweiten Faktor beim Provider belegen (RFC 8176)."""
+    """Als Faktor zaehlende ``amr``-Methoden (RFC 8176).
+
+    Belegt ist der zweite Faktor erst durch ``mfa`` selbst oder durch zwei
+    verschiedene dieser Methoden - eine einzelne benennt nur ein Verfahren."""
     oidc_mfa_acr_values: Annotated[list[str], NoDecode] = Field(default_factory=list)
     """Zusaetzlich akzeptierte ``acr``-Werte; providerspezifisch."""
 
@@ -175,21 +182,6 @@ class Settings(BaseSettings):
         ]
         if missing:
             raise ValueError("Bei aktiviertem OIDC fehlen: " + ", ".join(missing))
-        return self
-
-    @model_validator(mode="after")
-    def _require_origins_with_cookie_domain(self) -> Settings:
-        """Ein geteiltes Cookie verlangt konfigurierte Herkuenfte.
-
-        Mit ``FRM_COOKIE_DOMAIN`` geht das Sitzungscookie an jeden Host der
-        Domain. Die Herkunftspruefung darf sich dann nicht auf den Host-Header
-        der Anfrage stuetzen (app/api/csrf.py) - ohne eingetragene Herkunft
-        wiese sie jeden Schreibzugriff ab, und zwar erst im Betrieb.
-        """
-        if self.cookie_domain and not (self.allowed_origins or self.cors_origins):
-            raise ValueError(
-                "FRM_COOKIE_DOMAIN verlangt FRM_ALLOWED_ORIGINS (oder FRM_CORS_ORIGINS)"
-            )
         return self
 
     @field_validator("trusted_proxies")

@@ -80,7 +80,10 @@ export interface UserListItem {
   inventory_no: string | null;
   groups: string[];
   status: UserStatus;
+  /** Wirksames Ablaufdatum inklusive Gruppen – nur zur Anzeige. */
   expires_at: string | null;
+  /** Das eigene Datum; nur dieses lässt sich hier ändern. */
+  own_expires_at: string | null;
   credential_type: CredentialType | null;
   has_metadata: boolean;
 }

@@ -19,6 +19,8 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from app.core.config import settings
+
 _hasher = PasswordHasher(time_cost=3, memory_cost=64 * 1024, parallelism=4, hash_len=32)
 
 
@@ -35,6 +37,21 @@ def verify_password(password: str, password_hash: str | None) -> bool:
         return False
 
 
+_hash_slots: asyncio.Semaphore | None = None
+
+
+def _slots() -> asyncio.Semaphore:
+    """Begrenzt die gleichzeitigen Argon2-Berechnungen.
+
+    Erst beim ersten Gebrauch angelegt: eine ``Semaphore`` bindet sich an die
+    laufende Ereignisschleife.
+    """
+    global _hash_slots
+    if _hash_slots is None:
+        _hash_slots = asyncio.Semaphore(settings.password_hash_concurrency)
+    return _hash_slots
+
+
 async def hash_password_async(password: str) -> str:
     """Argon2id in einem Worker-Thread.
 
@@ -43,12 +60,14 @@ async def hash_password_async(password: str) -> str:
     Prozess - auch Health-Checks und fremde Anfragen (NFR-2). ``to_thread``
     verwendet den beschraenkten Standard-Executor.
     """
-    return await asyncio.to_thread(hash_password, password)
+    async with _slots():
+        return await asyncio.to_thread(hash_password, password)
 
 
 async def verify_password_async(password: str, password_hash: str | None) -> bool:
     """Siehe ``hash_password_async``."""
-    return await asyncio.to_thread(verify_password, password, password_hash)
+    async with _slots():
+        return await asyncio.to_thread(verify_password, password, password_hash)
 
 
 def needs_rehash(password_hash: str) -> bool:

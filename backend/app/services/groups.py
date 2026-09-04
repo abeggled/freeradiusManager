@@ -9,7 +9,7 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConflictError, NotFoundError, ValidationError
-from app.core.identifiers import fold
+from app.core.identifiers import fold, is_case_variant
 from app.core.locking import named_lock
 from app.core.security import Principal
 from app.repositories.mgr.subjects import SubjectRepository
@@ -177,7 +177,7 @@ class GroupService:
             # auf Gross- und Kleinschreibung. Ohne diese Ausnahme liesse sich
             # eine Gross-/Kleinschreibung nur ueber Loeschen und Neuanlegen
             # korrigieren.
-            renaming_case_only = fold(payload.groupname) == fold(groupname)
+            renaming_case_only = is_case_variant(groupname, payload.groupname)
             if not renaming_case_only and await self.repo.exists(payload.groupname):
                 raise ConflictError(
                     code="error.group_exists", details={"groupname": payload.groupname}

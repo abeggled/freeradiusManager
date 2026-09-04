@@ -172,12 +172,23 @@ export function UserDetailPage() {
             available={(groups.data ?? []).map((entry) => entry.groupname)}
             onChange={setMemberships}
           />
-          <Field label={t("users.expires")}>
+          <Field
+            label={t("users.expires")}
+            hint={
+              // Ein aus einer Gruppe geerbtes Datum lässt sich hier nicht
+              // überschreiben oder löschen; der Hinweis nennt es.
+              data.expires_at && data.expires_at !== data.own_expires_at
+                ? t("users.inheritedExpiry", {
+                    date: formatDateTime(data.expires_at, language),
+                  })
+                : undefined
+            }
+          >
             {(id) => (
               <input
                 id={id}
                 type="datetime-local"
-                value={expires ?? toLocalInput(data.expires_at)}
+                value={expires ?? toLocalInput(data.own_expires_at)}
                 onChange={(event) => setExpires(event.target.value)}
               />
             )}

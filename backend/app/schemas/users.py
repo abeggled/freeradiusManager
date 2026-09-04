@@ -117,6 +117,13 @@ class UserListItem(BaseModel):
     memberships: list[MembershipOut] = Field(default_factory=list)
     status: UserStatus
     expires_at: dt.datetime | None = None
+    """Wirksames Ablaufdatum inklusive Gruppen - nur zur Anzeige."""
+    own_expires_at: dt.datetime | None = None
+    """Das eigene Ablaufdatum; nur dieses laesst sich hier aendern.
+
+    Ein aus einer Gruppe geerbtes Datum liesse sich beim Benutzer weder
+    ueberschreiben noch loeschen - die Oberflaeche bearbeitet deshalb diesen
+    Wert und weist das andere als geerbt aus."""
     credential_type: CredentialType | None = None
     has_metadata: bool = True
     vlan: str | None = None

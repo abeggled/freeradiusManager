@@ -90,6 +90,7 @@ export const de = {
   "users.status": "Status",
   "users.groups": "Gruppen",
   "users.expires": "Läuft ab",
+  "users.inheritedExpiry": "Aus einer Gruppe geerbt: {date}. Dieses Datum lässt sich hier nicht ändern.",
   "users.credentialType": "Credential-Typ",
   "users.credentialType.cleartext": "Cleartext-Password",
   "users.credentialType.nt": "NT-Password",

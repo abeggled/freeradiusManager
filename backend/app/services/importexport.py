@@ -395,7 +395,14 @@ class ImportExportService:
         # Nur bis zur Grenze plus eins lesen: ``list(reader)`` baute bei einer
         # kompakten Datei innerhalb der Upload-Grenze Millionen Zeilen-Dicts,
         # bevor die Pruefung ueberhaupt liefe.
-        raw_rows = list(itertools.islice(reader, MAX_IMPORT_ROWS + 1))
+        try:
+            raw_rows = list(itertools.islice(reader, MAX_IMPORT_ROWS + 1))
+        except csv.Error as exc:
+            # Etwa ein Feld ueber der Feldgrenze des csv-Moduls: das ist eine
+            # unbrauchbare Datei, kein Serverfehler.
+            raise ValidationError(
+                code="error.import_invalid", details={"reason": str(exc)}
+            ) from exc
         if len(raw_rows) > MAX_IMPORT_ROWS:
             raise ValidationError(
                 code="error.import_too_many_rows",

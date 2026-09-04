@@ -1063,6 +1063,38 @@ Die fünfundzwanzigste Runde:
   Assistent nicht bearbeitet wurde; sonst löschte ein Speichern die
   VLAN-Policy.
 
+### Neunundzwanzigste Runde
+
+* **Das Sitzungscookie ist host-only.** `FRM_COOKIE_DOMAIN` ist entfallen: ein
+  Cookie für die übergeordnete Domain ging an jeden Host darunter, und ein
+  kompromittierter Nachbar konnte es aus seinen eigenen Anfragen lesen und ohne
+  `Origin` direkt gegen den Manager wiederverwenden – dort greift die
+  Herkunftsprüfung nicht.
+* **OIDC belegt einen zweiten Faktor erst durch `mfa` selbst oder zwei
+  verschiedene Methoden.** Ein einzelnes `otp` oder `hwk` benennt nur ein
+  Verfahren (RFC 8176); als Beleg genommen umging es die 2FA-Pflicht für
+  Administratoren.
+* **Gleichzeitige Argon2-Berechnungen sind begrenzt**
+  (`FRM_PASSWORD_HASH_CONCURRENCY`, Vorgabe 4). Jede belegt rund 64 MiB; ohne
+  Grenze konnten verteilte Anmeldeversuche den Container erschöpfen.
+* **`Tunnel-Password` gilt als Passwort-Attribut** – es trägt ein Geheimnis
+  (RFC 2868) und stand unmaskiert in API-Antwort und Audit-Log.
+* **Nur echte Schreibweisenvarianten umgehen die Kollisionsprüfung.** `fold`
+  entfernt auch Leerzeichen; `" Staff"` → `"Staff"` hätte zwei Bestandsgruppen
+  zusammengeführt.
+* **Mitgliederzahlen zählen verschiedene Benutzer**, nicht Zeilen – auch in der
+  Rückfrage vor dem Löschen.
+* **Angenommene Auth-Log-Antworten werden ohne Rücksicht auf die Schreibweise
+  verglichen**, wie im SQL-Filter; Badge, Diagnose und Tagessummen
+  widersprachen sich sonst.
+* **Ein zu grosses CSV-Feld ergibt einen Validierungsfehler** statt eines
+  allgemeinen 500.
+* **Eine SSID darf Doppelpunkte enthalten.** Das BSSID-Präfix wird abgetrennt,
+  statt am letzten Doppelpunkt zu teilen.
+* Die Oberfläche unterscheidet das eigene vom geerbten Ablaufdatum: ein aus
+  einer Gruppe geerbtes Datum liess sich beim Benutzer weder überschreiben noch
+  löschen, der Vorgang meldete aber Erfolg.
+
 ## Prüfschritte
 
 ```bash

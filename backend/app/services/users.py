@@ -21,7 +21,7 @@ from app.core.crypto import nt_hash
 from app.core.dates import from_expiration, to_expiration, utcnow
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.i18n import translate
-from app.core.identifiers import fold
+from app.core.identifiers import fold, is_case_variant
 from app.core.locking import named_lock
 from app.core.security import Principal
 from app.models.mgr import CredentialType, MgrSubject, SubjectType
@@ -30,7 +30,7 @@ from app.repositories.directory import DirectoryRepository, SubjectFilter
 from app.repositories.mgr.subjects import SubjectRepository
 from app.repositories.radius.acct import AccountingRepository
 from app.repositories.radius.groups import GroupRepository
-from app.repositories.radius.postauth import ACCEPT_VALUES, PostAuthRepository
+from app.repositories.radius.postauth import PostAuthRepository, is_accept
 from app.repositories.radius.users import UserAttributeRepository
 from app.schemas.common import ApiWarning
 from app.schemas.users import (
@@ -187,6 +187,7 @@ class UserService:
                     expires_at=self._expiry(
                         [*user_checks, *effective_group_checks], subject
                     ),
+                    own_expires_at=self._expiry(user_checks, subject),
                     vlan=_vlan_of(replies_by_user.get(key, [])),
                     disabled=any(
                         row.attribute.lower() == AUTH_TYPE.lower() and is_reject(row.value)
@@ -256,6 +257,7 @@ class UserService:
             groups=[m.groupname for m in memberships],
             status=self._status(checks, detail_group_checks),
             expires_at=self._expiry([*checks, *detail_group_checks], subject),
+            own_expires_at=self._expiry(checks, subject),
             credential_type=subject.credential_type if subject else None,
             has_metadata=subject is not None,
             check_attributes=mask_attributes(checks),
@@ -835,7 +837,7 @@ class UserService:
         # selbst wieder: die Kollation vergleicht ohne Ruecksicht auf Gross- und
         # Kleinschreibung. Ohne diese Ausnahme liesse sie sich nur ueber Loeschen
         # und Neuanlegen korrigieren - wie bei Gruppen und NAS erlaubt.
-        if fold(old) != fold(new) and (
+        if not is_case_variant(old, new) and (
             await self.attrs.exists_anywhere(new) or await self.subjects.get(new)
         ):
             raise ConflictError(code="error.user_exists", details={"username": new})
@@ -1089,7 +1091,7 @@ class UserService:
         recent = await self.postauth.recent_for(username, limit=1)
         if not recent:
             return None
-        return "accept" if recent[0].reply in ACCEPT_VALUES else "reject"
+        return "accept" if is_accept(recent[0].reply) else "reject"
 
     async def apply_meta(self, username: str, meta: SubjectMeta) -> MgrSubject:
         subject = await self.subjects.ensure(username)

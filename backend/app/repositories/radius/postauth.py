@@ -14,6 +14,16 @@ from app.models.radius import RadPostAuth
 ACCEPT_VALUES = ("Access-Accept", "Accept")
 
 
+def is_accept(reply: str | None) -> bool:
+    """Ob eine ``radpostauth``-Antwort eine Annahme ist.
+
+    Ohne Ruecksicht auf die Schreibweise, wie die Kollation im SQL-Filter: ein
+    Bestandseintrag ``access-accept`` galt dort als angenommen, in Python aber
+    als Ablehnung - Badge, Diagnose und Tagessummen widersprachen sich.
+    """
+    return (reply or "").strip().casefold() in {v.casefold() for v in ACCEPT_VALUES}
+
+
 @dataclass(slots=True)
 class AuthLogFilter:
     username: str | None = None
@@ -75,7 +85,7 @@ class PostAuthRepository:
             )
         ).all()
         result = {str(reply): int(count) for reply, count in rows}
-        result["accepts"] = sum(v for k, v in result.items() if k in ACCEPT_VALUES)
+        result["accepts"] = sum(v for k, v in result.items() if is_accept(k))
         result["rejects"] = sum(
             v for k, v in result.items() if k not in ACCEPT_VALUES and k != "accepts"
         )

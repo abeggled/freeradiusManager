@@ -202,7 +202,7 @@ export function DeviceDetailPage() {
               <input
                 id={id}
                 type="datetime-local"
-                value={draft.expires_at ?? toLocalInput(data.expires_at)}
+                value={draft.expires_at ?? toLocalInput(data.own_expires_at)}
                 onChange={(event) => setDraft({ ...draft, expires_at: event.target.value })}
               />
             )}
