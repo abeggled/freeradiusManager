@@ -79,7 +79,10 @@ async def test_further_attempts_do_not_extend_the_lockout(session) -> None:
 
     with pytest.raises(AuthenticationError):
         await service.authenticate("operator", "falsch")
-    assert account.locked_until == first_deadline
+    # Auf ganze Sekunden verglichen: die Zeile wird beim Sperren neu eingelesen
+    # und ``locked_until`` ist ein DATETIME ohne Bruchteile.
+    assert account.locked_until is not None
+    assert account.locked_until.replace(microsecond=0) == first_deadline.replace(microsecond=0)
 
 
 async def test_unknown_username_performs_the_same_work(session) -> None:

@@ -1739,3 +1739,52 @@ async def test_nas_update_and_delete_share_a_lock() -> None:
 
     assert 'named_lock(self.session, f"nas:{nas_id}")' in inspect.getsource(NasService.update)
     assert 'named_lock(self.session, f"nas:{nas_id}")' in inspect.getsource(NasService.delete)
+
+
+# --- Vierundzwanzigste Runde ----------------------------------------------
+
+
+async def test_locked_account_row_is_read_fresh() -> None:
+    """Aus der Identity Map kaeme der Stand von vor der Sperre."""
+    import inspect
+
+    from app.repositories.mgr.accounts import AccountRepository
+
+    for method in (AccountRepository.get_for_update, AccountRepository.get_by_username):
+        assert "populate_existing=True" in inspect.getsource(method)
+
+
+async def test_totp_replay_marker_survives_a_stale_identity_map(session) -> None:
+    """Ein zuvor geladenes Objekt darf die Wiedereinsatz-Marke nicht verdecken."""
+    import pyotp
+    from sqlalchemy import update as sa_update
+
+    from app.core.config import settings as app_settings
+    from app.core.crypto import SecretBox, hash_password
+    from app.core.errors import AuthenticationError
+    from app.models.mgr import MgrAccount, Role
+    from app.services.accounts import AccountService
+
+    secret = pyotp.random_base32()
+    account = MgrAccount(
+        username="admin",
+        role=Role.ADMINISTRATOR,
+        password_hash=hash_password("ein-sicheres-passwort"),
+        totp_enabled=True,
+        totp_secret_enc=SecretBox(app_settings.coa_secret_key or app_settings.secret_key).encrypt(
+            secret
+        ),
+    )
+    session.add(account)
+    await session.commit()
+
+    # Wie ein zweiter, gleichzeitiger Vorgang: die Marke steht in der Datenbank,
+    # das geladene Objekt kennt sie noch nicht.
+    counter = int(dt.datetime.now(tz=dt.UTC).timestamp() // 30)
+    await session.execute(
+        sa_update(MgrAccount).where(MgrAccount.id == account.id).values(totp_last_counter=counter)
+    )
+    await session.commit()
+
+    with pytest.raises(AuthenticationError):
+        await AccountService(session).verify_totp_code(account, pyotp.TOTP(secret).now())

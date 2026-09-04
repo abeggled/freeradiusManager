@@ -26,11 +26,25 @@ class AccountRepository:
         """
         stmt = select(MgrAccount).where(MgrAccount.username == username)
         if lock:
-            stmt = stmt.with_for_update()
+            # Wie in ``get_for_update``: mit dem Sperren auch neu einlesen.
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
         return await self.session.scalar(stmt)
 
     async def get_for_update(self, account_id: int) -> MgrAccount | None:
-        stmt = select(MgrAccount).where(MgrAccount.id == account_id).with_for_update()
+        """Sperrt die Zeile und liest sie dabei frisch ein.
+
+        ``populate_existing`` ist noetig: liegt das Objekt bereits in der
+        Identity Map - etwa weil ``account_from_challenge`` es zuvor geladen hat -
+        gaebe SQLAlchemy den alten Stand zurueck. Der Wartende saehe dann weder
+        den fortgeschriebenen Fehlerzaehler noch die Wiedereinsatz-Marke des
+        anderen Vorgangs.
+        """
+        stmt = (
+            select(MgrAccount)
+            .where(MgrAccount.id == account_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         return await self.session.scalar(stmt)
 
     async def get_by_oidc_subject(self, subject: str) -> MgrAccount | None:

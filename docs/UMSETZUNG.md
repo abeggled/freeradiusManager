@@ -962,6 +962,15 @@ Die fünfundzwanzigste Runde:
 * Der Gruppendialog sendet VLAN-Felder nur, wenn der Assistent bearbeitet wurde;
   sonst überschrieb jedes andere Speichern die vorhandenen Tunnel-Attribute.
 
+### Vierundzwanzigste Runde
+
+* **Eine gesperrte Kontozeile wird beim Sperren neu eingelesen**
+  (`populate_existing`). Lag das Objekt schon in der Identity Map – etwa weil
+  `account_from_challenge` es zuvor geladen hat –, gab SQLAlchemy den alten
+  Stand zurück: der Wartende sah weder den fortgeschriebenen Fehlerzähler noch
+  die Wiedereinsatz-Marke des anderen Vorgangs und konnte denselben TOTP-Code
+  ein zweites Mal einlösen.
+
 ## Prüfschritte
 
 ```bash
