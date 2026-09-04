@@ -123,9 +123,14 @@ export function GroupsPage() {
 
 function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () => void }) {
   const { t } = useI18n();
-  const existing = useGroup(groupname ?? "", Boolean(groupname));
+  // Eine mit Warnung angelegte Gruppe existiert bereits; der Dialog wechselt
+  // dann in den Bearbeitungsmodus, damit die Korrektur nicht erneut als POST
+  // läuft und an "group_exists" scheitert.
+  const [created, setCreated] = useState<string | null>(null);
+  const editing = groupname ?? created;
+  const existing = useGroup(editing ?? "", Boolean(editing));
   const create = useCreateGroup();
-  const update = useUpdateGroup(groupname ?? "");
+  const update = useUpdateGroup(editing ?? "");
   const dictionary = useDictionary();
 
   const [name, setName] = useState(groupname ?? "");
@@ -164,21 +169,32 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
     const close = (result: GroupDetail) => {
       if (result.warnings.length === 0) onClose();
     };
-    if (groupname) {
+    if (editing) {
       update.mutate(body, { onSuccess: close });
     } else {
       create.mutate(
         { ...body, check_attributes: currentChecks, reply_attributes: currentReplies },
-        { onSuccess: close },
+        {
+          onSuccess: (result) => {
+            // Die Gruppe ist angelegt, auch mit Warnung. Bliebe der Dialog im
+            // Anlegemodus, liefe der nächste Speichervorgang erneut in POST
+            // und scheiterte mit "group_exists".
+            if (result.warnings.length === 0) {
+              onClose();
+              return;
+            }
+            setCreated(result.groupname);
+          },
+        },
       );
     }
   };
 
-  const mutation = groupname ? update : create;
+  const mutation = editing ? update : create;
 
   return (
     <Modal
-      title={groupname ? `${t("common.edit")}: ${groupname}` : t("groups.new")}
+      title={editing ? `${t("common.edit")}: ${editing}` : t("groups.new")}
       onClose={onClose}
       footer={
         <>

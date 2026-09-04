@@ -69,6 +69,11 @@ def _lock_names(username: str, groups: list[MembershipIn]) -> list[str]:
     return [f"user:{username}", *(f"group:{g.groupname}" for g in groups)]
 
 
+def _locked_groups(names: list[str]) -> set[str]:
+    """Die Gruppennamen aus einer Sperrliste."""
+    return {name.removeprefix("group:") for name in names if name.startswith("group:")}
+
+
 class UserService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -211,13 +216,15 @@ class UserService:
         # zwischen Existenzpruefung und Schreiben geloescht worden, liesse die
         # neue radusergroup-Zeile sie als reine Mitgliedschaftsgruppe wieder
         # auferstehen.
-        async with named_lock(self.session, *_lock_names(payload.username, payload.groups)):
+        names = _lock_names(payload.username, payload.groups)
+        async with named_lock(self.session, *names):
             return await self._create_locked(
                 payload,
                 actor=actor,
                 actor_ip=actor_ip,
                 subject_type=subject_type,
                 language=language,
+                locked=_locked_groups(names),
             )
 
     async def _create_locked(
@@ -228,6 +235,7 @@ class UserService:
         actor_ip: str | None,
         subject_type: SubjectType,
         language: str,
+        locked: set[str],
     ) -> UserDetail:
         # Geprueft wird ueber alle RADIUS-Tabellen: in einer Bestandsinstallation
         # kann ein Name auch nur Antwortattribute oder Gruppen besitzen, die
@@ -259,7 +267,7 @@ class UserService:
         if payload.disabled:
             await self.attrs.set_check(payload.username, AUTH_TYPE, ":=", REJECT)
 
-        await self._set_memberships(payload.username, payload.groups)
+        await self._set_memberships(payload.username, payload.groups, locked)
 
         subject = MgrSubject(
             username=payload.username,
@@ -295,11 +303,22 @@ class UserService:
         language: str = "de",
     ) -> UserDetail:
         names = _lock_names(username, payload.groups or [])
+        if payload.groups is not None:
+            # Auch die Gruppen, die dabei *verlassen* werden: zwei gleichzeitige
+            # Aenderungen an verschiedenen Benutzern saehen sonst beide noch zwei
+            # Mitglieder und loeschten anschliessend beide - die attributlose
+            # Gruppe verschwaende trotz ``guard_last_membership``.
+            names += [f"group:{m.groupname}" for m in await self.groups.memberships(username)]
         if payload.username and payload.username != username:
             names.append(f"user:{payload.username}")
         async with named_lock(self.session, *names):
             return await self._update_locked(
-                username, payload, actor=actor, actor_ip=actor_ip, language=language
+                username,
+                payload,
+                actor=actor,
+                actor_ip=actor_ip,
+                language=language,
+                locked=_locked_groups(names),
             )
 
     async def _update_locked(
@@ -310,6 +329,7 @@ class UserService:
         actor: Principal,
         actor_ip: str | None,
         language: str,
+        locked: set[str],
     ) -> UserDetail:
         before = await self.get(username, language)
         subject = await self._ensure_subject(username)
@@ -348,7 +368,7 @@ class UserService:
             )
 
         if payload.groups is not None:
-            await self._set_memberships(username, payload.groups)
+            await self._set_memberships(username, payload.groups, locked)
 
         if payload.meta is not None:
             for key, value in payload.meta.model_dump(exclude_unset=True).items():
@@ -548,7 +568,9 @@ class UserService:
         )
         return subject
 
-    async def _set_memberships(self, username: str, groups: list[MembershipIn]) -> None:
+    async def _set_memberships(
+        self, username: str, groups: list[MembershipIn], locked: set[str]
+    ) -> None:
         """Setzt die Mitgliedschaften und prueft dabei die Gruppen.
 
         Das RADIUS-Schema kennt keine Fremdschluessel: ein Tippfehler wuerde
@@ -563,8 +585,14 @@ class UserService:
         # Eine entfernte Zuordnung darf keine attributlose Gruppe aufloesen.
         wanted = {g.groupname for g in groups}
         for current in await self.groups.memberships(username):
-            if current.groupname not in wanted:
-                await self.guard_last_membership(current.groupname, username)
+            if current.groupname in wanted:
+                continue
+            if current.groupname not in locked:
+                # Die Mitgliedschaft ist erst nach dem Setzen der Sperren
+                # entstanden. Ohne ihre Gruppensperre waere die Pruefung unten
+                # wertlos - deshalb abbrechen statt ungesichert zu loeschen.
+                raise ConflictError(code="error.busy", details={"groupname": current.groupname})
+            await self.guard_last_membership(current.groupname, username)
         await self.groups.set_memberships(username, [(g.groupname, g.priority) for g in groups])
 
     async def guard_last_membership(self, groupname: str, username: str) -> None:

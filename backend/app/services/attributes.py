@@ -13,6 +13,10 @@ from app.core import radius_dict
 from app.core.errors import ValidationError
 from app.core.i18n import translate
 
+MAX_RADIUS_INTEGER = 4_294_967_295
+"""Groesster ``integer``-Wert: RADIUS kodiert den Typ in vier Byte ohne
+Vorzeichen (RFC 2865, Abschnitt 5)."""
+
 
 @dataclass(slots=True)
 class AttributeWarning:
@@ -70,11 +74,27 @@ def validate_triple(
                 attribute=attribute,
             )
         )
-    elif info.value_type == "integer" and value and not value.lstrip("-").isdigit():
-        raise ValidationError(
-            code="error.validation",
-            details={"attribute": attribute, "expected": "integer", "value": value},
-        )
+    elif info.value_type == "integer" and value:
+        # RADIUS kodiert ``integer`` in vier Byte ohne Vorzeichen (RFC 2865).
+        # Ein groesserer oder negativer Wert liesse sich nicht kodieren; die
+        # Antwort scheiterte erst bei der Anmeldung.
+        try:
+            number = int(value, 10)
+        except ValueError as exc:
+            raise ValidationError(
+                code="error.validation",
+                details={"attribute": attribute, "expected": "integer", "value": value},
+            ) from exc
+        if not 0 <= number <= MAX_RADIUS_INTEGER:
+            raise ValidationError(
+                code="error.validation",
+                details={
+                    "attribute": attribute,
+                    "expected": "integer",
+                    "maximum": MAX_RADIUS_INTEGER,
+                    "value": value,
+                },
+            )
     elif info.value_type == "ipaddr" and value:
         try:
             # Ausdruecklich IPv4: ``ipaddr`` ist im RADIUS-Woerterbuch der

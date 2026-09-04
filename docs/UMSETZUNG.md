@@ -649,6 +649,29 @@ Die fünfundzwanzigste Runde:
   Gerätedetail, beide Anlegedialoge und die Sammelaktion bieten jetzt ein Feld
   für `radusergroup.priority`; bisher schrieb jedes Speichern den Wert 1 zurück.
 
+### Elfte Runde
+
+* **Das Ersetzen der Mitgliedschaften sperrt auch die verlassenen Gruppen.** Die
+  Sperrliste enthielt nur die Zielgruppen; zwei gleichzeitige Änderungen an
+  verschiedenen Benutzern sahen beide noch zwei Mitglieder und löschten dann
+  beide. Eine Mitgliedschaft, die erst nach dem Setzen der Sperren entsteht,
+  führt jetzt zu `error.busy` statt zu einer ungesicherten Löschung.
+* **`DeviceService.resolve` liefert die gespeicherte Schreibweise.** Die
+  Standardkollation vergleicht ohne Rücksicht auf Gross-/Kleinschreibung: bei
+  einem Aufruf mit `AA:BB:…` gab die Auflösung bisher die Schreibweise des
+  Aufrufers zurück, das Umbenennen erkannte danach nicht mehr, dass die MAC
+  zugleich das Passwort ist – MAB schlug fehl (FR-3).
+* **`integer`-Attribute sind auf den RADIUS-Wertebereich begrenzt** (vier Byte
+  ohne Vorzeichen, RFC 2865). Bisher wurde nur die Zeichenform geprüft.
+* **Der Gruppenname einer Sammelaktion ist begrenzt** wie in allen anderen
+  Schemas; ein überlanger Wert sprengte sonst die TEXT-Spalte des
+  Sammel-Audit-Eintrags – nach bereits ausgeführten Einzelaktionen.
+* **Eine mit Warnung angelegte Gruppe wechselt in den Bearbeitungsmodus.** Der
+  Dialog blieb offen, damit die Warnung lesbar bleibt; ein zweites Speichern
+  lief aber erneut als POST und scheiterte an `group_exists`.
+* **Das Profil bietet die TOTP-Einrichtung nicht mehr an, wenn der Faktor aktiv
+  ist.** Die Schaltfläche endete zwangsläufig mit `error.totp_already_enrolled`.
+
 ## Prüfschritte
 
 ```bash

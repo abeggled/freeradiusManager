@@ -268,3 +268,87 @@ async def test_cookie_domain_requires_configured_origins() -> None:
         Settings(cookie_domain=".example.org", allowed_origins=[], cors_origins=[])
 
     Settings(cookie_domain=".example.org", allowed_origins=["https://radius.example.org"])
+
+
+# --- Elfte Runde ----------------------------------------------------------
+
+
+async def test_membership_replacement_locks_the_groups_being_left(session, admin_principal) -> None:
+    """Sonst loeschten zwei Aufrufe gleichzeitig die letzten zwei Mitgliedschaften."""
+    import inspect
+
+    from app.schemas.groups import GroupCreate
+    from app.schemas.users import UserUpdate
+    from app.services.groups import GroupService
+
+    source = inspect.getsource(UserService.update)
+    assert "self.groups.memberships(username)" in source
+
+    groups = GroupService(session)
+    await groups.create(GroupCreate(groupname="alt", vlan="10"), actor=admin_principal)
+    await groups.create(GroupCreate(groupname="neu", vlan="20"), actor=admin_principal)
+
+    users = UserService(session)
+    await users.create(
+        UserCreate(
+            username="anna",
+            password="geheim123",
+            groups=[MembershipIn(groupname="alt", priority=3)],
+        ),
+        actor=admin_principal,
+    )
+    detail = await users.update(
+        "anna",
+        UserUpdate(groups=[MembershipIn(groupname="neu", priority=5)]),
+        actor=admin_principal,
+    )
+    assert [(m.groupname, m.priority) for m in detail.memberships] == [("neu", 5)]
+
+
+async def test_bulk_group_name_is_bounded() -> None:
+    """Ein ueberlanger Name sprengte die TEXT-Spalte des Sammel-Audit-Eintrags."""
+    from app.schemas.users import BulkAction
+
+    with pytest.raises(PydanticValidationError):
+        BulkAction(action="assign_group", usernames=["anna"], groupname="g" * 65)
+    with pytest.raises(PydanticValidationError):
+        BulkAction(action="assign_group", usernames=["anna"], groupname="a:b")
+
+    assert BulkAction(action="assign_group", usernames=["anna"], groupname="wlan").groupname
+
+
+async def test_device_resolution_returns_the_stored_spelling(session, admin_principal) -> None:
+    """Sonst erkennt das Umbenennen nicht mehr, dass die MAC das Passwort ist."""
+    from app.services.devices import DeviceService
+
+    service = DeviceService(session)
+    await service.create(DeviceCreate(mac="aa:bb:cc:dd:ee:ff"), actor=admin_principal)
+
+    assert await service.resolve("AA:BB:CC:DD:EE:FF") == "aa:bb:cc:dd:ee:ff"
+
+    # Und damit zieht die Umbenennung das Passwort weiterhin mit.
+    from app.schemas.users import DeviceUpdate
+
+    await service.update(
+        await service.resolve("AA:BB:CC:DD:EE:FF"),
+        DeviceUpdate(mac="11:22:33:44:55:66"),
+        actor=admin_principal,
+    )
+    password = await session.scalar(
+        select(RadCheck.value).where(
+            RadCheck.username == "11:22:33:44:55:66",
+            RadCheck.attribute == "Cleartext-Password",
+        )
+    )
+    assert password == "11:22:33:44:55:66"
+
+
+@pytest.mark.parametrize("value", ["4294967296", "-1", "1099511627776"])
+async def test_integer_attributes_stay_in_the_radius_range(value: str) -> None:
+    """RADIUS kodiert ``integer`` in vier Byte ohne Vorzeichen (RFC 2865)."""
+    from app.services.attributes import validate_triple
+
+    with pytest.raises(ValidationError):
+        validate_triple("Session-Timeout", ":=", value, table="radreply")
+
+    validate_triple("Session-Timeout", ":=", "4294967295", table="radreply")

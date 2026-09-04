@@ -247,6 +247,7 @@ export const en: Record<TranslationKey, string> = {
   "profile.currentPassword": "Current password",
   "profile.newPassword": "New password",
   "profile.setupTotp": "Set up TOTP",
+  "profile.totpAlreadyActive": "The second factor is active. Replacing it requires an administrator.",
   "profile.totpActive": "TOTP is active.",
 
   "import.title": "CSV import",

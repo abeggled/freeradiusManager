@@ -246,6 +246,7 @@ export const de = {
   "profile.currentPassword": "Aktuelles Passwort",
   "profile.newPassword": "Neues Passwort",
   "profile.setupTotp": "TOTP einrichten",
+  "profile.totpAlreadyActive": "Der zweite Faktor ist aktiv. Ein Ersatz erfolgt über einen Administrator.",
   "profile.totpActive": "TOTP ist aktiv.",
 
   "import.title": "CSV-Import",

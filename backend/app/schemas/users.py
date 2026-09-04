@@ -204,6 +204,15 @@ class BulkAction(BaseModel):
     )
     filter_all: bool = False
     action: Literal["disable", "enable", "delete", "assign_group", "remove_group", "set_expiry"]
-    groupname: str | None = None
+    groupname: str | None = Field(default=None, min_length=1, max_length=64)
     priority: int = Field(default=1, ge=0, le=10_000)
+
+    @field_validator("groupname")
+    @classmethod
+    def _check_groupname(cls, value: str | None) -> str | None:
+        # Ohne Grenze landete ein ueberlanger Wert im Sammel-Audit-Eintrag und
+        # sprengte die TEXT-Spalte - mit einem allgemeinen 500 nach bereits
+        # ausgefuehrten Einzelaktionen.
+        return None if value is None else validate_groupname(value)
+
     expires_at: dt.datetime | None = None

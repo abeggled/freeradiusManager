@@ -273,8 +273,19 @@ async def test_bulk_item_failure_does_not_poison_the_session(session, admin_prin
     for name in ("anna", "bruno"):
         await users.create(UserCreate(username=name, password="geheim123"), actor=admin_principal)
 
+    # Das Schema weist einen solchen Namen inzwischen selbst ab (zehnte Runde).
+    # Geprueft wird hier die Widerstandsfaehigkeit des Dienstes, deshalb wird die
+    # Anforderung direkt gebaut, ohne die Eingangsvalidierung.
+    payload = BulkAction.model_construct(
+        action="assign_group",
+        usernames=["anna", "bruno"],
+        filter_all=False,
+        groupname="g" * 200,
+        priority=1,
+        expires_at=None,
+    )
     requested, succeeded, errors = await ImportExportService(session).bulk(
-        BulkAction(action="assign_group", usernames=["anna", "bruno"], groupname="g" * 200),
+        payload,
         SubjectFilter(),
         actor=admin_principal,
     )

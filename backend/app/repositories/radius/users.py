@@ -52,6 +52,22 @@ class UserAttributeRepository:
                 return True
         return False
 
+    async def stored_username(self, username: str) -> str | None:
+        """Die tatsaechlich gespeicherte Schreibweise zu einem Namen.
+
+        Die Standardkollation von MariaDB vergleicht ohne Ruecksicht auf Gross-
+        und Kleinschreibung: ``exists_anywhere`` meldet dann Erfolg, waehrend der
+        Aufrufer mit seiner eigenen Schreibweise weiterarbeitet - und Vergleiche
+        gegen den gespeicherten Wert (etwa MAC gleich Passwort) scheitern.
+        """
+        for model in (RadCheck, RadReply, RadUserGroup):
+            found = await self.session.scalar(
+                select(model.username).where(model.username == username).limit(1)
+            )
+            if found is not None:
+                return str(found)
+        return None
+
     async def find_check(self, username: str, attribute: str) -> RadCheck | None:
         stmt = select(RadCheck).where(
             RadCheck.username == username, RadCheck.attribute == attribute

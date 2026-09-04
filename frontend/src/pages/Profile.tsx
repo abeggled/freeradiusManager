@@ -123,6 +123,11 @@ export function ProfilePage() {
                 {t("common.confirm")}
               </button>
             </>
+          ) : me.data.totp_enabled ? (
+            // Ein aktiver Faktor lässt sich nicht selbst ersetzen; das Backend
+            // weist die Einrichtung ab. Die Schaltfläche wäre also dauerhaft
+            // funktionslos – stattdessen wird der Zustand benannt.
+            <p className="hint">{t("profile.totpAlreadyActive")}</p>
           ) : (
             <button type="button" onClick={() => enroll.mutate()} disabled={enroll.isPending}>
               {t("profile.setupTotp")}

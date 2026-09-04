@@ -49,25 +49,37 @@ class DeviceService:
         # Die genaue Schreibweise des Aufrufers zuerst: liegen dieselbe MAC in
         # zwei Formaten vor, ist sonst nicht der gemeinte Datensatz gemeint.
         exact = mac.strip()
-        if exact and (
-            await self.users.attrs.exists_anywhere(exact) or await self.users.subjects.get(exact)
-        ):
-            return exact
+        if exact:
+            stored = await self._stored(exact)
+            if stored is not None:
+                return stored
 
         preferred = await self.normalise(mac)
-        if await self.users.attrs.exists_anywhere(preferred) or await self.users.subjects.get(
-            preferred
-        ):
-            return preferred
+        stored = await self._stored(preferred)
+        if stored is not None:
+            return stored
         for fmt in MAC_FORMATS:
             candidate = format_mac(mac, fmt)
             if candidate == preferred:
                 continue
-            if await self.users.attrs.exists_anywhere(candidate) or await self.users.subjects.get(
-                candidate
-            ):
-                return candidate
+            stored = await self._stored(candidate)
+            if stored is not None:
+                return stored
         return preferred
+
+    async def _stored(self, username: str) -> str | None:
+        """Die gespeicherte Schreibweise, nicht die des Aufrufers.
+
+        Die Kollation vergleicht ohne Ruecksicht auf Gross- und Kleinschreibung.
+        Gaebe man hier ``AA:BB:...`` zurueck, obwohl ``aa:bb:...`` gespeichert
+        ist, erkennte ``_rename`` beim Umbenennen nicht mehr, dass die MAC
+        zugleich das Passwort ist - MAB schluege danach fehl (FR-3).
+        """
+        found = await self.users.attrs.stored_username(username)
+        if found is not None:
+            return found
+        subject = await self.users.subjects.get(username)
+        return subject.username if subject is not None else None
 
     async def search(
         self, flt: SubjectFilter, limit: int = 50, offset: int = 0
