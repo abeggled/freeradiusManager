@@ -20,6 +20,11 @@ KEY_MAB_WARNING = "show_mab_warning"
 
 FALLBACK_MAC_FORMAT = "colon_lower"
 
+MAX_RETENTION_DAYS = 36_500
+"""Rund hundert Jahre. Groessere Werte lassen ``timedelta`` ueberlaufen; der
+Aufraeumjob scheiterte dann bei jedem Lauf, obwohl die API Erfolg gemeldet
+hat."""
+
 DEFAULTS: dict[str, Any] = {
     KEY_MAC_FORMAT: app_settings.default_mac_format,
     KEY_DEFAULT_CREDENTIAL: app_settings.default_credential_type,
@@ -81,7 +86,9 @@ class SettingsService:
             if key in (KEY_AUDIT_RETENTION, KEY_ACCT_RETENTION_HINT) and (
                 # ``bool`` ist in Python ein ``int``: ``True`` wuerde sonst als
                 # ein Tag gelesen und der Job loeschte fast das ganze Audit-Log.
-                isinstance(value, bool) or not isinstance(value, int) or value < 1
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not 1 <= value <= MAX_RETENTION_DAYS
             ):
                 raise ValidationError(code="error.validation", details={"key": key})
             await self.repo.set(key, value, updated_by)

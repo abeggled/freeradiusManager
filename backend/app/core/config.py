@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     default_credential_type: CredentialType = "both"
     # Wie bei der Einstellung in der Datenbank: 0 oder negativ liesse den
     # Hintergrundjob das gesamte Audit-Log loeschen.
-    audit_retention_days: int = Field(default=730, ge=1)
+    audit_retention_days: int = Field(default=730, ge=1, le=36_500)
     default_language: Literal["de", "en"] = "de"
 
     # --- Erstinbetriebnahme ---------------------------------------------

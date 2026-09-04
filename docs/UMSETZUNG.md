@@ -1,6 +1,6 @@
 # Umsetzungsstand zur Spezifikation v0.1
 
-Stand: 2026-09-03. Diese Datei ordnet die Anforderungen der
+Stand: 2026-09-04. Diese Datei ordnet die Anforderungen der
 [Spezifikation](SPEZIFIKATION.md) dem umgesetzten Code zu und hält die
 getroffenen Entscheidungen fest.
 
@@ -578,7 +578,7 @@ Die fünfundzwanzigste Runde:
   Mitglieder. Mitgliedschaften darf er weiterhin pflegen (Abschnitt 2).
 * **Der Compose-Stapel trennt die Datenbankkonten.** FreeRADIUS bekommt ein
   eigenes Konto mit Rechten nur auf die RADIUS-Tabellen; die `mgr_`-Tabellen
-  sieht es nicht mehr (`docker/radius-grants.sql`, gegen den laufenden Stapel
+  sieht es nicht mehr (`docker/radius-grants.sh`, gegen den laufenden Stapel
   geprüft).
 * Benannte Sperren laufen über einen eigenen Verbindungspool, damit sie die
   Abfragen der Anfragen nicht aushungern.
@@ -588,6 +588,35 @@ Die fünfundzwanzigste Runde:
 * Mitgliedschaftslisten sind begrenzt.
 * Die Oberfläche bietet alle vier Statusfilter, eine Bedienoberfläche für die
   OIDC-Verknüpfung und verwirft ein angezeigtes NAS-Secret beim Löschen.
+
+### Neunte Runde
+
+* **Der Compose-Stapel legt das FreeRADIUS-Konto mit den konfigurierten
+  Zugangsdaten an.** Die Rechtevergabe war fest auf `freeradius`/`freeradius`
+  verdrahtet, während Compose `RADIUS_DB_USER`/`RADIUS_DB_PASSWORD` an den
+  Dienst reichte – mit der `.env.example` konnte FreeRADIUS sich nicht anmelden.
+  Aus der `.sql` wurde `docker/radius-grants.sh`, das Benutzer, Passwort und
+  Datenbankname aus der Umgebung übernimmt und für SQL maskiert (gegen den
+  laufenden Stapel mit abweichenden Zugangsdaten samt Anführungszeichen im
+  Passwort geprüft).
+* **Sperren und Entsperren halten dieselbe Lebenszyklus-Sperre wie Löschen.**
+  Sonst konnte ein gleichzeitiges Löschen dazwischentreten und der Benutzer
+  stand anschließend als reine `Auth-Type := Reject`-Zeile wieder da.
+* **Die Gruppenseite verlangt jetzt Administratorrechte.** Seit der achten Runde
+  setzt das Backend dafür `AdminUser` durch; die Oberfläche bot einem Operator
+  weiterhin Schaltflächen an, die zwangsläufig mit 403 endeten.
+* **Der Filter auf `Called-Station-Id` vergleicht exakt** statt mit beidseitiger
+  Wildcard. Die Spalte trägt im FreeRADIUS-Schema keinen Index, das wir nicht
+  ändern; die alte Form las bei jeder Abfrage die ganze `radacct` (NFR-2). Die
+  SSID ist laut Spezifikation ein Anzeigewert, kein Filter.
+* Die Diagnose meldet den NAS-Kurznamen der letzten Session – bisher zeigte sie
+  als einzige Ansicht die rohe Adresse.
+* Aufbewahrungsfristen haben eine Obergrenze (36 500 Tage). Größere Werte ließen
+  `timedelta` überlaufen: die API meldete Erfolg, der Aufräumjob scheiterte
+  danach bei jedem Lauf.
+* `nas.ports` ist auf den Wertebereich der Spalte begrenzt und die
+  Gruppenliste beim Anlegen eines Geräts auf dieselbe Länge wie überall sonst –
+  beides scheiterte vorher erst beim Schreiben, mit einem allgemeinen 500.
 
 ## Prüfschritte
 

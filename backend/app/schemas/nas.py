@@ -8,6 +8,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 MASKED_SECRET = "********"
 
+MAX_NAS_PORTS = 2_147_483_647
+"""Obergrenze der Spalte ``nas.ports`` (signed INTEGER)."""
+
 MAX_COA_SECRET_BYTES = 200
 """Obergrenze in UTF-8-Bytes.
 
@@ -41,7 +44,9 @@ class NasCreate(BaseModel):
     nasname: str = Field(min_length=1, max_length=128)
     shortname: str | None = Field(default=None, max_length=32)
     type: str = Field(default="other", max_length=30)
-    ports: int | None = None
+    # Wertebereich der Spalte (signed INTEGER); ohne Grenze scheiterte erst der
+    # Datenbankschreibvorgang, mit einem allgemeinen 500 statt einer Meldung.
+    ports: int | None = Field(default=None, ge=0, le=MAX_NAS_PORTS)
     secret: str = Field(min_length=1, max_length=60)
     server: str | None = Field(default=None, max_length=64)
     community: str | None = Field(default=None, max_length=50)
@@ -68,7 +73,7 @@ class NasUpdate(BaseModel):
     nasname: str | None = Field(default=None, max_length=128)
     shortname: str | None = Field(default=None, max_length=32)
     type: str | None = Field(default=None, max_length=30)
-    ports: int | None = None
+    ports: int | None = Field(default=None, ge=0, le=MAX_NAS_PORTS)
     secret: str | None = Field(default=None, max_length=60)
     server: str | None = Field(default=None, max_length=64)
     community: str | None = Field(default=None, max_length=50)

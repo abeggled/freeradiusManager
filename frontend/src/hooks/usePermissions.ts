@@ -7,6 +7,8 @@ export interface Permissions {
   canWrite: boolean;
   /** NAS-Clients und Shared Secrets sind Administratoren vorbehalten. */
   canManageNas: boolean;
+  /** Gruppen wirken auf alle Mitglieder; das Backend verlangt Administrator. */
+  canManageGroups: boolean;
   isAdmin: boolean;
 }
 
@@ -22,6 +24,7 @@ export function usePermissions(): Permissions {
     role,
     canWrite: role === "administrator" || role === "operator",
     canManageNas: role === "administrator",
+    canManageGroups: role === "administrator",
     isAdmin: role === "administrator",
   };
 }

@@ -221,6 +221,9 @@ class AuthLogService:
             last_session = SessionItem.model_validate(last_session_row)
             last_session.active = last_session_row.acctstoptime is None
             last_session.ssid = extract_ssid(last_session_row.calledstationid)
+            # Wie in der Sessionliste: ohne den Kurznamen zeigte die Diagnose
+            # als einzige Ansicht nur die rohe Adresse.
+            last_session.nas_shortname = known_nas.shortname if known_nas is not None else None
 
         attempt_items = []
         for row in recent:

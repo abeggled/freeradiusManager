@@ -19,13 +19,17 @@ services:
       MARIADB_DATABASE: ${DB_NAME:-radius}
       MARIADB_USER: ${DB_USER:-radmgr}
       MARIADB_PASSWORD: ${DB_PASSWORD:-radmgr}
+      # Vom Init-Skript gelesen; muss zum FreeRADIUS-Dienst unten passen.
+      RADIUS_DB_USER: ${RADIUS_DB_USER:-freeradius}
+      RADIUS_DB_PASSWORD: ${RADIUS_DB_PASSWORD:-freeradius}
     volumes:
       - db-data:/var/lib/mysql
       # Legt das RADIUS-Schema beim ersten Start an. In einer bestehenden
       # Installation entfaellt dieser Mount.
       - ./docker/radius-schema.sql:/docker-entrypoint-initdb.d/10-radius-schema.sql:ro
-      # Eigenes, eng berechtigtes Konto fuer FreeRADIUS (NFR-1).
-      - ./docker/radius-grants.sql:/docker-entrypoint-initdb.d/20-radius-grants.sql:ro
+      # Eigenes, eng berechtigtes Konto fuer FreeRADIUS (NFR-1). Als Skript,
+      # damit dieselben Zugangsdaten wie im FreeRADIUS-Dienst verwendet werden.
+      - ./docker/radius-grants.sh:/docker-entrypoint-initdb.d/20-radius-grants.sh:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s

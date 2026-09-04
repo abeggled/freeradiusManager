@@ -366,6 +366,20 @@ class UserService:
         actor_ip: str | None = None,
     ) -> None:
         """Sperren/Entsperren. Der uebrige Zustand bleibt unangetastet (FR-1)."""
+        # Unter derselben Sperre wie Loeschen und Passwortwechsel: sonst koennte
+        # ein gleichzeitiges Loeschen dazwischentreten und dieser Vorgang legte
+        # den Benutzer anschliessend als reine Reject-Zeile neu an.
+        async with named_lock(self.session, f"user:{username}"):
+            await self._set_disabled_locked(username, disabled, actor=actor, actor_ip=actor_ip)
+
+    async def _set_disabled_locked(
+        self,
+        username: str,
+        disabled: bool,
+        *,
+        actor: Principal,
+        actor_ip: str | None,
+    ) -> None:
         if not await self.attrs.exists_anywhere(username) and not await self.subjects.get(username):
             raise NotFoundError(code="error.not_found", details={"username": username})
         subject = await self._ensure_subject(username)

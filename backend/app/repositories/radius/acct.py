@@ -91,7 +91,11 @@ class AccountingRepository:
             # einer Abfrage ohne jede Einschraenkung werden.
             conditions.append(or_(*matches) if matches else false())
         if flt.called_station_id:
-            conditions.append(RadAcct.calledstationid.like(f"%{flt.called_station_id}%"))
+            # Exakter Vergleich wie bei ``calling_station_id``. Eine beidseitige
+            # Wildcard schloss jede Indexnutzung aus und lief ueber die ganze
+            # ``radacct`` (NFR-2); die SSID ist laut Spezifikation ein
+            # Anzeigewert, kein Filter.
+            conditions.append(RadAcct.calledstationid == flt.called_station_id)
         if flt.framed_ip_address:
             conditions.append(RadAcct.framedipaddress == flt.framed_ip_address)
         if flt.terminate_cause:

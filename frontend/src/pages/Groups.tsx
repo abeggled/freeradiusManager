@@ -23,7 +23,7 @@ const VLAN_ATTRIBUTES = new Set([
 
 export function GroupsPage() {
   const { t } = useI18n();
-  const { canWrite } = usePermissions();
+  const { canManageGroups } = usePermissions();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -38,7 +38,7 @@ export function GroupsPage() {
     <section>
       <header className="page-header">
         <h1>{t("groups.title")}</h1>
-        {canWrite ? (
+        {canManageGroups ? (
           <button type="button" className="primary" onClick={() => setShowCreate(true)}>
             {t("groups.new")}
           </button>
@@ -74,7 +74,7 @@ export function GroupsPage() {
                   <td>{group.vlan ?? "–"}</td>
                   <td>{group.members}</td>
                   <td className="row-actions">
-                    {canWrite ? (
+                    {canManageGroups ? (
                       <>
                         <button type="button" onClick={() => setSelected(group.groupname)}>
                           {t("common.edit")}

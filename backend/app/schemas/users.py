@@ -182,7 +182,7 @@ class DeviceCreate(BaseModel):
     use_mac_as_password: bool = True
     password: str | None = Field(default=None, max_length=253)
     expires_at: dt.datetime | None = None
-    groups: list[MembershipIn] = Field(default_factory=list)
+    groups: list[MembershipIn] = Field(default_factory=list, max_length=MAX_MEMBERSHIPS)
     vlan: str | None = Field(default=None, max_length=64)
     meta: SubjectMeta = Field(default_factory=SubjectMeta)
     disabled: bool = False
