@@ -561,9 +561,7 @@ class ImportExportService:
                     wanted = {fold(g.groupname) for g in parsed.groups}
                     for current in await self.users.groups.memberships(username):
                         if fold(current.groupname) not in wanted:
-                            await self.users.guard_last_membership(
-                                current.groupname, username
-                            )
+                            await self.users.guard_last_membership(current.groupname, username)
 
                 if not dry_run:
                     # Erst schreiben, dann zaehlen: ein von der Datenbank
@@ -811,9 +809,7 @@ class ImportExportService:
                     # Das eigene Datum, nicht das wirksame: ein Reimport machte
                     # aus einer Gruppenfrist sonst eine eigene, die sich mit der
                     # Gruppe nicht mehr aendern liesse.
-                    "expires_at": (
-                        item.own_expires_at.isoformat() if item.own_expires_at else ""
-                    ),
+                    "expires_at": (item.own_expires_at.isoformat() if item.own_expires_at else ""),
                     "credential_type": item.credential_type.value if item.credential_type else "",
                 }
             )

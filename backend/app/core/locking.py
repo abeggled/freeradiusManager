@@ -89,9 +89,7 @@ async def named_lock(session: AsyncSession, *names: str) -> AsyncIterator[None]:
             # festgeschriebenen Stand des anderen sonst nicht - beide Pruefungen
             # gingen durch und beide schrieben. Ein Rollback verwirft nur den
             # Lesestand; anstehende Aenderungen gibt es an dieser Stelle nicht.
-            if session.in_transaction() and not (
-                session.new or session.dirty or session.deleted
-            ):
+            if session.in_transaction() and not (session.new or session.dirty or session.deleted):
                 await session.rollback()
             yield
         finally:

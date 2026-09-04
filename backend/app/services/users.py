@@ -65,6 +65,7 @@ def is_reject(value: str) -> bool:
     """
     return value.strip().casefold() == REJECT.casefold()
 
+
 CREDENTIAL_ATTRIBUTES = {
     CredentialType.CLEARTEXT: ("Cleartext-Password",),
     CredentialType.NT: ("NT-Password",),
@@ -190,9 +191,7 @@ class UserService:
                         by_user.get(key, []), key=lambda m: (m.priority, m.groupname)
                     ),
                     status=self._status(user_checks, effective_group_checks),
-                    expires_at=self._expiry(
-                        [*user_checks, *effective_group_checks], subject
-                    ),
+                    expires_at=self._expiry([*user_checks, *effective_group_checks], subject),
                     own_expires_at=self._expiry(user_checks, subject),
                     vlan=_vlan_of(replies_by_user.get(key, [])),
                     disabled=any(
@@ -1045,9 +1044,7 @@ class UserService:
         ]
 
     @staticmethod
-    def _status(
-        checks: Sequence[RadCheck], group_checks: Sequence[Any] = ()
-    ) -> UserStatus:
+    def _status(checks: Sequence[RadCheck], group_checks: Sequence[Any] = ()) -> UserStatus:
         """Status eines Subjekts aus seinen wirksamen Check-Attributen.
 
         Mehrfach vorhandene ``Auth-Type``- oder ``Expiration``-Zeilen kommen in
@@ -1062,8 +1059,7 @@ class UserService:
         """
         effective = [*checks, *group_checks]
         if any(
-            row.attribute.lower() == AUTH_TYPE.lower() and is_reject(row.value)
-            for row in effective
+            row.attribute.lower() == AUTH_TYPE.lower() and is_reject(row.value) for row in effective
         ):
             return "disabled"
         now = utcnow()

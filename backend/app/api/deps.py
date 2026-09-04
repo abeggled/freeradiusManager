@@ -190,9 +190,7 @@ async def current_principal(request: Request, response: Response, session: Sessi
     # erreicht nur den Browser; eine zuvor kopierte Kennung waere sonst bis zur
     # absoluten Gueltigkeit weiter brauchbar (FR-10).
     if await SessionRevocationRepository(session).is_revoked(claims.session_id):
-        raise AuthenticationError(
-            code="error.unauthenticated", details={"reason": "logged_out"}
-        )
+        raise AuthenticationError(code="error.unauthenticated", details={"reason": "logged_out"})
     # Bei OIDC verantwortet der Identity-Provider den zweiten Faktor - aber nur,
     # wenn das Token ihn belegt hat (``mfa``). Sonst gilt die lokale Pflicht.
     if (

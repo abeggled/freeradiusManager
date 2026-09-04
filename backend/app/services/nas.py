@@ -214,9 +214,7 @@ class NasService:
         async with named_lock(self.session, f"nas:{nas_id}"):
             await self._delete_locked(nas_id, actor=actor, actor_ip=actor_ip)
 
-    async def _delete_locked(
-        self, nas_id: int, *, actor: Principal, actor_ip: str | None
-    ) -> None:
+    async def _delete_locked(self, nas_id: int, *, actor: Principal, actor_ip: str | None) -> None:
         row = await self.repo.get(nas_id)
         if row is None:
             raise NotFoundError(code="error.not_found", details={"id": nas_id})

@@ -88,9 +88,7 @@ class PostAuthRepository:
         result["accepts"] = sum(v for k, v in result.items() if is_accept(k))
         # Dieselbe Vergleichsform wie oben: sonst zaehlte ``access-accept``
         # zugleich als Annahme und als Ablehnung.
-        result["rejects"] = sum(
-            v for k, v in result.items() if not is_accept(k) and k != "accepts"
-        )
+        result["rejects"] = sum(v for k, v in result.items() if not is_accept(k) and k != "accepts")
         return result
 
     async def unknown_subjects(self, since: dt.datetime, limit: int = 50) -> list[tuple[str, int]]:

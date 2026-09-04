@@ -331,9 +331,7 @@ class AccountService:
         """
         async with named_lock(self.session, f"account-totp:{account.id}"):
             await self.session.refresh(account)
-            return await self._start_totp_enrollment_locked(
-                account, actor=actor, actor_ip=actor_ip
-            )
+            return await self._start_totp_enrollment_locked(account, actor=actor, actor_ip=actor_ip)
 
     async def _start_totp_enrollment_locked(
         self, account: MgrAccount, *, actor: Principal | None, actor_ip: str | None

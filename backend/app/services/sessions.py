@@ -18,9 +18,7 @@ from app.repositories.radius.acct import AccountingRepository, SessionFilter
 from app.repositories.radius.nas import NasRepository
 from app.schemas.sessions import SessionItem
 
-_BSSID_PREFIX = re.compile(
-    r"^(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}[:-]|^[0-9A-Fa-f]{12}[:-]"
-)
+_BSSID_PREFIX = re.compile(r"^(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}[:-]|^[0-9A-Fa-f]{12}[:-]")
 """Fuehrende BSSID in den ueblichen Schreibweisen, samt Trennzeichen."""
 
 

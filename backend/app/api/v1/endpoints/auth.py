@@ -167,9 +167,7 @@ async def enroll_totp(payload: TotpEnrollRequest, session: SessionDep) -> TotpSe
     if not payload.challenge:
         raise ValidationError(code="error.validation", details={"field": "challenge"})
     service = AccountService(session)
-    account, _ = await service.account_from_challenge(
-        payload.challenge, scope=TOTP_ENROLL_SCOPE
-    )
+    account, _ = await service.account_from_challenge(payload.challenge, scope=TOTP_ENROLL_SCOPE)
     return await service.start_totp_enrollment(account)
 
 
@@ -186,9 +184,7 @@ async def confirm_totp(
         payload.challenge, scope=TOTP_ENROLL_SCOPE
     )
     login_limiter.check(f"totp:{account.id}")
-    await service.confirm_totp(
-        account, payload.totp_code, actor_ip=actor_ip, issued_at=verified_at
-    )
+    await service.confirm_totp(account, payload.totp_code, actor_ip=actor_ip, issued_at=verified_at)
     login_limiter.reset(f"totp:{account.id}")
     # Auch der Einrichtungsweg ist eine vollstaendige Anmeldung: der
     # zurueckgehaltene Fehlerzaehler wird jetzt geleert.
@@ -198,9 +194,7 @@ async def confirm_totp(
     # daran nicht scheitern. Eine gleichzeitige Passwortaenderung faellt
     # weiterhin auf, weil ``password_changed_at`` unberuehrt bleibt.
     if account.totp_changed_at is not None:
-        verified_at = max(
-            verified_at, account.totp_changed_at.replace(tzinfo=dt.UTC).timestamp()
-        )
+        verified_at = max(verified_at, account.totp_changed_at.replace(tzinfo=dt.UTC).timestamp())
     _issue_session(response, account, mfa=True, verified_at=verified_at)
     return LoginResponse(status="authenticated", account=AccountOut.model_validate(account))
 
@@ -225,9 +219,7 @@ async def logout(
             await SessionRevocationRepository(session).revoke(
                 claims.session_id,
                 claims.account_id,
-                dt.datetime.fromtimestamp(claims.absolute_expiry, tz=dt.UTC).replace(
-                    tzinfo=None
-                ),
+                dt.datetime.fromtimestamp(claims.absolute_expiry, tz=dt.UTC).replace(tzinfo=None),
             )
             # Ohne Eintrag liesse sich ein ausdrueckliches Abmelden nicht vom
             # Ablauf oder einem administrativen Entzug unterscheiden (FR-9).
@@ -400,11 +392,7 @@ async def oidc_callback(
     # zweiten Faktor belegt - sonst umginge ein Provider mit reiner
     # Passwortanmeldung die Pflicht fuer Administratoren (FR-10).
     provider_mfa = provider_confirmed_mfa(claims)
-    if (
-        Role(mapped) is Role.ADMINISTRATOR
-        and settings.require_totp_for_admin
-        and not provider_mfa
-    ):
+    if Role(mapped) is Role.ADMINISTRATOR and settings.require_totp_for_admin and not provider_mfa:
         raise AuthenticationError(
             code="error.reauthentication_required", details={"stage": "mfa_required"}
         )
