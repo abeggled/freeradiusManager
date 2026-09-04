@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dates import from_expiration, to_expiration
 from app.core.errors import NotFoundError, ValidationError
+from app.core.locking import named_lock
 from app.core.mac import is_mac
 from app.core.security import Principal
 from app.models.mgr import CredentialType, SubjectType
@@ -79,8 +80,22 @@ EXPORT_COLUMNS = (
 )
 
 
+TRUE_VALUES = frozenset({"1", "true", "ja", "yes", "y", "wahr"})
+FALSE_VALUES = frozenset({"0", "false", "nein", "no", "n", "falsch"})
+
+
 def _parse_bool(value: str | None) -> bool:
-    return str(value or "").strip().lower() in {"1", "true", "ja", "yes", "y", "wahr"}
+    """Liest einen Wahrheitswert streng.
+
+    Alles Unbekannte als "falsch" zu lesen waere gefaehrlich: aus einem
+    Tippfehler wie ``disabled=treu`` wuerde ein stillschweigendes Entsperren.
+    """
+    text = str(value or "").strip().lower()
+    if text in TRUE_VALUES:
+        return True
+    if text in FALSE_VALUES or not text:
+        return False
+    raise ValidationError(code="error.validation", details={"disabled": value})
 
 
 def _parse_date(value: str | None) -> dt.datetime | None:
@@ -484,12 +499,22 @@ class ImportExportService:
 
         subject_type = SubjectType.DEVICE if kind == "device" else SubjectType.USER
         await self.users.subjects.ensure(parsed.username, subject_type)
+        # Ein neues Passwort wird vor der Typumstellung geschrieben: der Wechsel
+        # zu einem Typ mit Klartext liesse sich sonst aus dem alten NT-Hash nicht
+        # ableiten und die Zeile scheiterte, obwohl die Vorschau sie zuliess.
+        if parsed.password:
+            await self.users.set_password(
+                parsed.username,
+                PasswordSet(password=parsed.password, credential_type=parsed.credential_type),
+                actor=actor,
+                actor_ip=actor_ip,
+            )
         await self.users.update(
             parsed.username,
             UserUpdate(
                 # Der Credential-Typ wird mitgefuehrt: sonst bliebe eine Zeile,
                 # die nur ihn aendert, ohne jede Wirkung.
-                credential_type=parsed.credential_type,
+                credential_type=parsed.credential_type if not parsed.password else None,
                 expires_at=parsed.expires_at,
                 # Vorhandene, aber leere Zelle: ausdruecklich loeschen.
                 clear_expiry=parsed.expiry_supplied and parsed.expires_at is None,
@@ -502,13 +527,6 @@ class ImportExportService:
             actor_ip=actor_ip,
             language=language,
         )
-        if parsed.password:
-            await self.users.set_password(
-                parsed.username,
-                PasswordSet(password=parsed.password, credential_type=parsed.credential_type),
-                actor=actor,
-                actor_ip=actor_ip,
-            )
         if "disabled" in parsed.supplied:
             await self.users.set_disabled(
                 parsed.username, parsed.disabled, actor=actor, actor_ip=actor_ip
@@ -699,7 +717,8 @@ class ImportExportService:
                     raise NotFoundError(code="error.not_found", details={"username": username})
                 if not await self.users.groups.exists(groupname):
                     raise NotFoundError(code="error.not_found", details={"groupname": groupname})
-                await self.users.groups.add_membership(username, groupname, payload.priority)
+                async with named_lock(self.session, f"members:{groupname}"):
+                    await self.users.groups.add_membership(username, groupname, payload.priority)
             else:
                 await self.users.groups.remove_membership(username, groupname)
             await self.audit.log(

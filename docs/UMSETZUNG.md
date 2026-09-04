@@ -75,8 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Siebzehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
-12, 11, 10, 10, 9, 9, 11, 12, 10, 8 und 11 Befunde;
+Achtzehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
+12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11 und 8 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
@@ -459,6 +459,25 @@ Die siebzehnte Runde:
 * Geräte-Schemas, CoA-Secrets (nach Bytes) und Notizen sind begrenzt; ein
   abgelaufener Download führt zur Anmeldemaske; ein angezeigtes NAS-Secret wird
   nach dem Speichern verworfen.
+
+Die achtzehnte Runde (keine P1-Befunde):
+
+* Die Freigabe der benannten Sperre ist parametrisiert – ein Gruppenname wie
+  `O'Reilly` erzeugte sonst ungültiges SQL, nachdem die Änderung bereits
+  festgeschrieben war.
+* Der Bootstrap prüft zuerst, ob überhaupt ein Konto entstehen soll; ein
+  inzwischen unbenutzter Platzhalter blockierte sonst den Start.
+* Rate-Limits müssen positiv sein, sonst schlüge jede Anmeldung fehl.
+* Die Diagnose bewertet wie die Liste alle `Auth-Type`- und
+  `Expiration`-Zeilen.
+* Ein unbekannter Wahrheitswert im CSV ist ein Fehler, statt als „nicht
+  gesperrt“ gelesen zu werden; ein Import mit Passwort *und* Typwechsel schreibt
+  erst das Passwort.
+* Sammelaktionen legen Mitgliedschaften unter derselben Sperre an wie die
+  Gruppenverwaltung.
+* `radacctid` und die Auth-Log-ID werden als Zeichenkette ausgeliefert: als
+  JavaScript-Zahl verlören BIGINT-Werte an Genauigkeit und die Oberfläche
+  spräche eine benachbarte Session an.
 
 ## Prüfschritte
 

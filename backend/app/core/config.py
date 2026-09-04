@@ -64,16 +64,18 @@ class Settings(BaseSettings):
     Adressen umgehen (NFR-1).
     """
 
-    login_rate_limit: int = 10
-    login_rate_window_seconds: int = 300
-    login_ip_rate_limit: int = 30
+    # Positive Werte erzwungen: bei 0 waere jede Anmeldung sofort "ueber dem
+    # Limit" und der Zaehler liefe auf einen leeren Puffer.
+    login_rate_limit: int = Field(default=10, ge=1)
+    login_rate_window_seconds: int = Field(default=300, ge=1)
+    login_ip_rate_limit: int = Field(default=30, ge=1)
     """Obergrenze je Absender-IP, unabhaengig vom genannten Benutzernamen.
 
     Ohne sie liesse sich das Limit umgehen, indem fuer jeden Versuch ein neuer
     Benutzername angegeben wird (Password Spraying).
     """
-    coa_rate_limit: int = 30
-    coa_rate_window_seconds: int = 60
+    coa_rate_limit: int = Field(default=30, ge=1)
+    coa_rate_window_seconds: int = Field(default=60, ge=1)
 
     # --- OIDC (optional, FR-10) -----------------------------------------
     oidc_enabled: bool = False

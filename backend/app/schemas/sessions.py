@@ -4,13 +4,20 @@ from __future__ import annotations
 
 import datetime as dt
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class SessionItem(BaseModel):
+    """Eine Accounting-Zeile.
+
+    ``radacctid`` ist ein BIGINT und wird als Zeichenkette ausgeliefert:
+    JavaScript verlaert oberhalb von 2^53 an Genauigkeit und der Client wuerde
+    eine benachbarte Session ansprechen.
+    """
+
     model_config = ConfigDict(from_attributes=True)
 
-    radacctid: int
+    radacctid: str
     acctsessionid: str
     acctuniqueid: str
     username: str
@@ -31,15 +38,27 @@ class SessionItem(BaseModel):
     ssid: str | None = None
     nas_shortname: str | None = None
 
+    @field_validator("radacctid", mode="before")
+    @classmethod
+    def _as_text(cls, value: object) -> str:
+        return str(value)
+
 
 class AuthLogItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    id: str
+    """Ebenfalls BIGINT - siehe ``SessionItem.radacctid``."""
+
     username: str
     reply: str
     authdate: dt.datetime
     accepted: bool = False
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _as_text(cls, value: object) -> str:
+        return str(value)
 
 
 class DiagnosisHint(BaseModel):

@@ -54,7 +54,21 @@ class AuthLogService:
         meta = await self.subjects.get(subject)
 
         hints: list[DiagnosisHint] = []
-        by_name = {row.attribute.lower(): row for row in checks}
+        # Wie in der Statusberechnung: bewertet wird, ob *irgendeine* Zeile
+        # zutrifft. Bestandsdaten koennen dasselbe Attribut mehrfach fuehren.
+        rejected = any(
+            row.attribute.lower() == "auth-type" and row.value == "Reject" for row in checks
+        )
+        expired_row = next(
+            (
+                row
+                for row in checks
+                if row.attribute.lower() == "expiration"
+                and (parsed := from_expiration(row.value)) is not None
+                and parsed < utcnow()
+            ),
+            None,
+        )
         # Eine reine Gruppenzuordnung zaehlt ebenfalls: solche Bestandsnamen
         # sind sichtbar und aufrufbar, die Diagnose darf sie nicht als
         # unbekannt melden.
@@ -71,10 +85,8 @@ class AuthLogService:
             )
             status = "missing"
         else:
-            auth_type = by_name.get("auth-type")
-            expiration = by_name.get("expiration")
             has_password = any(radius_dict.is_password_attribute(row.attribute) for row in checks)
-            if auth_type is not None and auth_type.value == "Reject":
+            if rejected:
                 status = "disabled"
                 hints.append(
                     DiagnosisHint(
@@ -83,17 +95,13 @@ class AuthLogService:
                         severity="error",
                     )
                 )
-            elif (
-                expiration is not None
-                and (parsed := from_expiration(expiration.value)) is not None
-                and parsed < utcnow()
-            ):
+            elif expired_row is not None:
                 status = "expired"
                 hints.append(
                     DiagnosisHint(
                         code="diag.expired",
                         message=translate(
-                            "diag.expired", language, subject=subject, expires=expiration.value
+                            "diag.expired", language, subject=subject, expires=expired_row.value
                         ),
                         severity="error",
                     )

@@ -502,14 +502,17 @@ class AccountService:
         Kontenverwaltung: ein Platzhalter aus der Umgebung waere sonst ein
         vollwertiger Administratorzugang mit ratbarem Passwort.
         """
-        if len(password) < MIN_PASSWORD_LENGTH:
-            raise ValidationError(
-                code="error.password_too_short", details={"minimum": MIN_PASSWORD_LENGTH}
-            )
+        # Zuerst pruefen, ob ueberhaupt ein Konto entstehen soll: sonst
+        # verhinderte ein inzwischen unbenutzter Platzhalter in der Umgebung den
+        # Start einer laengst eingerichteten Instanz.
         if await self.repo.count_active_administrators() > 0:
             return None
         if await self.repo.get_by_username(username) is not None:
             return None
+        if len(password) < MIN_PASSWORD_LENGTH:
+            raise ValidationError(
+                code="error.password_too_short", details={"minimum": MIN_PASSWORD_LENGTH}
+            )
         account = MgrAccount(
             username=username,
             role=Role.ADMINISTRATOR,

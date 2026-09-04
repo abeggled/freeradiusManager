@@ -149,7 +149,13 @@ class CoAService:
     async def _resolve_session(self, payload: CoARequest) -> Any:
         row = None
         if payload.radacctid:
-            row = await self.acct.get(payload.radacctid)
+            try:
+                radacctid = int(payload.radacctid)
+            except ValueError as exc:
+                raise ValidationError(
+                    code="error.validation", details={"radacctid": payload.radacctid}
+                ) from exc
+            row = await self.acct.get(radacctid)
         elif payload.acctuniqueid:
             row = await self.acct.get_by_unique_id(payload.acctuniqueid)
         elif payload.username:

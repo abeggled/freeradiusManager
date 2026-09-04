@@ -88,7 +88,8 @@ class SecretReveal(BaseModel):
 class CoARequest(BaseModel):
     action: Literal["disconnect", "coa"] = "disconnect"
     acctuniqueid: str | None = None
-    radacctid: int | None = None
+    radacctid: str | None = Field(default=None, max_length=32)
+    """BIGINT als Zeichenkette - siehe ``SessionItem.radacctid``."""
     username: str | None = None
     vlan: str | None = None
     """Nur fuer ``action = coa``: neue VLAN-Zuweisung."""

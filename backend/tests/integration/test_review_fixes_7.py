@@ -1346,3 +1346,118 @@ async def test_multibyte_coa_secret_is_bounded() -> None:
 
     with pytest.raises(PydanticValidationError):
         NasCreate(nasname="10.0.0.1", secret="s", coa_secret="🔐" * 200)
+
+
+# --- Achtzehnte Runde ------------------------------------------------------
+
+
+async def test_group_name_with_apostrophe_works(session, admin_principal) -> None:
+    """Der Name geht in die Sperre; unparametrisiert wäre das ungültiges SQL."""
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    service = GroupService(session)
+    detail = await service.create(
+        GroupCreate(groupname="O'Reilly", vlan="10"), actor=admin_principal
+    )
+    assert detail.groupname == "O'Reilly"
+    assert (await service.get("O'Reilly")).vlan == "10"
+
+
+async def test_bootstrap_is_skipped_before_validation(session) -> None:
+    """Ein unbenutzter Platzhalter darf eine eingerichtete Instanz nicht blockieren."""
+    from app.services.accounts import AccountService
+
+    service = AccountService(session)
+    assert await service.ensure_bootstrap_admin("admin", "ein-sicheres-passwort") is not None
+    # Zweiter Start mit kurzem Platzhalter: kein Fehler, nur kein neues Konto.
+    assert await service.ensure_bootstrap_admin("admin", "x") is None
+
+
+async def test_rate_limits_must_be_positive() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(PydanticValidationError):
+        Settings(login_rate_limit=0)
+    with pytest.raises(PydanticValidationError):
+        Settings(login_ip_rate_limit=-1)
+
+
+async def test_diagnosis_sees_every_auth_type_row(session, admin_principal) -> None:
+    from app.services.authlog import AuthLogService
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.attrs.add_check("anna", "Auth-Type", ":=", "Reject")
+    await users.attrs.add_check("anna", "Auth-Type", ":=", "PAP")
+    await session.commit()
+
+    result = await AuthLogService(session).diagnose("anna")
+    assert result.status == "disabled"
+    assert "diag.auth_type_reject" in {h.code for h in result.hints}
+
+
+async def test_unknown_boolean_is_an_import_error(session, admin_principal) -> None:
+    """Ein Tippfehler darf nicht als „nicht gesperrt“ gelesen werden."""
+    users = UserService(session)
+    await users.create(
+        UserCreate(username="anna", password="geheim123", disabled=True), actor=admin_principal
+    )
+    report = await ImportExportService(session).import_csv(
+        "username,disabled\nanna,treu\n",
+        kind="user",
+        dry_run=False,
+        actor=admin_principal,
+    )
+    assert report.errors == 1
+    assert (await users.get("anna")).status == "disabled"
+
+
+async def test_import_password_and_type_together(session, admin_principal) -> None:
+    """Erst das Passwort, dann die Typumstellung - sonst scheitert der Wechsel."""
+    from app.models.mgr import CredentialType
+    from app.schemas.users import PasswordSet
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="alt"), actor=admin_principal)
+    await users.set_password(
+        "anna",
+        PasswordSet(password="alt", credential_type=CredentialType.NT),
+        actor=admin_principal,
+    )
+
+    report = await ImportExportService(session).import_csv(
+        "username,password,credential_type\nanna,neu-geheim,both\n",
+        kind="user",
+        dry_run=False,
+        actor=admin_principal,
+    )
+    assert report.errors == 0
+    rows = (await session.scalars(select(RadCheck).where(RadCheck.username == "anna"))).all()
+    assert {r.attribute for r in rows} == {"Cleartext-Password", "NT-Password"}
+
+
+async def test_session_identifiers_are_strings(session, client) -> None:
+    """BIGINT-Werte verlieren als JavaScript-Zahl an Genauigkeit."""
+    await _account(session, "auditor", Role.AUDITOR)
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "auditor", "password": "ein-sicheres-passwort"},
+    )
+    session.add(
+        RadAcct(
+            radacctid=9007199254740993,
+            acctsessionid="s1",
+            acctuniqueid="u1",
+            username="anna",
+            nasipaddress="10.0.0.1",
+            acctstarttime=dt.datetime(2026, 9, 1, 8, 0),
+            callingstationid="AA-BB-CC-DD-EE-FF",
+        )
+    )
+    await session.commit()
+
+    listing = await client.get("/api/v1/sessions?active_only=false")
+    assert listing.json()["items"][0]["radacctid"] == "9007199254740993"

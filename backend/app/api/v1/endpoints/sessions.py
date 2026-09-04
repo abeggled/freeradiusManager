@@ -62,4 +62,6 @@ async def terminate_causes(session: SessionDep, _: ReaderUser) -> list[str]:
 
 @router.get("/{radacctid}", response_model=SessionItem)
 async def get_session(radacctid: int, session: SessionDep, _: ReaderUser) -> SessionItem:
+    """Eine einzelne Session. Der Pfadwert ist eine ganze Zahl; ausgeliefert wird
+    sie als Zeichenkette (BIGINT, siehe ``SessionItem``)."""
     return await SessionService(session).get(radacctid)

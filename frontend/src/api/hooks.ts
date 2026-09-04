@@ -499,7 +499,7 @@ export function useStats() {
   });
 }
 
-export function useSessionDetail(radacctid: number | null) {
+export function useSessionDetail(radacctid: string | null) {
   return useQuery({
     queryKey: ["session", radacctid],
     queryFn: () => request<SessionItem>(`/sessions/${radacctid}`),

@@ -139,7 +139,8 @@ export interface NasItem {
 }
 
 export interface SessionItem {
-  radacctid: number;
+  /** BIGINT: als Zeichenkette geführt, da JavaScript oberhalb von 2^53 rundet. */
+  radacctid: string;
   acctsessionid: string;
   acctuniqueid: string;
   username: string;
@@ -162,7 +163,8 @@ export interface SessionItem {
 }
 
 export interface AuthLogItem {
-  id: number;
+  /** BIGINT: siehe SessionItem.radacctid. */
+  id: string;
   username: string;
   reply: string;
   authdate: string;

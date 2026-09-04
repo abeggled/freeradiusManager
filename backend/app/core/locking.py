@@ -53,4 +53,6 @@ async def named_lock(session: AsyncSession, name: str) -> AsyncIterator[None]:
         try:
             yield
         finally:
-            await connection.exec_driver_sql(f"SELECT RELEASE_LOCK('{key}')")
+            # Gebunden statt eingesetzt: ein Name wie O'Reilly ergaebe sonst
+            # ungueltiges SQL - und die Sperre bliebe an der Verbindung haengen.
+            await connection.execute(text("SELECT RELEASE_LOCK(:key)"), {"key": key})

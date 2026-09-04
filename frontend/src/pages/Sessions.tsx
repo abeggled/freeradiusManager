@@ -21,7 +21,7 @@ export function SessionsPage() {
   const [startTo, setStartTo] = useState("");
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const [page, setPage] = useState(0);
-  const [detailId, setDetailId] = useState<number | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<SessionItem | null>(null);
   const [coaTarget, setCoaTarget] = useState<SessionItem | null>(null);
 
@@ -269,7 +269,7 @@ function SessionDetailDialog({
   radacctid,
   onClose,
 }: {
-  radacctid: number;
+  radacctid: string;
   onClose: () => void;
 }) {
   const { t, language } = useI18n();
