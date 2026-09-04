@@ -124,7 +124,10 @@ async def test_enrolled_account_cannot_re_enroll_itself(session, client) -> None
         "/api/v1/auth/login/totp",
         json={"challenge": first.json()["challenge"], "totp_code": pyotp.TOTP(secret).now()},
     )
-    response = await client.post("/api/v1/auth/me/totp/enroll")
+    response = await client.post(
+        "/api/v1/auth/me/totp/enroll",
+        json={"current_password": "ein-sicheres-passwort"},
+    )
     assert response.status_code == 409
     assert response.json()["code"] == "error.totp_already_enrolled"
 

@@ -971,6 +971,31 @@ Die fünfundzwanzigste Runde:
   die Wiedereinsatz-Marke des anderen Vorgangs und konnte denselben TOTP-Code
   ein zweites Mal einlösen.
 
+### Fünfundzwanzigste Runde
+
+* **Das Abmelden entwertet die Sitzung auch serverseitig.** Bisher wurde nur das
+  Cookie im Browser gelöscht; eine zuvor kopierte Kennung blieb bis zur
+  absoluten Gültigkeit brauchbar und liess sich weiter verlängern. Die neue
+  Tabelle `mgr_session_revocation` (Migration 0009) hält abgemeldete Kennungen
+  bis zu ihrem ohnehin eintretenden Ablauf; der Aufräumjob entfernt sie danach.
+  Migration 0009 wurde gegen eine echte MariaDB in beide Richtungen geprüft.
+* **`Origin: null` wird abgewiesen.** Ein Browser sendet das aus einem
+  Sandbox-Kontext; als fehlende Angabe behandelt lief die Anfrage in den Zweig
+  für Nicht-Browser und war erlaubt – obwohl das Sitzungscookie mitgeht.
+* **Die Ersteinrichtung des zweiten Faktors verlangt das Passwort erneut.** Mit
+  einem gestohlenen Cookie liess sich sonst ein nur dem Angreifer bekannter
+  Faktor einrichten; die Bestätigung hätte die Sitzung des Opfers beendet und es
+  bis zum Zurücksetzen ausgesperrt.
+* **Die Statusberechnung berücksichtigt die Check-Attribute der Gruppen** – in
+  der Detailansicht, in der Liste *und* im SQL-Filter. Ein `Auth-Type := Reject`
+  auf Gruppenebene lehnt FreeRADIUS ab, die Oberfläche meldete „aktiv“ und eine
+  Sammelaktion traf eine andere Menge als angezeigt.
+* **`Expiration` wird ohne Prozess-Locale gelesen.** `%b` interpretiert
+  `strptime` in der Locale des Prozesses; unter einer nicht-englischen `LC_TIME`
+  scheiterte genau das Format, das die Anwendung selbst schreibt.
+* **Freitextfelder behalten ihre Leerzeichen beim Import.** Der Weg
+  Export → Bearbeiten → Import beschnitt Notizen stillschweigend.
+
 ## Prüfschritte
 
 ```bash

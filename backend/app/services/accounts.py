@@ -581,6 +581,43 @@ class AccountService:
         await self.session.commit()
         return AccountOut.model_validate(account)
 
+    async def verify_current_password(
+        self, account: MgrAccount, password: str, *, actor_ip: str | None = None
+    ) -> None:
+        """Prueft das Passwort eines angemeldeten Kontos erneut.
+
+        Fuer Aktionen, die eine gestohlene Sitzung allein nicht ausloesen darf -
+        etwa das Einrichten eines neuen zweiten Faktors. Fehlversuche zaehlen auf
+        dieselbe Kontosperre ein wie an der Anmeldung.
+        """
+        locked = await self.repo.get_for_update(account.id)
+        if locked is not None:
+            account = locked
+        if account.locked_until is not None and account.locked_until <= utcnow():
+            account.locked_until = None
+            account.failed_logins = 0
+        if account.locked_until is not None and account.locked_until > utcnow():
+            raise AuthenticationError(
+                code="error.account_locked",
+                details={"until": account.locked_until.isoformat()},
+            )
+        if not await verify_password_async(password, account.password_hash):
+            account.failed_logins += 1
+            self._apply_lockout(account)
+            await self.audit.log(
+                action="account.reauthenticate",
+                object_type="account",
+                object_id=account.username,
+                actor_ip=actor_ip,
+                result=AuditResult.FAILURE,
+                message="falsches aktuelles Passwort",
+            )
+            await self.session.commit()
+            raise AuthenticationError(code="error.invalid_credentials")
+        account.failed_logins = 0
+        account.locked_until = None
+        await self.session.commit()
+
     async def change_password(
         self,
         account_id: int,

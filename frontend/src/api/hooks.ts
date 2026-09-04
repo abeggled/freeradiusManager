@@ -457,9 +457,12 @@ export function useChangeOwnPassword() {
 
 export function useOwnTotpEnroll() {
   return useMutation({
-    mutationFn: () =>
+    // Das Passwort wird erneut verlangt: mit einem gestohlenen Cookie liesse
+    // sich sonst ein fremder zweiter Faktor einrichten.
+    mutationFn: (body: { current_password: string }) =>
       request<{ secret: string; provisioning_uri: string }>("/auth/me/totp/enroll", {
         method: "POST",
+        body,
       }),
   });
 }

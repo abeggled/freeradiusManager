@@ -19,6 +19,7 @@ from app.core.ratelimit import RateLimiter
 from app.core.security import Principal, create_session_token, principal_from_token
 from app.models.mgr import Role
 from app.repositories.mgr.accounts import AccountRepository
+from app.repositories.mgr.session_revocations import SessionRevocationRepository
 
 login_limiter = RateLimiter(settings.login_rate_limit, settings.login_rate_window_seconds)
 login_ip_limiter = RateLimiter(settings.login_ip_rate_limit, settings.login_rate_window_seconds)
@@ -176,6 +177,13 @@ async def current_principal(request: Request, response: Response, session: Sessi
     if claims.epoch != account.session_epoch:
         raise AuthenticationError(
             code="error.reauthentication_required", details={"reason": "session_revoked"}
+        )
+    # Eine abgemeldete Sitzung bleibt abgemeldet. Das Loeschen des Cookies
+    # erreicht nur den Browser; eine zuvor kopierte Kennung waere sonst bis zur
+    # absoluten Gueltigkeit weiter brauchbar (FR-10).
+    if await SessionRevocationRepository(session).is_revoked(claims.session_id):
+        raise AuthenticationError(
+            code="error.unauthenticated", details={"reason": "logged_out"}
         )
     # Bei OIDC verantwortet der Identity-Provider den zweiten Faktor; die
     # lokale TOTP-Pflicht gilt fuer lokale Anmeldungen.

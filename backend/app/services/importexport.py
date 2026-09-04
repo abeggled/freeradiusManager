@@ -276,9 +276,19 @@ def _normalise_row(raw: dict[str | None, Any]) -> dict[str, str]:
             )
         column = key.strip().lower()
         cell = value or ""
-        # Passwoerter bleiben unveraendert: fuehrende oder anhaengende
-        # Leerzeichen sind Teil des Werts und muessen erhalten bleiben.
-        row[column] = cell if column == "password" else _unescape(cell.strip())
+        if column == "password":
+            # Passwoerter bleiben vollstaendig unveraendert: fuehrende oder
+            # anhaengende Leerzeichen sind Teil des Werts.
+            row[column] = cell
+        elif column in META_FIELDS:
+            # Freitextfelder ebenso: der Export-Bearbeiten-Import-Weg darf eine
+            # Notiz nicht stillschweigend beschneiden. Die Maskierung des
+            # Exports wird trotzdem zurueckgenommen.
+            row[column] = _unescape(cell)
+        else:
+            # Bezeichner und strukturierte Felder werden getrimmt; ein
+            # versehentliches Leerzeichen ergaebe sonst einen anderen Namen.
+            row[column] = _unescape(cell.strip())
     return row
 
 

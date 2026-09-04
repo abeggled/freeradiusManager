@@ -248,6 +248,7 @@ export const de = {
   "profile.currentPassword": "Aktuelles Passwort",
   "profile.newPassword": "Neues Passwort",
   "profile.setupTotp": "TOTP einrichten",
+  "profile.totpPasswordHint": "Zur Bestätigung wird das aktuelle Passwort erneut verlangt.",
   "profile.totpAlreadyActive": "Der zweite Faktor ist aktiv. Ein Ersatz erfolgt über einen Administrator.",
   "profile.totpActive": "TOTP ist aktiv.",
 

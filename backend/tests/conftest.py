@@ -41,6 +41,7 @@ MGR_TABLES = (
     "mgr_setting",
     "mgr_stats_snapshot",
     "mgr_account",
+    "mgr_session_revocation",
 )
 ALL_TABLES = RADIUS_TABLES + MGR_TABLES
 

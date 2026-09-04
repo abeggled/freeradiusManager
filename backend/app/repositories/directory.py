@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import ColumnElement, and_, exists, func, or_, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +20,7 @@ from sqlalchemy.sql import Subquery
 from app.core.errors import ValidationError
 from app.core.radius_dict import PASSWORD_ATTRIBUTES
 from app.models.mgr import MgrSubject, SubjectType
-from app.models.radius import RadCheck, RadReply, RadUserGroup
+from app.models.radius import RadCheck, RadGroupCheck, RadReply, RadUserGroup
 
 AUTH_TYPE = "Auth-Type"
 EXPIRATION = "Expiration"
@@ -59,6 +60,11 @@ class SubjectFilter:
 class SubjectRow:
     username: str
     subject: MgrSubject | None
+
+
+def _parsed_expiration(column: Any) -> ColumnElement[dt.datetime]:
+    """Datumswert einer ``Expiration``-Zeile in den bekannten Formaten."""
+    return func.coalesce(*[func.str_to_date(column, fmt) for fmt in EXPIRATION_SQL_FORMATS])
 
 
 class DirectoryRepository:
@@ -135,26 +141,55 @@ class DirectoryRepository:
         einsortiert - und eine Sammelaktion traefe Objekte ausserhalb der
         angezeigten Menge (NFR-4).
         """
-        blocked = exists(
-            select(RadCheck.id).where(
-                RadCheck.username == names.c.username,
-                RadCheck.attribute == AUTH_TYPE,
-                RadCheck.value == REJECT,
-            )
+        # Auch ueber die Gruppen: FreeRADIUS wendet deren Check-Attribute auf
+        # jedes Mitglied an. Ohne diesen Zweig zeigte die Liste "aktiv",
+        # waehrend die Anmeldung abgelehnt wird - und die Detailansicht meldete
+        # (mit denselben Daten) etwas anderes als der Filter.
+        blocked = or_(
+            exists(
+                select(RadCheck.id).where(
+                    RadCheck.username == names.c.username,
+                    RadCheck.attribute == AUTH_TYPE,
+                    RadCheck.value == REJECT,
+                )
+            ),
+            exists(
+                select(RadGroupCheck.id)
+                .join(
+                    RadUserGroup,
+                    RadUserGroup.groupname == RadGroupCheck.groupname,
+                )
+                .where(
+                    RadUserGroup.username == names.c.username,
+                    RadGroupCheck.attribute == AUTH_TYPE,
+                    RadGroupCheck.value == REJECT,
+                )
+            ),
         )
         # Nicht interpretierbare Werte ergeben NULL und gelten nicht als
         # abgelaufen - die sichere Richtung.
-        parsed_expiration = func.coalesce(
-            *[func.str_to_date(RadCheck.value, fmt) for fmt in EXPIRATION_SQL_FORMATS]
-        )
-        expired = exists(
-            select(RadCheck.id).where(
-                RadCheck.username == names.c.username,
-                RadCheck.attribute == EXPIRATION,
-                # UTC_TIMESTAMP statt NOW(): die Werte werden in UTC
-                # geschrieben, die Sitzungszeitzone der Datenbank ist offen.
-                parsed_expiration < func.utc_timestamp(),
-            )
+        expired = or_(
+            exists(
+                select(RadCheck.id).where(
+                    RadCheck.username == names.c.username,
+                    RadCheck.attribute == EXPIRATION,
+                    # UTC_TIMESTAMP statt NOW(): die Werte werden in UTC
+                    # geschrieben, die Sitzungszeitzone der Datenbank ist offen.
+                    _parsed_expiration(RadCheck.value) < func.utc_timestamp(),
+                )
+            ),
+            exists(
+                select(RadGroupCheck.id)
+                .join(
+                    RadUserGroup,
+                    RadUserGroup.groupname == RadGroupCheck.groupname,
+                )
+                .where(
+                    RadUserGroup.username == names.c.username,
+                    RadGroupCheck.attribute == EXPIRATION,
+                    _parsed_expiration(RadGroupCheck.value) < func.utc_timestamp(),
+                )
+            ),
         )
         has_password = exists(
             select(RadCheck.id).where(

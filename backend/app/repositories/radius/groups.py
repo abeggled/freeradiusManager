@@ -51,6 +51,26 @@ class GroupRepository:
         )
         return (await self.session.scalars(stmt)).all()
 
+    async def check_attributes_for(
+        self, groupnames: Sequence[str]
+    ) -> dict[str, list[RadGroupCheck]]:
+        """Check-Attribute mehrerer Gruppen in einer Abfrage.
+
+        Sie sind wirksame Policy: FreeRADIUS wendet ein ``Auth-Type := Reject``
+        der Gruppe auf jedes Mitglied an. Fuer die Statusspalte der Liste braucht
+        es sie deshalb - eine Abfrage je Gruppe waere der teuerste Teil des
+        Seitenaufbaus (NFR-2).
+        """
+        if not groupnames:
+            return {}
+        rows = await self.session.scalars(
+            select(RadGroupCheck).where(RadGroupCheck.groupname.in_(set(groupnames)))
+        )
+        grouped: dict[str, list[RadGroupCheck]] = {}
+        for row in rows.all():
+            grouped.setdefault(row.groupname, []).append(row)
+        return grouped
+
     async def reply_attributes_for(
         self, groupnames: Sequence[str]
     ) -> dict[str, list[RadGroupReply]]:

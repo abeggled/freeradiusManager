@@ -108,6 +108,24 @@ class MgrAccount(TimestampMixin, Base):
     Prueffensters ein zweites Mal einloesen und eine weitere Sitzung erzeugen."""
 
 
+class MgrSessionRevocation(Base):
+    """Abgemeldete Sitzungskennungen (FR-10).
+
+    Das Loeschen des Cookies erreicht nur den Browser; eine zuvor kopierte
+    Kennung bliebe sonst bis zur absoluten Gueltigkeit brauchbar. Die Zeilen
+    werden entfernt, sobald das Token ohnehin abgelaufen waere.
+    """
+
+    __tablename__ = "mgr_session_revocation"
+
+    session_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[int] = mapped_column(mysql.INTEGER(unsigned=True), nullable=False)
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now()
+    )
+
+
 class MgrAudit(Base):
     """Audit-Log (FR-9). Ueber die UI nicht loeschbar."""
 

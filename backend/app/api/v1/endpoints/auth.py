@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import secrets
 
 from fastapi import APIRouter, Request, Response, status
@@ -21,14 +22,16 @@ from app.core.config import settings
 from app.core.crypto import hash_password_async
 from app.core.errors import AuthenticationError, ValidationError
 from app.core.identifiers import fold
-from app.core.security import TOTP_ENROLL_SCOPE, create_session_token
+from app.core.security import TOTP_ENROLL_SCOPE, create_session_token, principal_from_token
 from app.models.mgr import MgrAccount, Role
+from app.repositories.mgr.session_revocations import SessionRevocationRepository
 from app.schemas.accounts import (
     AccountOut,
     LoginRequest,
     LoginResponse,
     TotpActivate,
     TotpEnrollRequest,
+    TotpEnrollSelf,
     TotpLoginRequest,
     TotpSetupResponse,
 )
@@ -168,7 +171,28 @@ async def confirm_totp(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(response: Response) -> None:
+async def logout(request: Request, response: Response, session: SessionDep) -> None:
+    """Meldet ab - auch serverseitig.
+
+    Das Loeschen des Cookies erreicht nur den Browser. Eine zuvor kopierte
+    Kennung liesse sich sonst bis zur absoluten Gueltigkeit weiterverwenden und
+    dabei sogar verlaengern (FR-10).
+    """
+    token = request.cookies.get(settings.cookie_name)
+    if token:
+        try:
+            claims = principal_from_token(token)
+        except AuthenticationError:
+            claims = None
+        if claims is not None:
+            await SessionRevocationRepository(session).revoke(
+                claims.session_id,
+                claims.account_id,
+                dt.datetime.fromtimestamp(claims.absolute_expiry, tz=dt.UTC).replace(
+                    tzinfo=None
+                ),
+            )
+            await session.commit()
     clear_session_cookie(response)
 
 
@@ -183,10 +207,19 @@ async def me(principal: CurrentUser, session: SessionDep) -> AccountOut:
 
 @router.post("/me/totp/enroll", response_model=TotpSetupResponse)
 async def enroll_own_totp(
-    principal: CurrentUser, session: SessionDep, actor_ip: ClientIp
+    payload: TotpEnrollSelf,
+    principal: CurrentUser,
+    session: SessionDep,
+    actor_ip: ClientIp,
 ) -> TotpSetupResponse:
+    """Startet die Einrichtung des zweiten Faktors im eigenen Profil.
+
+    Das Passwort wird erneut geprueft (siehe ``TotpEnrollSelf``).
+    """
+    login_ip_limiter.check(str(actor_ip))
     service = AccountService(session)
     account = await service.get(principal.account_id)
+    await service.verify_current_password(account, payload.current_password, actor_ip=actor_ip)
     return await service.start_totp_enrollment(account, actor=principal, actor_ip=actor_ip)
 
 

@@ -19,6 +19,7 @@ export function ProfilePage() {
 
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
+  const [totpPassword, setTotpPassword] = useState("");
   const [code, setCode] = useState("");
 
   if (me.isLoading) return <Spinner />;
@@ -134,9 +135,32 @@ export function ProfilePage() {
             // funktionslos – stattdessen wird der Zustand benannt.
             <p className="hint">{t("profile.totpAlreadyActive")}</p>
           ) : (
-            <button type="button" onClick={() => enroll.mutate()} disabled={enroll.isPending}>
-              {t("profile.setupTotp")}
-            </button>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                enroll.mutate(
+                  { current_password: totpPassword },
+                  { onSuccess: () => setTotpPassword("") },
+                );
+              }}
+            >
+              <p className="hint">{t("profile.totpPasswordHint")}</p>
+              <Field label={t("profile.currentPassword")} required>
+                {(id) => (
+                  <input
+                    id={id}
+                    type="password"
+                    autoComplete="current-password"
+                    value={totpPassword}
+                    onChange={(event) => setTotpPassword(event.target.value)}
+                    required
+                  />
+                )}
+              </Field>
+              <button type="submit" disabled={enroll.isPending || !totpPassword}>
+                {t("profile.setupTotp")}
+              </button>
+            </form>
           )}
         </div>
       </div>

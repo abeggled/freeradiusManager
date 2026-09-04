@@ -18,6 +18,7 @@ from app.core.logging import get_logger
 from app.core.security import Principal
 from app.models.mgr import AuditResult, MgrAudit
 from app.repositories.mgr.audit import AuditRepository
+from app.repositories.mgr.session_revocations import SessionRevocationRepository
 
 log = get_logger("audit")
 
@@ -154,6 +155,11 @@ async def retention_worker(
             async with sessionmaker() as session:
                 retention = int(await SettingsService(session).get(KEY_AUDIT_RETENTION))
                 removed = await AuditService(session).purge(retention)
+                # Abgemeldete Sitzungen werden nur bis zu ihrem ohnehin
+                # eintretenden Ablauf gemerkt; danach ist die Zeile Ballast.
+                await SessionRevocationRepository(session).purge_expired(
+                    dt.datetime.now(tz=dt.UTC).replace(tzinfo=None)
+                )
                 await session.commit()
             if removed:
                 log.info("audit_purged", removed=removed, retention_days=retention)

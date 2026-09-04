@@ -20,9 +20,19 @@ from app.core.i18n import normalise_language, translate
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 
 
+OPAQUE_ORIGIN = "null"
+"""Was ein Browser aus einem Sandbox-Kontext sendet.
+
+Es ist eine ausdrueckliche Herkunftsangabe und keine fehlende: als fehlend
+behandelt liefe die Anfrage in den Zweig fuer Nicht-Browser (curl) und waere
+erlaubt - obwohl das Sitzungscookie mitgeht (``SameSite=Lax``)."""
+
+
 def _origin_of(request: Request) -> str | None:
     origin = request.headers.get("origin")
-    if origin and origin.lower() != "null":
+    if origin and origin.lower() == OPAQUE_ORIGIN:
+        return OPAQUE_ORIGIN
+    if origin:
         return origin.rstrip("/")
     referer = request.headers.get("referer")
     if referer:

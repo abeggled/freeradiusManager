@@ -116,6 +116,18 @@ class TotpSetupResponse(BaseModel):
     provisioning_uri: str
 
 
+class TotpEnrollSelf(BaseModel):
+    """Ersteinrichtung aus dem eigenen Profil.
+
+    Das Passwort wird erneut verlangt: mit einem gestohlenen Cookie liesse sich
+    sonst ein nur dem Angreifer bekannter Faktor einrichten - die Bestaetigung
+    beendet die Sitzung des Opfers und sperrt es bis zum Zuruecksetzen durch
+    einen Administrator aus (FR-10).
+    """
+
+    current_password: str = Field(min_length=1, max_length=256)
+
+
 class TotpActivate(BaseModel):
     code: str = Field(min_length=6, max_length=10)
 

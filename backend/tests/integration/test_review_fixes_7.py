@@ -1316,7 +1316,10 @@ async def test_self_service_totp_is_attributed(session, client) -> None:
         "/api/v1/auth/login",
         json={"username": "operator", "password": "ein-sicheres-passwort"},
     )
-    setup = await client.post("/api/v1/auth/me/totp/enroll")
+    setup = await client.post(
+        "/api/v1/auth/me/totp/enroll",
+        json={"current_password": "ein-sicheres-passwort"},
+    )
     await client.post(
         "/api/v1/auth/me/totp/confirm",
         json={"code": pyotp.TOTP(setup.json()["secret"]).now()},

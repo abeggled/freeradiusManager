@@ -1563,7 +1563,10 @@ async def test_self_service_enrollment_names_the_actor(session, client) -> None:
         "/api/v1/auth/login",
         json={"username": "operator", "password": "ein-sicheres-passwort"},
     )
-    response = await client.post("/api/v1/auth/me/totp/enroll")
+    response = await client.post(
+        "/api/v1/auth/me/totp/enroll",
+        json={"current_password": "ein-sicheres-passwort"},
+    )
     assert response.status_code == 200
 
     entry = await session.scalar(
@@ -1788,3 +1791,155 @@ async def test_totp_replay_marker_survives_a_stale_identity_map(session) -> None
 
     with pytest.raises(AuthenticationError):
         await AccountService(session).verify_totp_code(account, pyotp.TOTP(secret).now())
+
+
+# --- Fuenfundzwanzigste Runde ---------------------------------------------
+
+
+async def test_logout_revokes_the_session_server_side(session, client) -> None:
+    """Eine kopierte Kennung blieb sonst bis zur absoluten Gueltigkeit brauchbar."""
+    from app.core.config import settings as app_settings
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, Role
+
+    session.add(
+        MgrAccount(
+            username="operator",
+            role=Role.OPERATOR,
+            password_hash=hash_password("ein-sicheres-passwort"),
+        )
+    )
+    await session.commit()
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+    stolen = client.cookies.get(app_settings.cookie_name)
+    assert stolen
+
+    assert (await client.post("/api/v1/auth/logout")).status_code == 204
+
+    # Die kopierte Kennung wird weiterhin abgewiesen.
+    client.cookies.set(app_settings.cookie_name, stolen)
+    blocked = await client.get("/api/v1/auth/me")
+    assert blocked.status_code == 401
+    assert blocked.json()["code"] == "error.unauthenticated"
+
+
+async def test_opaque_origin_is_rejected(session, client) -> None:
+    """``Origin: null`` ist eine Angabe, keine fehlende - sonst greift der curl-Zweig."""
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, Role
+
+    session.add(
+        MgrAccount(
+            username="operator",
+            role=Role.OPERATOR,
+            password_hash=hash_password("ein-sicheres-passwort"),
+        )
+    )
+    await session.commit()
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+
+    response = await client.post(
+        "/api/v1/users",
+        json={"username": "anna", "password": "geheim123"},
+        headers={"Origin": "null"},
+    )
+    assert response.status_code == 403
+    assert response.json()["code"] == "error.cross_origin"
+
+
+async def test_self_service_enrollment_requires_the_password(session, client) -> None:
+    """Mit einem gestohlenen Cookie liesse sich sonst ein fremder Faktor einrichten."""
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, Role
+
+    session.add(
+        MgrAccount(
+            username="operator",
+            role=Role.OPERATOR,
+            password_hash=hash_password("ein-sicheres-passwort"),
+        )
+    )
+    await session.commit()
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+
+    wrong = await client.post("/api/v1/auth/me/totp/enroll", json={"current_password": "falsch"})
+    assert wrong.status_code == 401
+
+    ok = await client.post(
+        "/api/v1/auth/me/totp/enroll",
+        json={"current_password": "ein-sicheres-passwort"},
+    )
+    assert ok.status_code == 200
+
+
+async def test_group_reject_shows_in_list_and_filter(session, admin_principal) -> None:
+    """Liste, Detailansicht und Filter muessen dieselbe wirksame Policy sehen."""
+    from app.repositories.directory import SubjectFilter
+    from app.schemas.groups import AttributeIn, GroupCreate
+    from app.services.groups import GroupService
+
+    await GroupService(session).create(
+        GroupCreate(
+            groupname="gesperrt",
+            check_attributes=[AttributeIn(attribute="Auth-Type", op=":=", value="Reject")],
+        ),
+        actor=admin_principal,
+    )
+    users = UserService(session)
+    await users.create(
+        UserCreate(
+            username="anna",
+            password="geheim123",
+            groups=[MembershipIn(groupname="gesperrt")],
+        ),
+        actor=admin_principal,
+    )
+
+    assert (await users.get("anna")).status == "disabled"
+    items, _ = await users.search(SubjectFilter())
+    assert next(i for i in items if i.username == "anna").status == "disabled"
+    filtered, _ = await users.search(SubjectFilter(status="disabled"))
+    assert [i.username for i in filtered] == ["anna"]
+
+
+async def test_expiration_parsing_ignores_the_process_locale() -> None:
+    """``%b`` liest ``strptime`` in der Locale des Prozesses."""
+    import locale
+
+    from app.core.dates import from_expiration
+
+    original = locale.setlocale(locale.LC_TIME)
+    try:
+        for candidate in ("de_DE.UTF-8", "de_DE", "C"):
+            try:
+                locale.setlocale(locale.LC_TIME, candidate)
+                break
+            except locale.Error:
+                continue
+        assert from_expiration("31 Dec 2026 23:59:00") == dt.datetime(2026, 12, 31, 23, 59)
+    finally:
+        locale.setlocale(locale.LC_TIME, original)
+
+
+async def test_import_preserves_whitespace_in_notes(session, admin_principal) -> None:
+    """Der Export-Bearbeiten-Import-Weg darf eine Notiz nicht beschneiden."""
+    from app.services.importexport import ImportExportService
+
+    await ImportExportService(session).import_csv(
+        'username,password,note\nanna,geheim123456,"  mit Rand  "\n',
+        kind="user",
+        dry_run=False,
+        actor=admin_principal,
+    )
+    subject = await UserService(session).subjects.get("anna")
+    assert subject is not None
+    assert subject.note == "  mit Rand  "

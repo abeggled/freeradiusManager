@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -138,11 +139,24 @@ class UserService:
         for check in checks:
             checks_by_user.setdefault(fold(check.username), []).append(check)
 
+        # Die Check-Attribute der Gruppen gehoeren zur wirksamen Policy und
+        # damit in die Statusspalte; ohne sie meldete die Liste "aktiv", waehrend
+        # FreeRADIUS den Benutzer ablehnt (siehe ``_status``).
+        group_checks = await self.groups.check_attributes_for(
+            [m.groupname for rows in by_user.values() for m in rows]
+        )
+        folded_group_checks = {fold(name): rows for name, rows in group_checks.items()}
+
         items: list[UserListItem] = []
         for row in rows:
             subject = row.subject
             key = fold(row.username)
             user_checks = checks_by_user.get(key, [])
+            effective_group_checks = [
+                check
+                for membership in by_user.get(key, [])
+                for check in folded_group_checks.get(fold(membership.groupname), [])
+            ]
             items.append(
                 UserListItem(
                     username=row.username,
@@ -157,7 +171,7 @@ class UserService:
                     memberships=sorted(
                         by_user.get(key, []), key=lambda m: (m.priority, m.groupname)
                     ),
-                    status=self._status(user_checks),
+                    status=self._status(user_checks, effective_group_checks),
                     expires_at=self._expiry(user_checks, subject),
                     credential_type=subject.credential_type if subject else None,
                     has_metadata=subject is not None,
@@ -174,6 +188,15 @@ class UserService:
         # erscheinen in der Liste und muessen dort auch aufrufbar sein.
         if not checks and not replies and subject is None and not memberships:
             raise NotFoundError(code="error.not_found", details={"username": username})
+
+        # Wirksame Policy inkl. Gruppen (siehe ``_status``).
+        detail_group_checks = [
+            check
+            for rows in (
+                await self.groups.check_attributes_for([m.groupname for m in memberships])
+            ).values()
+            for check in rows
+        ]
 
         active_sessions = await self.acct.count_active_for_user(username)
         recent = await self.postauth.recent_for(username, limit=1)
@@ -212,7 +235,7 @@ class UserService:
             device_type=subject.device_type if subject else None,
             inventory_no=subject.inventory_no if subject else None,
             groups=[m.groupname for m in memberships],
-            status=self._status(checks),
+            status=self._status(checks, detail_group_checks),
             expires_at=self._expiry(checks, subject),
             credential_type=subject.credential_type if subject else None,
             has_metadata=subject is not None,
@@ -962,21 +985,29 @@ class UserService:
         ]
 
     @staticmethod
-    def _status(checks: Sequence[RadCheck]) -> UserStatus:
-        """Status eines Subjekts aus seinen Check-Attributen.
+    def _status(
+        checks: Sequence[RadCheck], group_checks: Sequence[Any] = ()
+    ) -> UserStatus:
+        """Status eines Subjekts aus seinen wirksamen Check-Attributen.
 
         Mehrfach vorhandene ``Auth-Type``- oder ``Expiration``-Zeilen kommen in
         Bestandsdaten vor. Bewertet wird deshalb - wie im SQL-Filter - ob
         *irgendeine* Zeile zutrifft; sonst zeigte die Liste "aktiv", waehrend
         eine Sammelaktion mit demselben Filter das Objekt erfasst.
+
+        Die Check-Attribute der Gruppen zaehlen mit: FreeRADIUS wendet sie auf
+        jedes Mitglied an, ein ``Auth-Type := Reject`` dort ist der tatsaechliche
+        Grund fuer den Access-Reject. Anmeldedaten dagegen stehen beim Subjekt
+        selbst.
         """
+        effective = [*checks, *group_checks]
         if any(
             row.attribute.lower() == AUTH_TYPE.lower() and is_reject(row.value)
-            for row in checks
+            for row in effective
         ):
             return "disabled"
         now = utcnow()
-        for row in checks:
+        for row in effective:
             if row.attribute.lower() != EXPIRATION.lower():
                 continue
             parsed = from_expiration(row.value)
