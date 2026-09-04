@@ -75,8 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Fünfzehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
-12, 11, 10, 10, 9, 9, 11, 12 und 10 Befunde;
+Sechzehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
+12, 11, 10, 10, 9, 9, 11, 12, 10 und 8 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
@@ -426,6 +426,21 @@ Die fünfzehnte Runde:
   sonst als ein Tag und der Job hätte fast das ganze Audit-Log gelöscht.
 * Passwörter behalten beim Import ihre Leerzeichen; Attributmengen und
   Bulk-Prioritäten sind begrenzt.
+
+Die sechzehnte Runde (keine P1-Befunde):
+
+* Die Sperre beim Umbenennen einer Gruppe wird bis zum Commit gehalten; der
+  Fehlerzähler beim Passwortwechsel steht unter einer Zeilensperre.
+* Mehrfach vorhandene `Auth-Type`- oder `Expiration`-Zeilen werden in der
+  Detailansicht genauso bewertet wie im SQL-Filter – sonst zeigte die Liste
+  „aktiv“, während eine Sammelaktion dasselbe Objekt erfasste.
+* Ein Bestandsbenutzer ohne Manager-Metadaten übernimmt seinen tatsächlichen
+  Credential-Typ, statt pauschal als `both` geführt zu werden.
+* Ein ungültiges `FRM_OIDC_ROLE_MAP` bricht den Start ab, statt jede passende
+  Anmeldung in einem Serverfehler enden zu lassen.
+* Mehrzeilige Notizen überstehen den Export; NAS-Notizen sind längenbegrenzt.
+* Eine CoA-Anfrage nur mit Benutzernamen wird abgewiesen, wenn mehrere Sessions
+  laufen – zuvor traf es stillschweigend die zuletzt begonnene.
 
 ## Prüfschritte
 

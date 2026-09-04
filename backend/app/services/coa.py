@@ -154,6 +154,19 @@ class CoAService:
             row = await self.acct.get_by_unique_id(payload.acctuniqueid)
         elif payload.username:
             active = await self.acct.active_for_user(payload.username)
+            if len(active) > 1:
+                # Sonst traefe es stillschweigend die zuletzt begonnene Sitzung -
+                # bei geteilten Kennungen die falsche.
+                raise ValidationError(
+                    code="error.session_ambiguous",
+                    details={
+                        "username": payload.username,
+                        "sessions": [
+                            {"radacctid": r.radacctid, "acctuniqueid": r.acctuniqueid}
+                            for r in active[:20]
+                        ],
+                    },
+                )
             row = active[0] if active else None
         if row is None:
             raise NotFoundError(code="error.session_not_found")

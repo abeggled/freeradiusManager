@@ -587,7 +587,9 @@ class ImportExportService:
                     "device_type": self._safe(item.device_type or ""),
                     "location": self._safe(item.location or ""),
                     "inventory_no": self._safe(item.inventory_no or ""),
-                    "note": self._safe((item.note or "").replace("\n", " ")),
+                    # Der CSV-Writer setzt mehrzeilige Werte in Anfuehrungszeichen;
+                    # ein Ersetzen wuerde gueltige Notizen dauerhaft veraendern.
+                    "note": self._safe(item.note or ""),
                     "expires_at": item.expires_at.isoformat() if item.expires_at else "",
                     "credential_type": item.credential_type.value if item.credential_type else "",
                 }

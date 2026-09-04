@@ -128,6 +128,24 @@ class Settings(BaseSettings):
             )
         return self
 
+    @field_validator("oidc_role_map")
+    @classmethod
+    def _check_role_map(cls, value: dict[str, str]) -> dict[str, str]:
+        """Nur bekannte Rollen als Ziel zulassen.
+
+        Ein Tippfehler wuerde sonst erst beim Anmelden auffallen - und dort als
+        allgemeiner Serverfehler nach erfolgreicher Authentisierung.
+        """
+        allowed = {"administrator", "operator", "auditor"}
+        invalid = sorted(set(value.values()) - allowed)
+        if invalid:
+            raise ValueError(
+                "FRM_OIDC_ROLE_MAP kennt nur "
+                + ", ".join(sorted(allowed))
+                + f"; ungueltig: {', '.join(invalid)}"
+            )
+        return value
+
     @field_validator("cors_origins", "trusted_proxies", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:

@@ -444,7 +444,10 @@ class AccountService:
         actor: Principal,
         actor_ip: str | None = None,
     ) -> None:
-        account = await self.get(account_id)
+        # Zeilensperre wie bei der Anmeldung: parallele Versuche wuerden sonst
+        # denselben Zaehlerstand lesen und schreiben.
+        locked = await self.repo.get_for_update(account_id)
+        account = locked if locked is not None else await self.get(account_id)
         if account.id != actor.account_id and not actor.is_admin:
             raise PermissionDeniedError(code="error.forbidden")
         # Die Sperre muss auch hier greifen: sonst liesse sich mit einer noch

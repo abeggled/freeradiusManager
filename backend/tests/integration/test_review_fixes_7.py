@@ -1152,3 +1152,99 @@ async def test_attribute_collections_are_bounded() -> None:
     ]
     with pytest.raises(PydanticValidationError):
         GroupCreate(groupname="g1", reply_attributes=too_many)
+
+
+# --- Sechzehnte Runde ------------------------------------------------------
+
+
+async def test_duplicate_status_rows_match_the_sql_filter(session, admin_principal) -> None:
+    """Liste und Sammelaktion müssen dasselbe Objekt gleich einstufen."""
+    from app.repositories.directory import SubjectFilter
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    # Bestandsdaten können dasselbe Attribut mehrfach enthalten.
+    await users.attrs.add_check("anna", "Auth-Type", ":=", "PAP")
+    await users.attrs.add_check("anna", "Auth-Type", ":=", "Reject")
+    await session.commit()
+
+    assert (await users.get("anna")).status == "disabled"
+    disabled, _ = await users.search(SubjectFilter(status="disabled"))
+    assert [i.username for i in disabled] == ["anna"]
+
+
+async def test_legacy_user_keeps_its_credential_type(session, admin_principal) -> None:
+    """Ein NT-only-Bestandsbenutzer darf nicht als „both“ gemeldet werden."""
+    from app.core.crypto import nt_hash
+    from app.models.mgr import CredentialType
+    from app.schemas.users import UserUpdate
+
+    session.add(
+        RadCheck(username="legacy", attribute="NT-Password", op=":=", value=nt_hash("geheim"))
+    )
+    await session.commit()
+
+    users = UserService(session)
+    await users.update("legacy", UserUpdate(meta={"note": "übernommen"}), actor=admin_principal)
+    assert (await users.get("legacy")).credential_type is CredentialType.NT
+
+
+async def test_invalid_oidc_role_map_fails_at_startup() -> None:
+    """Ein Tippfehler soll beim Start auffallen, nicht erst beim Anmelden."""
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(PydanticValidationError):
+        Settings(oidc_role_map={"radius-admins": "admin"})
+    assert Settings(oidc_role_map={"radius-admins": "administrator"}).oidc_role_map
+
+
+async def test_multiline_notes_survive_the_export(session, admin_principal) -> None:
+    from app.repositories.directory import SubjectFilter
+
+    users = UserService(session)
+    await users.create(
+        UserCreate(username="anna", password="geheim123", meta={"note": "Zeile 1\nZeile 2"}),
+        actor=admin_principal,
+    )
+    csv_text = await ImportExportService(session).export(SubjectFilter())
+    await ImportExportService(session).import_csv(
+        csv_text, kind="user", dry_run=False, actor=admin_principal
+    )
+    assert (await users.get("anna")).note == "Zeile 1\nZeile 2"
+
+
+async def test_ambiguous_coa_request_is_rejected(session, admin_principal) -> None:
+    """Bei mehreren laufenden Sessions darf nicht stillschweigend eine gewählt werden."""
+    from app.core.errors import ValidationError as AppValidationError
+    from app.schemas.nas import CoARequest
+    from app.services.coa import CoAService
+
+    await NasService(session).create(
+        NasCreate(nasname="10.0.0.1", secret="s", coa_enabled=True, coa_secret="x"),
+        actor=admin_principal,
+    )
+    for index in range(2):
+        session.add(
+            RadAcct(
+                acctsessionid=f"s{index}",
+                acctuniqueid=f"u{index}",
+                username="anna",
+                nasipaddress="10.0.0.1",
+                acctstarttime=dt.datetime(2026, 9, 1, 8, index),
+                callingstationid="AA-BB-CC-DD-EE-FF",
+            )
+        )
+    await session.commit()
+
+    with pytest.raises(AppValidationError) as excinfo:
+        await CoAService(session).execute(CoARequest(username="anna"), actor=admin_principal)
+    assert excinfo.value.code == "error.session_ambiguous"
+
+
+async def test_nas_note_length_is_bounded() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    with pytest.raises(PydanticValidationError):
+        NasCreate(nasname="10.0.0.1", secret="s", note="x" * 5000)

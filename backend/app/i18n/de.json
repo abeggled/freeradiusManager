@@ -32,6 +32,7 @@
   "error.password_too_short": "Das Passwort muss mindestens {minimum} Zeichen lang sein.",
   "error.credential_type_needs_password": "Der gewünschte Credential-Typ verlangt ein Klartextpasswort. Bitte über „Passwort setzen“ ändern.",
   "error.session_not_found": "Die Session ist nicht (mehr) aktiv.",
+  "error.session_ambiguous": "Für „{username}“ laufen mehrere Sessions. Bitte die gewünschte Session auswählen.",
   "error.audit_immutable": "Das Audit-Log kann nicht verändert werden.",
   "error.self_delete": "Das eigene Konto kann nicht gelöscht werden.",
   "error.last_administrator": "Der letzte aktive Administrator kann nicht entfernt werden.",

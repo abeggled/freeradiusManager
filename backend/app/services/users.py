@@ -262,7 +262,7 @@ class UserService:
         language: str = "de",
     ) -> UserDetail:
         before = await self.get(username, language)
-        subject = await self.subjects.ensure(username)
+        subject = await self._ensure_subject(username)
         warnings: list[ApiWarning] = []
 
         if payload.username and payload.username != username:
@@ -331,7 +331,7 @@ class UserService:
         # auch ein Passwort erhalten koennen.
         if not await self.attrs.exists_anywhere(username) and not await self.subjects.get(username):
             raise NotFoundError(code="error.not_found", details={"username": username})
-        subject = await self.subjects.ensure(username)
+        subject = await self._ensure_subject(username)
         credential_type = payload.credential_type or subject.credential_type
         subject.credential_type = credential_type
         await self._write_credentials(username, payload.password, credential_type)
@@ -356,7 +356,7 @@ class UserService:
         """Sperren/Entsperren. Der uebrige Zustand bleibt unangetastet (FR-1)."""
         if not await self.attrs.exists_anywhere(username) and not await self.subjects.get(username):
             raise NotFoundError(code="error.not_found", details={"username": username})
-        subject = await self.subjects.ensure(username)
+        subject = await self._ensure_subject(username)
         existing = await self.attrs.find_check(username, AUTH_TYPE)
         if disabled:
             # Eine vorhandene Auth-Type-Vorgabe (etwa "PAP") wird gemerkt und
@@ -412,6 +412,41 @@ class UserService:
     # ------------------------------------------------------------------
     # Hilfsfunktionen
     # ------------------------------------------------------------------
+
+    async def _ensure_subject(
+        self, username: str, subject_type: SubjectType = SubjectType.USER
+    ) -> MgrSubject:
+        """Metadaten anlegen und dabei den vorhandenen Credential-Typ uebernehmen.
+
+        Ein Bestandsbenutzer ohne ``mgr_subject`` waere sonst als ``both``
+        eingetragen, obwohl er nur einen NT-Hash besitzt - der Export meldete
+        einen Typ, den die Daten nicht hergeben.
+        """
+        existing = await self.subjects.get(username)
+        if existing is not None:
+            return existing
+
+        checks = await self.attrs.check_attributes(username)
+        attributes = {row.attribute.lower() for row in checks}
+        has_cleartext = "cleartext-password" in attributes
+        has_nt = "nt-password" in attributes
+        if has_cleartext and has_nt:
+            credential_type = CredentialType.BOTH
+        elif has_nt:
+            credential_type = CredentialType.NT
+        elif has_cleartext:
+            credential_type = CredentialType.CLEARTEXT
+        else:
+            credential_type = await self.settings.default_credential_type()
+
+        subject = await self.subjects.add(
+            MgrSubject(
+                username=username,
+                subject_type=subject_type,
+                credential_type=credential_type,
+            )
+        )
+        return subject
 
     async def _set_memberships(self, username: str, groups: list[MembershipIn]) -> None:
         """Setzt die Mitgliedschaften und prueft dabei die Gruppen.
@@ -582,14 +617,23 @@ class UserService:
 
     @staticmethod
     def _status(checks: Sequence[RadCheck]) -> UserStatus:
-        by_name = {row.attribute.lower(): row for row in checks}
-        auth_type = by_name.get(AUTH_TYPE.lower())
-        if auth_type is not None and auth_type.value == REJECT:
+        """Status eines Subjekts aus seinen Check-Attributen.
+
+        Mehrfach vorhandene ``Auth-Type``- oder ``Expiration``-Zeilen kommen in
+        Bestandsdaten vor. Bewertet wird deshalb - wie im SQL-Filter - ob
+        *irgendeine* Zeile zutrifft; sonst zeigte die Liste "aktiv", waehrend
+        eine Sammelaktion mit demselben Filter das Objekt erfasst.
+        """
+        if any(
+            row.attribute.lower() == AUTH_TYPE.lower() and row.value == REJECT for row in checks
+        ):
             return "disabled"
-        expiration = by_name.get(EXPIRATION.lower())
-        if expiration is not None:
-            parsed = from_expiration(expiration.value)
-            if parsed is not None and parsed < utcnow():
+        now = utcnow()
+        for row in checks:
+            if row.attribute.lower() != EXPIRATION.lower():
+                continue
+            parsed = from_expiration(row.value)
+            if parsed is not None and parsed < now:
                 return "expired"
         if not any(radius_dict.is_password_attribute(row.attribute) for row in checks):
             return "no_credentials"

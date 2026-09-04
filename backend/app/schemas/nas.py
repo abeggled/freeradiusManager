@@ -36,7 +36,7 @@ class NasCreate(BaseModel):
     coa_enabled: bool = False
     coa_port: int = Field(default=3799, ge=1, le=65535)
     coa_secret: str | None = Field(default=None, max_length=253)
-    note: str | None = None
+    note: str | None = Field(default=None, max_length=4000)
 
 
 class NasUpdate(BaseModel):
@@ -52,7 +52,7 @@ class NasUpdate(BaseModel):
     coa_port: int | None = Field(default=None, ge=1, le=65535)
     coa_secret: str | None = Field(default=None, max_length=253)
     clear_coa_secret: bool = False
-    note: str | None = None
+    note: str | None = Field(default=None, max_length=4000)
 
 
 class SecretReveal(BaseModel):

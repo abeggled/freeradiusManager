@@ -137,18 +137,34 @@ class GroupService:
         actor_ip: str | None = None,
         language: str = "de",
     ) -> GroupDetail:
+        if payload.groupname and payload.groupname != groupname:
+            # Die Sperre umschliesst Pruefung *und* Commit: gaebe man sie vorher
+            # frei, saehe die naechste Anfrage den noch nicht festgeschriebenen
+            # Zielnamen nicht und schriebe ihn ein zweites Mal.
+            async with named_lock(self.session, f"group:{payload.groupname}"):
+                return await self._update_locked(
+                    groupname, payload, actor=actor, actor_ip=actor_ip, language=language
+                )
+        return await self._update_locked(
+            groupname, payload, actor=actor, actor_ip=actor_ip, language=language
+        )
+
+    async def _update_locked(
+        self,
+        groupname: str,
+        payload: GroupUpdate,
+        *,
+        actor: Principal,
+        actor_ip: str | None,
+        language: str,
+    ) -> GroupDetail:
         before = await self.get(groupname)
         if payload.groupname and payload.groupname != groupname:
-            # Unter derselben Sperre wie das Anlegen: sonst koennten zwei
-            # Umbenennungen auf denselben Zielnamen beide durchgehen und die
-            # Gruppen verschmelzen (die RADIUS-Tabellen kennen keine
-            # Eindeutigkeit).
-            async with named_lock(self.session, f"group:{payload.groupname}"):
-                if await self.repo.exists(payload.groupname):
-                    raise ConflictError(
-                        code="error.group_exists", details={"groupname": payload.groupname}
-                    )
-                await self.repo.rename_group(groupname, payload.groupname)
+            if await self.repo.exists(payload.groupname):
+                raise ConflictError(
+                    code="error.group_exists", details={"groupname": payload.groupname}
+                )
+            await self.repo.rename_group(groupname, payload.groupname)
             groupname = payload.groupname
 
         # Jede Sammlung wird einzeln betrachtet: eine ausgelassene bleibt
