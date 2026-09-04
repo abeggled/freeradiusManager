@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import io
+import itertools
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -367,11 +368,14 @@ class ImportExportService:
         # schreiben einzeln fest, ein Abbruch mitten im Lauf liesse die ersten
         # 10 000 Aenderungen bestehen und meldete dennoch nur einen Fehler.
         # Die Datei liegt ohnehin vollstaendig im Speicher (Upload-Grenze).
-        raw_rows = list(reader)
+        # Nur bis zur Grenze plus eins lesen: ``list(reader)`` baute bei einer
+        # kompakten Datei innerhalb der Upload-Grenze Millionen Zeilen-Dicts,
+        # bevor die Pruefung ueberhaupt liefe.
+        raw_rows = list(itertools.islice(reader, MAX_IMPORT_ROWS + 1))
         if len(raw_rows) > MAX_IMPORT_ROWS:
             raise ValidationError(
                 code="error.import_too_many_rows",
-                details={"maximum": MAX_IMPORT_ROWS, "rows": len(raw_rows)},
+                details={"maximum": MAX_IMPORT_ROWS},
             )
 
         for index, raw in enumerate(raw_rows, start=2):
@@ -574,13 +578,14 @@ class ImportExportService:
             await self._create_row(parsed, kind, actor, actor_ip, language)
             return
 
-        subject_type = SubjectType.DEVICE if kind == "device" else SubjectType.USER
-        await self.users.subjects.ensure(parsed.username, subject_type)
-        # Alle Teilschritte einer Zeile in einer Transaktion (siehe
-        # ``UserService.apply_row``): sonst bliebe ein bereits geschriebenes
-        # Passwort stehen, waehrend der Bericht die Zeile als Fehler meldet.
+        # Alle Teilschritte einer Zeile in einer Transaktion und unter der
+        # Lebenszyklus-Sperre (siehe ``UserService.apply_row``): sonst bliebe ein
+        # bereits geschriebenes Passwort stehen, waehrend der Bericht die Zeile
+        # als Fehler meldet - und ein gleichzeitiges Loeschen zwischen
+        # Existenzpruefung und Schreiben liesse den Datensatz wieder entstehen.
         await self.users.apply_row(
             parsed.username,
+            subject_type=SubjectType.DEVICE if kind == "device" else SubjectType.USER,
             password=(
                 PasswordSet(password=parsed.password, credential_type=parsed.credential_type)
                 if parsed.password

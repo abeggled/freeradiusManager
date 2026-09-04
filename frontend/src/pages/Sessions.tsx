@@ -5,7 +5,7 @@ import type { SessionItem } from "@/api/types";
 import { ConfirmDialog, ErrorBox, Field, Modal, Spinner } from "@/components/ui";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n";
-import { formatBytes, formatDateTime, formatDuration, toIso } from "@/lib/format";
+import { formatBytes, formatDateTime, formatDuration, toIso, toOctets } from "@/lib/format";
 
 const LIMIT = 50;
 
@@ -185,7 +185,7 @@ export function SessionsPage() {
                     </td>
                     <td>
                       {formatBytes(
-                        (session.acctinputoctets ?? 0) + (session.acctoutputoctets ?? 0),
+                        toOctets(session.acctinputoctets) + toOctets(session.acctoutputoctets),
                       )}
                     </td>
                     <td>{session.acctterminatecause || "–"}</td>
@@ -313,7 +313,7 @@ function SessionDetailDialog({
           </dd>
           <dt>{t("sessions.volume")}</dt>
           <dd>
-            {formatBytes(data.acctinputoctets ?? 0)} ↓ / {formatBytes(data.acctoutputoctets ?? 0)} ↑
+            {formatBytes(data.acctinputoctets)} ↓ / {formatBytes(data.acctoutputoctets)} ↑
           </dd>
           <dt>{t("sessions.terminateCause")}</dt>
           <dd>{data.acctterminatecause || "–"}</dd>

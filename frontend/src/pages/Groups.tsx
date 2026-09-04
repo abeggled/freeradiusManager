@@ -251,12 +251,16 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
           <input
             type="checkbox"
             checked={expert}
+            // Solange die Details laden, sind die Sammlungen leer; ein hier
+            // begonnener Entwurf überschriebe die geladenen Werte dauerhaft
+            // und das Speichern löschte die bestehende Policy.
+            disabled={existing.isLoading}
             onChange={(event) => setExpert(event.target.checked)}
           />
           {t("groups.expert")}
         </label>
 
-        {expert ? (
+        {expert && !existing.isLoading ? (
           <>
             <p className="hint">{t("groups.expertHint")}</p>
             <AttributeEditor

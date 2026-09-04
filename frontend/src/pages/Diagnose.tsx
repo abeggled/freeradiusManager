@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { useDiagnosis } from "@/api/hooks";
 import { ErrorBox, Field, Spinner } from "@/components/ui";
 import { useI18n } from "@/i18n";
-import { formatBytes, formatDateTime, formatDuration } from "@/lib/format";
+import { formatBytes, formatDateTime, formatDuration, toOctets } from "@/lib/format";
 
 /** Diagnose-Ansicht: Klartext-Hinweise statt `radiusd -X` (Spezifikation FR-6). */
 export function DiagnosePage() {
@@ -121,8 +121,8 @@ export function DiagnosePage() {
                 <dt>{t("sessions.volume")}</dt>
                 <dd>
                   {formatBytes(
-                    (data.last_session.acctinputoctets ?? 0) +
-                      (data.last_session.acctoutputoctets ?? 0),
+                    toOctets(data.last_session.acctinputoctets) +
+                      toOctets(data.last_session.acctoutputoctets),
                   )}
                 </dd>
               </dl>

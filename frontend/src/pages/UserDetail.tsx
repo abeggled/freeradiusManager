@@ -136,7 +136,10 @@ export function UserDetailPage() {
       </header>
 
       <ErrorBox error={update.error ?? toggle.error ?? remove.error} />
-      <WarningList warnings={data.warnings} />
+      {/* Die Warnungen der Speicherung erscheinen nur in der Antwort der
+          Mutation; die anschliessend neu geladene Detailansicht enthält sie
+          nicht mehr. */}
+      <WarningList warnings={update.data?.warnings ?? data.warnings} />
 
       <div className="columns">
         <div className="card">

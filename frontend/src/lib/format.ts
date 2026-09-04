@@ -20,11 +20,35 @@ export function formatDuration(seconds: number | null | undefined): string {
   return `${rest} s`;
 }
 
-export function formatBytes(value: number | null | undefined): string {
-  if (!value) return "0 B";
+/**
+ * Byte-Zähler der Accounting-Tabelle sind BIGINT und kommen als Zeichenkette.
+ *
+ * `Number` würde oberhalb von 2^53 stillschweigend runden; deshalb wird die
+ * Grössenordnung mit `BigInt` bestimmt und erst der bereits geteilte Rest als
+ * Gleitkommazahl dargestellt.
+ */
+export function toOctets(value: string | number | null | undefined): bigint {
+  if (value === null || value === undefined || value === "") return 0n;
+  try {
+    return BigInt(value);
+  } catch {
+    return 0n;
+  }
+}
+
+export function formatBytes(value: string | number | bigint | null | undefined): string {
+  const total = typeof value === "bigint" ? value : toOctets(value as string | number | null);
+  if (total <= 0n) return "0 B";
   const units = ["B", "kB", "MB", "GB", "TB"];
-  let size = value;
+  let rest = total;
   let index = 0;
+  // Ganzzahlig teilen, solange der Wert gross ist; erst der letzte Schritt
+  // rechnet mit Gleitkomma und liegt dann sicher unter 2^53.
+  while (rest >= 1024n * 1024n && index < units.length - 1) {
+    rest /= 1024n;
+    index += 1;
+  }
+  let size = Number(rest);
   while (size >= 1024 && index < units.length - 1) {
     size /= 1024;
     index += 1;

@@ -530,6 +530,7 @@ class UserService:
         self,
         username: str,
         *,
+        subject_type: SubjectType,
         password: PasswordSet | None,
         payload: UserUpdate,
         disabled: bool | None,
@@ -552,6 +553,15 @@ class UserService:
 
         async with named_lock(self.session, *names):
             try:
+                # Erst unter der Sperre pruefen und anlegen: ein gleichzeitiges
+                # Loeschen zwischen der Einstufung der Zeile und diesem Punkt
+                # liesse den Datensatz sonst als Metadatenrumpf - oder mit
+                # Passwort - wieder entstehen.
+                if not await self.attrs.exists_anywhere(username) and not await self.subjects.get(
+                    username
+                ):
+                    raise NotFoundError(code="error.not_found", details={"username": username})
+                await self.subjects.ensure(username, subject_type)
                 # Ein neues Passwort wird vor der Typumstellung geschrieben: der
                 # Wechsel zu einem Typ mit Klartext liesse sich sonst aus dem
                 # alten NT-Hash nicht ableiten.

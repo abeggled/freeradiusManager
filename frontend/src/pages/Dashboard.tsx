@@ -1,7 +1,7 @@
 import { useStats } from "@/api/hooks";
 import { ErrorBox, Spinner } from "@/components/ui";
 import { useI18n } from "@/i18n";
-import { formatBytes, formatDateTime } from "@/lib/format";
+import { formatBytes, formatDateTime, toOctets } from "@/lib/format";
 
 function Tile({ label, value }: { label: string; value: string | number }) {
   return (
@@ -35,7 +35,7 @@ export function DashboardPage() {
         <Tile label={t("dashboard.rejects")} value={data.rejects} />
         <Tile
           label={t("dashboard.traffic")}
-          value={formatBytes(data.input_octets + data.output_octets)}
+          value={formatBytes(toOctets(data.input_octets) + toOctets(data.output_octets))}
         />
         <Tile label={t("dashboard.users")} value={data.users_total} />
         <Tile label={t("dashboard.devices")} value={data.devices_total} />

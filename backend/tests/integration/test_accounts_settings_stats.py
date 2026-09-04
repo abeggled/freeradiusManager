@@ -215,7 +215,8 @@ async def test_stats_snapshot_is_computed_and_read(session, admin_principal) -> 
     assert stats.stale is False
     assert stats.active_sessions == 1
     assert stats.sessions_started == 1
-    assert stats.input_octets == 100
+    # Als Zeichenkette ausgeliefert (BIGINT, JavaScript-Genauigkeit).
+    assert stats.input_octets == "100"
     assert stats.accepts == 1
     assert stats.rejects == 1
     assert stats.users_total == 1

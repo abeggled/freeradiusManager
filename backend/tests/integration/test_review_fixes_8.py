@@ -1114,3 +1114,96 @@ async def test_invalid_challenge_consumes_the_ip_quota(session, client) -> None:
         )
     assert last is not None
     assert last.status_code == 429
+
+
+# --- Achtzehnte Runde -----------------------------------------------------
+
+
+async def test_import_stops_reading_at_the_row_cap() -> None:
+    """``list(reader)`` baute vorher Millionen Zeilen-Dicts vor der Pruefung."""
+    import inspect
+
+    from app.services.importexport import ImportExportService
+
+    source = inspect.getsource(ImportExportService.import_csv)
+    assert "itertools.islice(reader, MAX_IMPORT_ROWS + 1)" in source
+
+
+async def test_enrollment_code_cannot_be_replayed(session) -> None:
+    """Challenge und Code liessen sich im Prueffenster erneut einloesen."""
+    import pyotp
+
+    from app.core.config import settings as app_settings
+    from app.core.crypto import SecretBox, hash_password
+    from app.core.errors import ConflictError
+    from app.models.mgr import MgrAccount, Role
+    from app.services.accounts import AccountService
+
+    account = MgrAccount(
+        username="admin",
+        role=Role.ADMINISTRATOR,
+        password_hash=hash_password("ein-sicheres-passwort"),
+    )
+    session.add(account)
+    await session.commit()
+
+    service = AccountService(session)
+    setup = await service.start_totp_enrollment(account)
+    del setup
+    secret = SecretBox(app_settings.coa_secret_key or app_settings.secret_key).decrypt(
+        str(account.totp_secret_enc)
+    )
+    code = pyotp.TOTP(secret).now()
+    await service.confirm_totp(account, code)
+    assert account.totp_enabled is True
+
+    with pytest.raises(ConflictError) as excinfo:
+        await service.confirm_totp(account, code)
+    assert excinfo.value.code == "error.totp_already_enrolled"
+
+
+async def test_import_row_creates_metadata_only_under_the_lock() -> None:
+    """Ein Loeschen dazwischen liesse den Datensatz sonst wieder entstehen."""
+    import inspect
+
+    from app.services.importexport import ImportExportService
+
+    write_row = inspect.getsource(ImportExportService._write_row)
+    assert "subjects.ensure" not in write_row
+
+    apply_row = inspect.getsource(UserService.apply_row)
+    lock_at = apply_row.index("named_lock")
+    assert apply_row.index("self.subjects.ensure(", lock_at) > lock_at
+
+
+async def test_named_lock_refreshes_the_read_snapshot() -> None:
+    """REPEATABLE READ: der Wartende saehe den soeben geschriebenen Stand sonst nicht."""
+    import inspect
+
+    from app.core import locking
+
+    assert "session.rollback()" in inspect.getsource(locking.named_lock)
+
+
+async def test_octet_counters_are_serialised_as_text(session) -> None:
+    """Oberhalb von 2^53 rundete JavaScript den Wert stillschweigend."""
+    from app.repositories.radius.acct import AccountingRepository, SessionFilter
+    from app.services.sessions import SessionService
+
+    huge = 9_007_199_254_740_993  # 2^53 + 1
+    session.add(
+        RadAcct(
+            acctsessionid="s1",
+            acctuniqueid="u1",
+            username="anna",
+            nasipaddress="10.0.0.1",
+            acctinputoctets=huge,
+            acctoutputoctets=huge,
+        )
+    )
+    await session.commit()
+
+    assert await AccountingRepository(session).get(1) is not None
+    items, _, _ = await SessionService(session).search(SessionFilter())
+    assert items[0].acctinputoctets == str(huge)
+    assert items[0].acctoutputoctets == str(huge)

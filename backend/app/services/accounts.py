@@ -359,11 +359,16 @@ class AccountService:
     ) -> None:
         if not account.totp_secret_enc:
             raise ValidationError(code="error.totp_setup_required")
+        if account.totp_enabled:
+            # Die Einrichtung ist bereits abgeschlossen; ein erneuter Aufruf
+            # koennte sonst mit demselben Code eine weitere Sitzung erzeugen.
+            raise ConflictError(code="error.totp_already_enrolled")
         secret = _box().decrypt(account.totp_secret_enc)
         counter = verify_totp(secret, code)
-        if counter is None:
+        # Auch der Einrichtungscode gilt nur einmal: sonst liesse sich Challenge
+        # und Code innerhalb des Prueffensters erneut einloesen.
+        if counter is None or counter <= (account.totp_last_counter or -1):
             raise AuthenticationError(code="error.totp_invalid")
-        # Auch der Einrichtungscode gilt nur einmal.
         account.totp_last_counter = counter
         account.totp_enabled = True
         account.totp_changed_at = utcnow()

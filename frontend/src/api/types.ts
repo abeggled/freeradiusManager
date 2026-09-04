@@ -156,8 +156,9 @@ export interface SessionItem {
   acctupdatetime: string | null;
   acctstoptime: string | null;
   acctsessiontime: number | null;
-  acctinputoctets: number | null;
-  acctoutputoctets: number | null;
+  /** BIGINT als Zeichenkette: `number` verlöre oberhalb von 2^53 an Genauigkeit. */
+  acctinputoctets: string | null;
+  acctoutputoctets: string | null;
   acctterminatecause: string | null;
   active: boolean;
   ssid: string | null;
@@ -195,8 +196,9 @@ export interface Stats {
   stale: boolean;
   active_sessions: number;
   sessions_started: number;
-  input_octets: number;
-  output_octets: number;
+  /** Ebenfalls als Zeichenkette – siehe `SessionItem.acctinputoctets`. */
+  input_octets: string;
+  output_octets: string;
   accepts: number;
   rejects: number;
   top_users: { username: string; sessions: number }[];

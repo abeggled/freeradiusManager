@@ -833,6 +833,31 @@ Die fünfundzwanzigste Runde:
 * Die Rate-Limiter werden zwischen Tests zurückgesetzt: ein Test, der das
   Kontingent absichtlich ausreizt, beeinflusste sonst die nachfolgenden.
 
+### Achtzehnte Runde
+
+* **Benannte Sperren erneuern den Lesestand.** MariaDB fährt `REPEATABLE READ`;
+  die Sitzung hatte ihren Snapshot meist schon beim Lesen des Kontos festgelegt.
+  Wer auf die Sperre wartete, sah den soeben festgeschriebenen Stand des anderen
+  nicht – beide Prüfungen gingen durch und beide schrieben.
+* **Der Import liest höchstens 10 001 Zeilen ein.** `list(reader)` baute bei
+  einer kompakten Datei innerhalb der Upload-Grenze Millionen Zeilen-Dicts,
+  bevor die Prüfung überhaupt lief.
+* **Metadaten einer Importzeile entstehen erst unter der Lebenszyklus-Sperre.**
+  Ein gleichzeitiges Löschen zwischen Einstufung und Schreiben liess den
+  Datensatz sonst als Metadatenrumpf – oder mit Passwort – wieder entstehen.
+* **Auch die Bestätigung der TOTP-Einrichtung weist Wiedereinsatz ab.**
+  Challenge und Code liessen sich innerhalb des Prüffensters erneut einlösen und
+  erzeugten eine weitere Sitzung.
+* **Byte-Zähler werden als Zeichenkette ausgeliefert** (`acctinputoctets`,
+  `acctoutputoctets` und die Tagessummen). Oberhalb von 2^53 rundete JavaScript
+  sie stillschweigend; die Oberfläche rechnet jetzt mit `BigInt`.
+* **Ein Passwortwechsel im Profil führt zur Anmeldung zurück.** Er entwertet das
+  eigene Cookie; die Oberfläche blieb sonst sichtbar, aber unbenutzbar.
+* Der Expertenmodus des Gruppendialogs ist gesperrt, solange die Details laden –
+  ein dort begonnener Entwurf hätte die geladenen Attribute überschrieben.
+* Die Benutzerdetailansicht zeigt die Warnungen der Speicherung; die
+  anschliessend neu geladene Ansicht enthält sie nicht mehr.
+
 ## Prüfschritte
 
 ```bash

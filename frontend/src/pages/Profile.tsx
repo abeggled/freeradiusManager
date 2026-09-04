@@ -6,6 +6,7 @@ import {
   useOwnTotpConfirm,
   useOwnTotpEnroll,
 } from "@/api/hooks";
+import { endSession } from "@/api/client";
 import { Copyable, ErrorBox, Field, Spinner } from "@/components/ui";
 import { useI18n, type Language, type TranslationKey } from "@/i18n";
 
@@ -66,6 +67,10 @@ export function ProfilePage() {
                   onSuccess: () => {
                     setCurrent("");
                     setNext("");
+                    // Der Wechsel setzt `password_changed_at` und entwertet das
+                    // eigene Cookie. Ohne diesen Schritt bliebe die Oberfläche
+                    // sichtbar, aber unbenutzbar.
+                    endSession();
                   },
                 },
               );

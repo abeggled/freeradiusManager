@@ -31,8 +31,11 @@ class SessionItem(BaseModel):
     acctupdatetime: dt.datetime | None = None
     acctstoptime: dt.datetime | None = None
     acctsessiontime: int | None = None
-    acctinputoctets: int | None = None
-    acctoutputoctets: int | None = None
+    # BIGINT wie ``radacctid``: eine lange Sitzung mit hohem Durchsatz
+    # ueberschreitet 2^53, und JavaScript rundete den Wert stillschweigend -
+    # das angezeigte Volumen waere falsch.
+    acctinputoctets: str | None = None
+    acctoutputoctets: str | None = None
     acctterminatecause: str | None = None
     active: bool = False
     ssid: str | None = None
@@ -42,6 +45,11 @@ class SessionItem(BaseModel):
     @classmethod
     def _as_text(cls, value: object) -> str:
         return str(value)
+
+    @field_validator("acctinputoctets", "acctoutputoctets", mode="before")
+    @classmethod
+    def _octets_as_text(cls, value: object) -> str | None:
+        return None if value is None else str(value)
 
 
 class AuthLogItem(BaseModel):
@@ -83,8 +91,11 @@ class StatsResponse(BaseModel):
     stale: bool = False
     active_sessions: int = 0
     sessions_started: int = 0
-    input_octets: int = 0
-    output_octets: int = 0
+    input_octets: str = "0"
+    output_octets: str = "0"
+    """Ebenfalls als Zeichenkette - siehe ``SessionItem.acctinputoctets``.
+
+    Die Summe eines Tages sprengt bei hohem Durchsatz ebenso 2^53."""
     accepts: int = 0
     rejects: int = 0
     top_users: list[dict[str, object]] = Field(default_factory=list)
@@ -94,3 +105,8 @@ class StatsResponse(BaseModel):
     devices_total: int = 0
     groups_total: int = 0
     nas_total: int = 0
+
+    @field_validator("input_octets", "output_octets", mode="before")
+    @classmethod
+    def _octets_as_text(cls, value: object) -> str:
+        return str(value if value is not None else 0)
