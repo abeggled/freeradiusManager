@@ -247,6 +247,7 @@ export const en: Record<TranslationKey, string> = {
   "import.preview": "Preview (dry run)",
   "import.apply": "Run import",
   "import.summary": "{total} rows: {create} new, {update} updates, {errors} errors",
+  "import.truncated": "Not all rows are shown; rows with errors are listed in full.",
   "import.line": "Line",
   "import.action": "Action",
   "import.action.create": "create",

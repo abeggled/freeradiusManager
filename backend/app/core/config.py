@@ -49,8 +49,10 @@ class Settings(BaseSettings):
     """Fernet-/AES-GCM-Schluessel (base64, 32 Byte) fuer CoA-Secrets (NFR-1)."""
 
     jwt_algorithm: str = "HS256"
-    session_idle_minutes: int = 30
-    session_absolute_hours: int = 12
+    # Positive Laufzeiten erzwungen: bei 0 waere das Token sofort abgelaufen und
+    # die Anmeldung faktisch unbrauchbar.
+    session_idle_minutes: int = Field(default=30, ge=1)
+    session_absolute_hours: int = Field(default=12, ge=1)
     cookie_name: str = "frm_session"
     cookie_secure: bool = True
     cookie_domain: str | None = None
@@ -90,7 +92,9 @@ class Settings(BaseSettings):
     # --- Fachliche Defaults ---------------------------------------------
     default_mac_format: str = "colon_lower"
     default_credential_type: CredentialType = "both"
-    audit_retention_days: int = 730
+    # Wie bei der Einstellung in der Datenbank: 0 oder negativ liesse den
+    # Hintergrundjob das gesamte Audit-Log loeschen.
+    audit_retention_days: int = Field(default=730, ge=1)
     default_language: Literal["de", "en"] = "de"
 
     # --- Erstinbetriebnahme ---------------------------------------------

@@ -79,6 +79,9 @@ export function ImportDialog({
               errors: report.errors,
             })}
           </p>
+          {report.rows_truncated ? (
+            <p className="hint">{t("import.truncated")}</p>
+          ) : null}
           <div className="table-wrapper">
             <table>
               <thead>

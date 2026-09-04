@@ -75,8 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Neunzehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
-12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11, 8 und 10 Befunde;
+Zwanzig Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
+12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11, 8, 10 und 8 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
@@ -495,6 +495,22 @@ Die neunzehnte Runde (keine P1-Befunde):
   Warnungen anzuzeigen sind.
 * Die Vorgabewerte der Enum-Spalten in den Migrationen entsprechen jetzt den
   gespeicherten Namen (Migration 0005).
+
+Die zwanzigste Runde:
+
+* Sitzungslaufzeiten und die Aufbewahrungsdauer müssen positiv sein – bei `0`
+  wäre jede Anmeldung sofort abgelaufen bzw. das Audit-Log beim ersten Lauf des
+  Hintergrundjobs leer.
+* Die Obergrenze für Attributsammlungen ist so gewählt, dass auch eine maximale
+  Nutzlast in die Audit-Spalte passt (50 statt 200 je Sammlung).
+* Mitgliedschaften laufen unter derselben Sperre wie Umbenennen und Löschen der
+  Gruppe; sonst konnte eine Zuordnung unter dem alten Namen entstehen und die
+  Gruppe wiederauferstehen lassen.
+* Sessions lassen sich auch über per CIDR eingetragene NAS filtern.
+* Das Löschen eines Kontos hält dessen Rolle und Zustand im Audit-Log fest.
+* Die Import-Vorschau zeigt Fehlerzeilen vollständig, auch jenseits der
+  Anzeigegrenze.
+* VLAN-Werte sind auch beim Gruppen-Update begrenzt.
 
 ## Prüfschritte
 

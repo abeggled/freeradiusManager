@@ -12,12 +12,13 @@ from app.schemas.common import ApiWarning
 
 MASKED = "********"
 
-MAX_ATTRIBUTES = 200
+MAX_ATTRIBUTES = 50
 """Obergrenze je Attributsammlung.
 
 Der vollstaendige Vorgang wird ins Audit-Log geschrieben; ``mgr_audit.after_json``
-ist eine TEXT-Spalte mit rund 64 KiB. Ohne Grenze scheiterte der Audit-Eintrag
-und rollte den ganzen Vorgang zurueck."""
+ist eine TEXT-Spalte mit rund 64 KiB. Zwei Sammlungen zu je 50 Tripeln mit den
+zulaessigen Feldlaengen bleiben mit deutlichem Abstand darunter - 200 taeten es
+nicht, und der Audit-Eintrag risse den ganzen Vorgang mit."""
 
 
 def validate_identifier(value: str, field: str) -> str:

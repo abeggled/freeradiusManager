@@ -49,7 +49,7 @@ class GroupUpdate(BaseModel):
     def _check(cls, value: str | None) -> str | None:
         return None if value is None else validate_groupname(value)
 
-    vlan: str | None = None
+    vlan: str | None = Field(default=None, max_length=64)
     clear_vlan: bool = False
     check_attributes: list[AttributeIn] | None = Field(default=None, max_length=MAX_ATTRIBUTES)
     reply_attributes: list[AttributeIn] | None = Field(default=None, max_length=MAX_ATTRIBUTES)

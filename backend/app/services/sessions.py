@@ -5,6 +5,7 @@ Serverseitige Keyset-Paginierung, keine ungefilterten Vollabfragen (NFR-2).
 
 from __future__ import annotations
 
+import ipaddress
 import re
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,23 +65,35 @@ class SessionService:
             items.append(item)
         return items
 
-    async def resolve_nas_filter(self, text: str) -> list[str]:
-        """Uebersetzt den angezeigten NAS-Bezeichner in Accounting-Adressen.
+    async def resolve_nas_filter(self, text: str) -> tuple[list[str], list[str]]:
+        """Uebersetzt den angezeigten NAS-Bezeichner in ein Filterkriterium.
 
-        In der Liste steht der Kurzname; ``radacct`` kennt aber nur die IP. Ohne
-        diese Aufloesung liefe eine Suche nach dem angezeigten Namen ins Leere.
-        Netzeintraege lassen sich nicht in ein SQL-Praedikat uebersetzen und
-        bleiben deshalb aussen vor.
+        In der Liste steht der Kurzname; ``radacct`` kennt aber nur die IP.
+        Rueckgabe ist (konkrete Adressen, Netze): Netze werden als
+        Praefix-Vergleich ausgewertet, damit auch die per CIDR eingetragenen
+        NAS-Clients filterbar sind (FR-5).
         """
         matches = await self.nas.find_by_label(text)
         addresses = [nas.nasname for nas in matches if "/" not in nas.nasname]
-        return addresses or [text]
+        networks = [nas.nasname for nas in matches if "/" in nas.nasname]
+        try:
+            ipaddress.ip_network(text, strict=False)
+        except ValueError:
+            pass
+        else:
+            if "/" in text:
+                networks.append(text)
+        if not addresses and not networks:
+            addresses = [text]
+        return addresses, networks
 
     async def search(
         self, flt: SessionFilter, limit: int | None = None, cursor: str | None = None
     ) -> tuple[list[SessionItem], str | None, int]:
         if flt.nas_ip_address:
-            flt.nas_ip_addresses = await self.resolve_nas_filter(flt.nas_ip_address)
+            flt.nas_ip_addresses, flt.nas_networks = await self.resolve_nas_filter(
+                flt.nas_ip_address
+            )
             flt.nas_ip_address = None
         page = await self.repo.search(flt, limit=limit, cursor=cursor)
         approx = await self.repo.count(flt)

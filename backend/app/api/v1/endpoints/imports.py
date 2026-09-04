@@ -8,11 +8,13 @@ from fastapi import APIRouter, File, Form, Response, UploadFile
 
 from app.api.deps import ClientIp, Language, ReaderUser, SessionDep, WriterUser
 from app.core.errors import ValidationError
-from app.services.importexport import ImportExportService
+from app.services.importexport import ImportExportService, ImportReport, ImportRow
 
 router = APIRouter(prefix="/imports", tags=["import-export"])
 
 MAX_BYTES = 5 * 1024 * 1024
+PREVIEW_ROWS = 500
+"""Hoechstzahl in der Antwort gezeigter Zeilen."""
 
 
 @router.get("/template/{kind}")
@@ -57,6 +59,8 @@ async def import_csv(
         "to_create": report.to_create,
         "to_update": report.to_update,
         "errors": report.errors,
+        # Fehlerzeilen zuerst und vollstaendig: sonst bliebe die zu
+        # korrigierende Zeile unsichtbar, sobald sie hinter der Grenze liegt.
         "rows": [
             {
                 "line": r.line,
@@ -65,6 +69,14 @@ async def import_csv(
                 "message": r.message,
                 "values": r.values,
             }
-            for r in report.rows[:500]
+            for r in _preview_rows(report)
         ],
+        "rows_truncated": len(report.rows) > PREVIEW_ROWS,
     }
+
+
+def _preview_rows(report: ImportReport) -> list[ImportRow]:
+    """Fehlerzeilen vollstaendig, danach so viele Erfolgszeilen wie moeglich."""
+    errors = [row for row in report.rows if row.action == "error"]
+    others = [row for row in report.rows if row.action != "error"]
+    return errors + others[: max(0, PREVIEW_ROWS - len(errors))]

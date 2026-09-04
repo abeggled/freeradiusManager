@@ -249,6 +249,8 @@ export interface ImportRow {
 
 export interface ImportReport {
   dry_run: boolean;
+  /** true, wenn nicht alle Zeilen in der Antwort enthalten sind. */
+  rows_truncated?: boolean;
   total: number;
   to_create: number;
   to_update: number;

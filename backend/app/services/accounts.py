@@ -409,6 +409,10 @@ class AccountService:
         ):
             raise ValidationError(code="error.last_administrator")
         username = account.username
+        # Vollstaendiger Zustand vor dem Loeschen: danach liesse sich nicht mehr
+        # feststellen, welche Rechte das Konto hatte (FR-9).
+        before = AccountOut.model_validate(account).model_dump(mode="json")
+        before["oidc_subject"] = account.oidc_subject
         await self.repo.delete(account)
         await self.audit.log(
             action="account.delete",
@@ -416,7 +420,7 @@ class AccountService:
             object_id=username,
             actor=actor,
             actor_ip=actor_ip,
-            before={"username": username},
+            before=before,
         )
         await self.session.commit()
 

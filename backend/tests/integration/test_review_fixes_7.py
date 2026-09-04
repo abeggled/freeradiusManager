@@ -1593,3 +1593,104 @@ async def test_ip_attribute_values_are_validated() -> None:
     with pytest.raises(AppValidationError):
         validate_triple("Framed-IP-Address", ":=", "keine-ip", table="radreply")
     assert validate_triple("Framed-IP-Address", ":=", "192.0.2.10", table="radreply") == []
+
+
+# --- Zwanzigste Runde ------------------------------------------------------
+
+
+async def test_session_and_retention_settings_must_be_positive() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.core.config import Settings
+
+    for kwargs in (
+        {"session_idle_minutes": 0},
+        {"session_absolute_hours": 0},
+        {"audit_retention_days": 0},
+    ):
+        with pytest.raises(PydanticValidationError):
+            Settings(**kwargs)
+
+
+async def test_attribute_cap_fits_the_audit_column(session, admin_principal) -> None:
+    """Eine maximale Nutzlast muss noch in mgr_audit.after_json passen."""
+    from sqlalchemy import select as sa_select
+
+    from app.models.mgr import MgrAudit
+    from app.schemas.groups import GroupCreate
+    from app.schemas.users import MAX_ATTRIBUTES, AttributeIn
+    from app.services.groups import GroupService
+
+    attributes = [
+        AttributeIn(attribute="A" * 64, op=":=", value="v" * 253) for _ in range(MAX_ATTRIBUTES)
+    ]
+    await GroupService(session).create(
+        GroupCreate(groupname="gross", check_attributes=attributes, reply_attributes=attributes),
+        actor=admin_principal,
+    )
+    entry = await session.scalar(sa_select(MgrAudit).where(MgrAudit.action == "group.create"))
+    assert len((entry.after_json or "").encode("utf-8")) < 65_000
+
+
+async def test_sessions_filter_by_network_nas(session, admin_principal) -> None:
+    """Ein per CIDR eingetragenes NAS muss auch filterbar sein."""
+    from app.repositories.radius.acct import SessionFilter
+
+    await NasService(session).create(
+        NasCreate(nasname="192.0.2.0/24", shortname="netz", secret="s"), actor=admin_principal
+    )
+    session.add(
+        RadAcct(
+            acctsessionid="s1",
+            acctuniqueid="u1",
+            username="anna",
+            nasipaddress="192.0.2.5",
+            acctstarttime=dt.datetime(2026, 9, 1, 8, 0),
+            callingstationid="AA-BB-CC-DD-EE-FF",
+        )
+    )
+    await session.commit()
+
+    service = SessionService(session)
+    by_label, _, _ = await service.search(SessionFilter(nas_ip_address="netz"))
+    assert [i.username for i in by_label] == ["anna"]
+
+    by_cidr, _, _ = await service.search(SessionFilter(nas_ip_address="192.0.2.0/24"))
+    assert [i.username for i in by_cidr] == ["anna"]
+
+
+async def test_account_deletion_records_its_state(session, admin_principal) -> None:
+    from sqlalchemy import select as sa_select
+
+    from app.models.mgr import MgrAudit
+    from app.schemas.accounts import AccountCreate
+    from app.services.accounts import AccountService
+
+    service = AccountService(session)
+    await service.create(
+        AccountCreate(username="admin2", password="ein-sicheres-passwort", role=Role.ADMINISTRATOR),
+        actor=admin_principal,
+    )
+    created = await service.create(
+        AccountCreate(username="anna", password="ein-sicheres-passwort", role=Role.OPERATOR),
+        actor=admin_principal,
+    )
+    await service.delete(created.id, actor=admin_principal)
+
+    entry = await session.scalar(sa_select(MgrAudit).where(MgrAudit.action == "account.delete"))
+    assert "operator" in (entry.before_json or "")
+
+
+async def test_import_preview_shows_late_errors(session, admin_principal) -> None:
+    """Eine Fehlerzeile jenseits der Anzeigegrenze muss sichtbar bleiben."""
+    from app.api.v1.endpoints.imports import PREVIEW_ROWS, _preview_rows
+
+    rows = "\n".join(f"user{i},geheim123" for i in range(PREVIEW_ROWS + 5))
+    csv_text = f"username,password\n{rows}\n,ohne-namen\n"
+    report = await ImportExportService(session).import_csv(
+        csv_text, kind="user", dry_run=True, actor=admin_principal
+    )
+    assert report.errors == 1
+    shown = _preview_rows(report)
+    assert any(row.action == "error" for row in shown)
+    assert len(shown) <= PREVIEW_ROWS

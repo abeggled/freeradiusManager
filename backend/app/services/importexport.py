@@ -739,7 +739,10 @@ class ImportExportService:
                     raise NotFoundError(code="error.not_found", details={"username": username})
                 if not await self.users.groups.exists(groupname):
                     raise NotFoundError(code="error.not_found", details={"groupname": groupname})
-                async with named_lock(self.session, f"members:{groupname}"):
+                # Dieselbe Sperre wie Umbenennen und Loeschen der Gruppe: sonst
+                # koennte eine Mitgliedschaft nach einer Umbenennung unter dem
+                # alten Namen entstehen und die Gruppe wiederauferstehen lassen.
+                async with named_lock(self.session, f"group:{groupname}"):
                     await self.users.groups.add_membership(username, groupname, payload.priority)
             else:
                 await self.users.groups.remove_membership(username, groupname)

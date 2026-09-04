@@ -236,7 +236,7 @@ class GroupService:
             # Die Sperre umschliesst Pruefung *und* Commit: sonst saehe die
             # naechste Anfrage die noch nicht festgeschriebene Zeile nicht und
             # legte eine zweite an (radusergroup kennt keine Eindeutigkeit).
-            async with named_lock(self.session, f"members:{groupname}"):
+            async with named_lock(self.session, f"group:{groupname}"):
                 return await self._change_membership_locked(
                     groupname, payload, actor=actor, actor_ip=actor_ip
                 )

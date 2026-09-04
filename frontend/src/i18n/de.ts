@@ -246,6 +246,7 @@ export const de = {
   "import.preview": "Vorschau (Dry-Run)",
   "import.apply": "Import ausführen",
   "import.summary": "{total} Zeilen: {create} neu, {update} Aktualisierung, {errors} Fehler",
+  "import.truncated": "Es werden nicht alle Zeilen angezeigt; Fehlerzeilen sind vollständig enthalten.",
   "import.line": "Zeile",
   "import.action": "Aktion",
   "import.action.create": "anlegen",
