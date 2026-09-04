@@ -48,9 +48,16 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(request: Request, exc: AppError) -> JSONResponse:
         language = _language(request)
+        # Die Details fuellen zugleich die Platzhalter des Katalogs, sonst
+        # staende etwa "{cap}" wortwoertlich in der Meldung.
+        message = translate(
+            exc.code,
+            language,
+            **{k: v for k, v in exc.details.items() if isinstance(v, str | int | float)},
+        )
         return JSONResponse(
             status_code=exc.status_code,
-            content=_payload(exc.code, translate(exc.code, language), exc.details),
+            content=_payload(exc.code, message, exc.details),
         )
 
     @app.exception_handler(RequestValidationError)

@@ -1248,3 +1248,101 @@ async def test_nas_note_length_is_bounded() -> None:
 
     with pytest.raises(PydanticValidationError):
         NasCreate(nasname="10.0.0.1", secret="s", note="x" * 5000)
+
+
+# --- Siebzehnte Runde ------------------------------------------------------
+
+
+async def test_named_lock_survives_a_commit(session, admin_principal) -> None:
+    """Die Sperre liegt auf einer eigenen Verbindung und übersteht den Commit."""
+    from app.core.locking import named_lock
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    service = GroupService(session)
+    await service.create(GroupCreate(groupname="g1", vlan="10"), actor=admin_principal)
+    # Nach dem Commit im Inneren muss dieselbe Sperre wieder frei sein.
+    async with named_lock(session, "group:g1"):
+        pass
+    await service.create(GroupCreate(groupname="g2", vlan="11"), actor=admin_principal)
+    assert len(await service.search()) == 2
+
+
+async def test_all_password_attributes_are_masked(session, admin_principal) -> None:
+    """Auch seltenere FreeRADIUS-Passwortattribute dürfen nicht ausgeliefert werden."""
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    for attribute in ("SSHA-Password", "SMD5-Password", "Password-With-Header"):
+        await users.attrs.add_check("anna", attribute, ":=", "streng-geheim")
+    await session.commit()
+
+    detail = await users.get("anna")
+    assert "streng-geheim" not in detail.model_dump_json()
+
+
+async def test_enable_removes_every_reject_row(session, admin_principal) -> None:
+    """Mehrere Auth-Type-Zeilen dürfen nach dem Entsperren keine Reject-Zeile lassen."""
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.attrs.add_check("anna", "Auth-Type", ":=", "PAP")
+    await users.attrs.add_check("anna", "Auth-Type", ":=", "Reject")
+    await session.commit()
+
+    await users.set_disabled("anna", False, actor=admin_principal)
+    rows = [
+        r for r in await users.attrs.check_attributes("anna") if r.attribute.lower() == "auth-type"
+    ]
+    assert [r.value for r in rows] == ["PAP"]
+    assert (await users.get("anna")).status == "active"
+
+
+async def test_error_messages_interpolate_details(session, client) -> None:
+    """Platzhalter im Katalog müssen gefüllt werden."""
+    await _account(session, "operator", Role.OPERATOR)
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+    response = await client.get("/api/v1/users/gibtsnicht")
+    assert "{" not in response.json()["message"]
+
+
+async def test_self_service_totp_is_attributed(session, client) -> None:
+    """Wer den zweiten Faktor aktiviert, muss im Audit-Log stehen."""
+    from app.models.mgr import MgrAudit
+
+    await _account(session, "operator", Role.OPERATOR)
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+    setup = await client.post("/api/v1/auth/me/totp/enroll")
+    await client.post(
+        "/api/v1/auth/me/totp/confirm",
+        json={"code": pyotp.TOTP(setup.json()["secret"]).now()},
+    )
+    entry = await session.scalar(select(MgrAudit).where(MgrAudit.action == "account.totp_enabled"))
+    assert entry is not None
+    assert entry.actor_name == "operator"
+
+
+async def test_oidc_requires_its_settings() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(PydanticValidationError):
+        Settings(oidc_enabled=True)
+    assert Settings(
+        oidc_enabled=True,
+        oidc_issuer="https://idp",
+        oidc_client_id="manager",
+        oidc_redirect_url="https://radius.example/callback",
+    ).oidc_enabled
+
+
+async def test_multibyte_coa_secret_is_bounded() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    with pytest.raises(PydanticValidationError):
+        NasCreate(nasname="10.0.0.1", secret="s", coa_secret="🔐" * 200)

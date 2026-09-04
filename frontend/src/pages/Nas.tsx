@@ -136,7 +136,14 @@ export function NasPage() {
       )}
 
       {creating ? <NasDialog onClose={() => setCreating(false)} /> : null}
-      {editing ? <NasDialog nas={editing} onClose={() => setEditing(null)} /> : null}
+      {editing ? (
+        <NasDialog
+          nas={editing}
+          onClose={() => setEditing(null)}
+          // Ein zuvor angezeigtes Secret kann nach dem Speichern veraltet sein.
+          onSaved={() => setRevealed(null)}
+        />
+      ) : null}
       {confirmDelete ? (
         <ConfirmDialog
           title={t("common.delete")}
@@ -152,7 +159,15 @@ export function NasPage() {
   );
 }
 
-function NasDialog({ nas, onClose }: { nas?: NasItem; onClose: () => void }) {
+function NasDialog({
+  nas,
+  onClose,
+  onSaved,
+}: {
+  nas?: NasItem;
+  onClose: () => void;
+  onSaved?: () => void;
+}) {
   const { t } = useI18n();
   const create = useCreateNas();
   const update = useUpdateNas();
@@ -184,7 +199,15 @@ function NasDialog({ nas, onClose }: { nas?: NasItem; onClose: () => void }) {
       clear_coa_secret: clearCoaSecret,
     };
     if (nas) {
-      update.mutate({ id: nas.id, body }, { onSuccess: onClose });
+      update.mutate(
+        { id: nas.id, body },
+        {
+          onSuccess: () => {
+            onSaved?.();
+            onClose();
+          },
+        },
+      );
     } else {
       create.mutate(body, { onSuccess: onClose });
     }

@@ -156,7 +156,7 @@ class UserUpdate(BaseModel):
     expires_at: dt.datetime | None = None
     clear_expiry: bool = False
     groups: list[MembershipIn] | None = None
-    vlan: str | None = None
+    vlan: str | None = Field(default=None, max_length=64)
     clear_vlan: bool = False
     meta: SubjectMeta | None = None
     reply_attributes: list[AttributeIn] | None = Field(default=None, max_length=MAX_ATTRIBUTES)
@@ -176,17 +176,17 @@ class DeviceCreate(BaseModel):
     password: str | None = Field(default=None, max_length=253)
     expires_at: dt.datetime | None = None
     groups: list[MembershipIn] = Field(default_factory=list)
-    vlan: str | None = None
+    vlan: str | None = Field(default=None, max_length=64)
     meta: SubjectMeta = Field(default_factory=SubjectMeta)
     disabled: bool = False
 
 
 class DeviceUpdate(BaseModel):
-    mac: str | None = None
+    mac: str | None = Field(default=None, max_length=32)
     expires_at: dt.datetime | None = None
     clear_expiry: bool = False
     groups: list[MembershipIn] | None = None
-    vlan: str | None = None
+    vlan: str | None = Field(default=None, max_length=64)
     clear_vlan: bool = False
     meta: SubjectMeta | None = None
 

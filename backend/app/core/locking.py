@@ -11,8 +11,9 @@ import contextlib
 from collections.abc import AsyncIterator
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from app.core.db import get_engine
 from app.core.errors import ConflictError
 from app.core.logging import get_logger
 
@@ -26,21 +27,30 @@ log = get_logger("locking")
 async def named_lock(session: AsyncSession, name: str) -> AsyncIterator[None]:
     """Haelt eine MariaDB-``GET_LOCK``-Sperre fuer die Dauer des Blocks.
 
-    Laesst sich die Sperre nicht erlangen, wird abgebrochen. Den Block trotzdem
-    zu betreten waere schlimmer als ein Fehler: genau dann laeuft eine zweite,
-    noch nicht festgeschriebene Anlage - und beide wuerden schreiben.
+    Die Sperre laeuft ueber eine eigene, fuer den ganzen Block gehaltene
+    Verbindung. Ueber die Sitzung des Aufrufers ginge sie verloren, sobald
+    dessen ``commit()`` die Verbindung an den Pool zurueckgibt - das
+    anschliessende ``RELEASE_LOCK`` liefe dann auf einer fremden Verbindung und
+    die Sperre bliebe haengen.
+
+    Laesst sie sich nicht erlangen, wird abgebrochen. Den Block trotzdem zu
+    betreten waere schlimmer als ein Fehler: genau dann laeuft eine zweite, noch
+    nicht festgeschriebene Aenderung - und beide wuerden schreiben.
     """
     key = f"{LOCK_PREFIX}:{name}"[:64]
-    acquired = bool(
-        await session.scalar(
-            text("SELECT GET_LOCK(:key, :timeout)"),
-            {"key": key, "timeout": LOCK_TIMEOUT_SECONDS},
+    # Dieselbe Engine wie die Sitzung des Aufrufers, aber eine eigene Verbindung.
+    engine = session.bind if isinstance(session.bind, AsyncEngine) else get_engine()
+    async with engine.connect() as connection:
+        acquired = bool(
+            await connection.scalar(
+                text("SELECT GET_LOCK(:key, :timeout)"),
+                {"key": key, "timeout": LOCK_TIMEOUT_SECONDS},
+            )
         )
-    )
-    if not acquired:
-        log.warning("named_lock_timeout", key=key)
-        raise ConflictError(code="error.busy", details={"resource": name})
-    try:
-        yield
-    finally:
-        await session.execute(text("SELECT RELEASE_LOCK(:key)"), {"key": key})
+        if not acquired:
+            log.warning("named_lock_timeout", key=key)
+            raise ConflictError(code="error.busy", details={"resource": name})
+        try:
+            yield
+        finally:
+            await connection.exec_driver_sql(f"SELECT RELEASE_LOCK('{key}')")

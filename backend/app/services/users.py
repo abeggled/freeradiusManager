@@ -357,21 +357,34 @@ class UserService:
         if not await self.attrs.exists_anywhere(username) and not await self.subjects.get(username):
             raise NotFoundError(code="error.not_found", details={"username": username})
         subject = await self._ensure_subject(username)
-        existing = await self.attrs.find_check(username, AUTH_TYPE)
+        # Bestandsdaten koennen mehrere Auth-Type-Zeilen enthalten; bewertet
+        # wird die Gesamtheit, wie in der Statusberechnung.
+        rows = [
+            row
+            for row in await self.attrs.check_attributes(username)
+            if row.attribute.lower() == AUTH_TYPE.lower()
+        ]
+        existing = next((row for row in rows if row.value != REJECT), None)
         if disabled:
             # Eine vorhandene Auth-Type-Vorgabe (etwa "PAP") wird gemerkt und
             # beim Entsperren zurueckgeschrieben; sonst waere die Sperre eine
             # dauerhafte Aenderung der Authentifizierungskonfiguration.
-            if existing is not None and existing.value != REJECT:
+            if existing is not None:
                 subject.disabled_state = json.dumps({"op": existing.op, "value": existing.value})
+            # set_check ersetzt alle Zeilen des Attributs.
             await self.attrs.set_check(username, AUTH_TYPE, ":=", REJECT)
             subject.disabled_at = utcnow()
         else:
-            if existing is not None and existing.value == REJECT:
+            # Entfernt werden ausschliesslich die Reject-Zeilen; eine daneben
+            # bestehende Vorgabe (etwa "PAP") bleibt erhalten. Nur wenn dadurch
+            # keine Zeile uebrig bleibt, wird der gemerkte Zustand
+            # zurueckgeschrieben.
+            for row in rows:
+                if row.value == REJECT:
+                    await self.attrs.delete_check_row(row.id)
+            if existing is None:
                 previous = self._previous_auth_type(subject.disabled_state)
-                if previous is None:
-                    await self.attrs.delete_check(username, AUTH_TYPE)
-                else:
+                if previous is not None:
                     await self.attrs.set_check(
                         username, AUTH_TYPE, previous["op"], previous["value"]
                     )

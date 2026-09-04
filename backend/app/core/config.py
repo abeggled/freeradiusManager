@@ -128,6 +128,28 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def _require_oidc_settings(self) -> Settings:
+        """Aktiviertes OIDC braucht Aussteller, Client-ID und Redirect-URL.
+
+        Fehlen sie, scheiterte erst der erste Anmeldeversuch - nach erfolgreicher
+        Authentisierung beim Provider und mit einem allgemeinen Serverfehler.
+        """
+        if not self.oidc_enabled:
+            return self
+        missing = [
+            name
+            for name, value in (
+                ("FRM_OIDC_ISSUER", self.oidc_issuer),
+                ("FRM_OIDC_CLIENT_ID", self.oidc_client_id),
+                ("FRM_OIDC_REDIRECT_URL", self.oidc_redirect_url),
+            )
+            if not value.strip()
+        ]
+        if missing:
+            raise ValueError("Bei aktiviertem OIDC fehlen: " + ", ".join(missing))
+        return self
+
     @field_validator("oidc_role_map")
     @classmethod
     def _check_role_map(cls, value: dict[str, str]) -> dict[str, str]:

@@ -119,13 +119,27 @@ BY_NAME: dict[str, AttributeInfo] = {a.name.lower(): a for a in _ATTRIBUTES}
 VLAN_ATTRIBUTES = ("Tunnel-Type", "Tunnel-Medium-Type", "Tunnel-Private-Group-Id")
 PASSWORD_ATTRIBUTES = frozenset(
     {
+        # Alle von FreeRADIUS unterstuetzten Passwort-Attribute. Die Liste ist
+        # bewusst vollstaendig: was hier fehlt, laege im Klartext in API-Antwort
+        # und Audit-Log (NFR-1).
         "cleartext-password",
-        "nt-password",
-        "md5-password",
-        "sha2-password",
         "crypt-password",
-        "user-password",
+        "md5-password",
+        "nt-password",
+        "lm-password",
+        "ns-mta-md5-password",
         "password",
+        "password-with-header",
+        "sha-password",
+        "sha1-password",
+        "sha2-password",
+        "sha3-password",
+        "smd5-password",
+        "ssha-password",
+        "ssha1-password",
+        "ssha2-password",
+        "ssha3-password",
+        "user-password",
     }
 )
 

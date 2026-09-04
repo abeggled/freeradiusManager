@@ -176,7 +176,7 @@ async def confirm_own_totp(
 ) -> None:
     service = AccountService(session)
     account = await service.get(principal.account_id)
-    await service.confirm_totp(account, payload.code, actor_ip=actor_ip)
+    await service.confirm_totp(account, payload.code, actor_ip=actor_ip, actor=principal)
 
 
 # --- OIDC ----------------------------------------------------------------

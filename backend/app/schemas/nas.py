@@ -4,9 +4,22 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 MASKED_SECRET = "********"
+
+MAX_COA_SECRET_BYTES = 200
+"""Obergrenze in UTF-8-Bytes.
+
+Nach AES-GCM und Base64 muss der Wert in die 512 Zeichen von
+``mgr_nas_extra.coa_secret_enc`` passen; mehrbytige Zeichen sprengen eine reine
+Zeichengrenze."""
+
+
+def _check_secret(value: str | None) -> str | None:
+    if value is not None and len(value.encode("utf-8")) > MAX_COA_SECRET_BYTES:
+        raise ValueError(f"coa_secret darf hoechstens {MAX_COA_SECRET_BYTES} Bytes umfassen")
+    return value
 
 
 class NasListItem(BaseModel):
@@ -38,6 +51,11 @@ class NasCreate(BaseModel):
     coa_secret: str | None = Field(default=None, max_length=253)
     note: str | None = Field(default=None, max_length=4000)
 
+    @field_validator("coa_secret")
+    @classmethod
+    def _bytes(cls, value: str | None) -> str | None:
+        return _check_secret(value)
+
 
 class NasUpdate(BaseModel):
     nasname: str | None = Field(default=None, max_length=128)
@@ -53,6 +71,11 @@ class NasUpdate(BaseModel):
     coa_secret: str | None = Field(default=None, max_length=253)
     clear_coa_secret: bool = False
     note: str | None = Field(default=None, max_length=4000)
+
+    @field_validator("coa_secret")
+    @classmethod
+    def _bytes(cls, value: str | None) -> str | None:
+        return _check_secret(value)
 
 
 class SecretReveal(BaseModel):

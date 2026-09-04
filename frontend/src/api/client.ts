@@ -111,6 +111,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 export async function download(path: string, filename: string): Promise<void> {
   const response = await fetch(`${BASE}${path}`, { credentials: "same-origin" });
   if (!response.ok) {
+    // Wie in request(): eine abgelaufene Sitzung führt zur Anmeldemaske statt
+    // in eine stille Fehlermeldung.
+    if (response.status === 401) onUnauthenticated?.();
     throw new ApiError(response.status, {
       code: "error.generic",
       message: response.statusText,

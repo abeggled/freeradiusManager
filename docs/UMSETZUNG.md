@@ -75,8 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Sechzehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
-12, 11, 10, 10, 9, 9, 11, 12, 10 und 8 Befunde;
+Siebzehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
+12, 11, 10, 10, 9, 9, 11, 12, 10, 8 und 11 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
@@ -441,6 +441,24 @@ Die sechzehnte Runde (keine P1-Befunde):
 * Mehrzeilige Notizen überstehen den Export; NAS-Notizen sind längenbegrenzt.
 * Eine CoA-Anfrage nur mit Benutzernamen wird abgewiesen, wenn mehrere Sessions
   laufen – zuvor traf es stillschweigend die zuletzt begonnene.
+
+Die siebzehnte Runde:
+
+* **Die benannte Sperre liegt auf einer eigenen Verbindung.** Über die Sitzung
+  des Aufrufers ging sie beim Commit an den Pool zurück; das `RELEASE_LOCK` lief
+  dann auf einer fremden Verbindung und die Sperre blieb hängen.
+* **Alle FreeRADIUS-Passwortattribute werden maskiert**, nicht nur die
+  häufigsten – `SSHA-Password`, `SMD5-Password` und `Password-With-Header`
+  standen zuvor im Klartext in API-Antwort und Audit-Log.
+* Beim Entsperren werden gezielt die `Reject`-Zeilen entfernt; eine daneben
+  bestehende Vorgabe wie `PAP` bleibt erhalten.
+* Fehlermeldungen füllen die Platzhalter des Katalogs; zuvor stand dort wörtlich
+  `{cap}` oder `{username}`.
+* Aktiviertes OIDC ohne Aussteller, Client-ID oder Redirect-URL bricht den Start
+  ab; die Selbstbedienung beim zweiten Faktor steht mit Namen im Audit-Log.
+* Geräte-Schemas, CoA-Secrets (nach Bytes) und Notizen sind begrenzt; ein
+  abgelaufener Download führt zur Anmeldemaske; ein angezeigtes NAS-Secret wird
+  nach dem Speichern verworfen.
 
 ## Prüfschritte
 

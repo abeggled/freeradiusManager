@@ -230,6 +230,26 @@ class GroupService:
         actor: Principal,
         actor_ip: str | None = None,
     ) -> int:
+        if payload.action == "add":
+            # Die Sperre umschliesst Pruefung *und* Commit: sonst saehe die
+            # naechste Anfrage die noch nicht festgeschriebene Zeile nicht und
+            # legte eine zweite an (radusergroup kennt keine Eindeutigkeit).
+            async with named_lock(self.session, f"members:{groupname}"):
+                return await self._change_membership_locked(
+                    groupname, payload, actor=actor, actor_ip=actor_ip
+                )
+        return await self._change_membership_locked(
+            groupname, payload, actor=actor, actor_ip=actor_ip
+        )
+
+    async def _change_membership_locked(
+        self,
+        groupname: str,
+        payload: MembershipChange,
+        *,
+        actor: Principal,
+        actor_ip: str | None,
+    ) -> int:
         if payload.action == "add" and not await self.repo.exists(groupname):
             raise NotFoundError(code="error.not_found", details={"groupname": groupname})
 
@@ -243,10 +263,9 @@ class GroupService:
                     username
                 ):
                     raise NotFoundError(code="error.not_found", details={"username": username})
-                async with named_lock(self.session, f"member:{username}:{groupname}"):
-                    changed += int(
-                        await self.repo.add_membership(username, groupname, payload.priority)
-                    )
+                changed += int(
+                    await self.repo.add_membership(username, groupname, payload.priority)
+                )
             else:
                 changed += await self.repo.remove_membership(username, groupname)
         await self.audit.log(

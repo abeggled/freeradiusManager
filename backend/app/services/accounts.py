@@ -275,7 +275,12 @@ class AccountService:
         )
 
     async def confirm_totp(
-        self, account: MgrAccount, code: str, *, actor_ip: str | None = None
+        self,
+        account: MgrAccount,
+        code: str,
+        *,
+        actor_ip: str | None = None,
+        actor: Principal | None = None,
     ) -> None:
         if not account.totp_secret_enc:
             raise ValidationError(code="error.totp_setup_required")
@@ -288,6 +293,9 @@ class AccountService:
             action="account.totp_enabled",
             object_type="account",
             object_id=account.username,
+            # Bei der Selbstbedienung ist der Handelnde bekannt; im ersten
+            # Anmeldeweg gibt es noch keine Sitzung.
+            actor=actor,
             actor_ip=actor_ip,
         )
         await self.session.commit()
