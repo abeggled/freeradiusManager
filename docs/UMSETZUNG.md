@@ -1043,6 +1043,26 @@ Die fünfundzwanzigste Runde:
 * Das Entfernen des CoA-Secrets schaltet CoA in der Oberfläche mit ab; das
   Backend weist die Kombination sonst ab.
 
+### Achtundzwanzigste Runde
+
+* **Die TOTP-Sitzung trägt den Zeitstempel der Challenge**, also den der
+  Passwortprüfung. Aus dem zweiten Schritt abgeleitet erschien sie neuer als
+  eine dazwischen festgeschriebene Passwortänderung und blieb gültig.
+* **Der SQL-Statusfilter liest englische Monatsnamen unabhängig von der
+  Datenbank-Locale.** `lc_time_names` wird je Verbindung auf `en_US` gesetzt;
+  sonst ergab `STR_TO_DATE(..., '%b', ...)` NULL und der Filter lieferte eine
+  andere Menge als die Statusberechnung in Python (NFR-4).
+* **Das Abmelden wird protokolliert** (`auth.logout`); sonst liess es sich nicht
+  vom Ablauf oder einem administrativen Entzug unterscheiden (FR-9).
+* **Das Entfernen einer Mitgliedschaft setzt eine vorhandene Gruppe voraus.** Ein
+  Tippfehler meldete Erfolg und schrieb einen Audit-Eintrag für ein Objekt, das
+  es nie gab.
+* **Ein Benutzer lässt sich in seiner Schreibweise umbenennen** – wie Gruppen
+  und NAS seit der vorigen Runde.
+* Der Expertenmodus des Gruppendialogs erhält die VLAN-Zeilen, solange der
+  Assistent nicht bearbeitet wurde; sonst löschte ein Speichern die
+  VLAN-Policy.
+
 ## Prüfschritte
 
 ```bash

@@ -2254,3 +2254,88 @@ async def test_nas_can_be_renamed_by_case_only(session, admin_principal) -> None
     item, _ = await service.create(NasCreate(nasname="Switch-A", secret="s"), actor=admin_principal)
     updated, _ = await service.update(item.id, NasUpdate(nasname="switch-a"), actor=admin_principal)
     assert updated.nasname == "switch-a"
+
+
+# --- Achtundzwanzigste Runde ----------------------------------------------
+
+
+async def test_totp_session_uses_the_challenge_timestamp() -> None:
+    """Aus dem zweiten Schritt abgeleitet ueberlebte die Sitzung einen Passwortwechsel."""
+    import inspect
+
+    from app.api.v1.endpoints import auth as auth_endpoint
+    from app.services.accounts import AccountService
+
+    source = inspect.getsource(auth_endpoint.login_totp)
+    assert "account, verified_at = await service.account_from_challenge" in source
+    assert "return account, issued_at" in inspect.getsource(AccountService.account_from_challenge)
+
+
+async def test_logout_is_audited(session, client) -> None:
+    """Sonst liesse sich ein Abmelden nicht vom Ablauf unterscheiden (FR-9)."""
+    from sqlalchemy import select as sa_select
+
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, MgrAudit, Role
+
+    session.add(
+        MgrAccount(
+            username="operator",
+            role=Role.OPERATOR,
+            password_hash=hash_password("ein-sicheres-passwort"),
+        )
+    )
+    await session.commit()
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+    assert (await client.post("/api/v1/auth/logout")).status_code == 204
+
+    entry = await session.scalar(
+        sa_select(MgrAudit).where(MgrAudit.action == "auth.logout").limit(1)
+    )
+    assert entry is not None
+    assert entry.actor_name == "operator"
+
+
+async def test_user_can_be_renamed_by_case_only(session, admin_principal) -> None:
+    """Wie bei Gruppen und NAS: die Kollision war der Benutzer selbst."""
+    from app.schemas.users import UserUpdate
+
+    users = UserService(session)
+    await users.create(UserCreate(username="Alice", password="geheim123"), actor=admin_principal)
+    detail = await users.update("Alice", UserUpdate(username="alice"), actor=admin_principal)
+    assert detail.username == "alice"
+
+
+async def test_sql_status_filter_reads_english_months(session, admin_principal) -> None:
+    """Unter einer anderen Datenbank-Locale ergaebe STR_TO_DATE NULL."""
+    from sqlalchemy import text
+
+    from app.repositories.directory import SubjectFilter
+
+    # Die Sitzung wird beim Verbinden auf en_US gestellt; hier gegengeprueft.
+    assert (await session.scalar(text("SELECT @@session.lc_time_names"))) == "en_US"
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.attrs.add_check("anna", "Expiration", ":=", "01 Jan 2020 00:00:00")
+    await session.commit()
+
+    expired, _ = await users.search(SubjectFilter(status="expired"))
+    assert [i.username for i in expired] == ["anna"]
+
+
+async def test_removing_from_a_missing_group_is_rejected(session, admin_principal) -> None:
+    """Sonst protokollierte der Aufruf eine Aenderung an einem Objekt ohne Existenz."""
+    from app.core.errors import NotFoundError
+    from app.schemas.groups import MembershipChange
+    from app.services.groups import GroupService
+
+    with pytest.raises(NotFoundError):
+        await GroupService(session).change_membership(
+            "gibtsnicht",
+            MembershipChange(action="remove", usernames=["anna"]),
+            actor=admin_principal,
+        )

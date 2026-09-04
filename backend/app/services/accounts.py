@@ -228,7 +228,13 @@ class AccountService:
 
     async def account_from_challenge(
         self, challenge: str, *, scope: str = TOTP_SCOPE
-    ) -> MgrAccount:
+    ) -> tuple[MgrAccount, float]:
+        """Konto und Zeitpunkt der Passwortpruefung zur Challenge.
+
+        Der Zeitstempel gehoert in die spaeter ausgestellte Sitzung: aus dem
+        zweiten Schritt abgeleitet erschiene sie neuer als eine dazwischen
+        festgeschriebene Passwortaenderung und bliebe gueltig.
+        """
         payload = decode_token(challenge, scope=scope)
         account = await self.repo.get(int(payload["sub"]))
         if account is None or not account.is_active:
@@ -254,7 +260,7 @@ class AccountService:
             raise AuthenticationError(
                 code="error.account_locked", details={"until": account.locked_until.isoformat()}
             )
-        return account
+        return account, issued_at
 
     async def verify_totp_code(
         self, account: MgrAccount, code: str, *, actor_ip: str | None = None

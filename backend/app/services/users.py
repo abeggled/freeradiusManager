@@ -831,7 +831,13 @@ class UserService:
         die neue MAC als Kennung *und* Passwort sendet - deshalb wird das
         Credential hier im selben Vorgang mitgezogen.
         """
-        if await self.attrs.exists_anywhere(new) or await self.subjects.get(new):
+        # Eine reine Schreibweisenaenderung findet die Pruefung als den Benutzer
+        # selbst wieder: die Kollation vergleicht ohne Ruecksicht auf Gross- und
+        # Kleinschreibung. Ohne diese Ausnahme liesse sie sich nur ueber Loeschen
+        # und Neuanlegen korrigieren - wie bei Gruppen und NAS erlaubt.
+        if fold(old) != fold(new) and (
+            await self.attrs.exists_anywhere(new) or await self.subjects.get(new)
+        ):
             raise ConflictError(code="error.user_exists", details={"username": new})
 
         subject = await self.subjects.get(old)

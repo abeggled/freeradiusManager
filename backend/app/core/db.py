@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import Any
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -18,18 +20,40 @@ _lock_engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
 
+def _use_english_month_names(engine: AsyncEngine) -> AsyncEngine:
+    """Stellt ``lc_time_names`` je Verbindung auf Englisch.
+
+    Der Statusfilter liest ``Expiration`` mit ``STR_TO_DATE(..., '%b', ...)``.
+    Die Monatsnamen schreibt der Manager immer englisch; unter einer anderen
+    Datenbank-Locale ergaebe die Umwandlung NULL und der Filter lieferte eine
+    andere Menge als die Statusberechnung in Python (NFR-4).
+    """
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_locale(dbapi_connection: Any, _record: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("SET SESSION lc_time_names = 'en_US'")
+        finally:
+            cursor.close()
+
+    return engine
+
+
 def create_engine(config: Settings | None = None) -> AsyncEngine:
     config = config or settings
-    return create_async_engine(
-        config.database_url,
-        echo=config.db_echo,
-        # Bei aktiviertem Echo bleiben die gebundenen Werte aussen vor: sonst
-        # stuenden Passwoerter und Secrets im Anwendungsprotokoll (NFR-1).
-        hide_parameters=True,
-        pool_size=config.db_pool_size,
-        max_overflow=config.db_pool_max_overflow,
-        pool_pre_ping=True,
-        pool_recycle=1800,
+    return _use_english_month_names(
+        create_async_engine(
+            config.database_url,
+            echo=config.db_echo,
+            # Bei aktiviertem Echo bleiben die gebundenen Werte aussen vor: sonst
+            # stuenden Passwoerter und Secrets im Anwendungsprotokoll (NFR-1).
+            hide_parameters=True,
+            pool_size=config.db_pool_size,
+            max_overflow=config.db_pool_max_overflow,
+            pool_pre_ping=True,
+            pool_recycle=1800,
+        )
     )
 
 
@@ -70,6 +94,9 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
 def configure(engine: AsyncEngine) -> None:
     """Wird von Tests genutzt, um gegen eine Testcontainer-DB zu fahren."""
     global _engine, _lock_engine, _sessionmaker
+    # Auch hier: die Tests sollen dieselbe Datumsauswertung sehen wie der
+    # Betrieb (siehe ``_use_english_month_names``).
+    _use_english_month_names(engine)
     _engine = engine
     _lock_engine = engine
     _sessionmaker = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)

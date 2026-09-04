@@ -35,6 +35,7 @@ from app.schemas.accounts import (
     TotpSetupResponse,
 )
 from app.services.accounts import AccountService
+from app.services.audit import AuditService
 from app.services.oidc import OidcService, provider_confirmed_mfa
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -136,9 +137,11 @@ async def login_totp(
     # Zaehlung und liesse sich unbegrenzt oft durch die Signaturpruefung
     # schicken, ohne das Kontingent zu verbrauchen.
     login_ip_limiter.check(str(actor_ip))
-    verified_at = dt.datetime.now(tz=dt.UTC).timestamp()
     service = AccountService(session)
-    account = await service.account_from_challenge(payload.challenge)
+    # Der Zeitpunkt stammt aus der Challenge, also aus der Passwortpruefung:
+    # aus diesem zweiten Schritt abgeleitet erschiene die Sitzung neuer als eine
+    # dazwischen festgeschriebene Passwortaenderung.
+    account, verified_at = await service.account_from_challenge(payload.challenge)
     # Je Konto zusaetzlich begrenzen: hinter einem NAT teilen sich sonst alle
     # Benutzer dasselbe Kontingent und sperren sich gegenseitig aus.
     login_limiter.check(f"totp:{account.id}")
@@ -164,7 +167,9 @@ async def enroll_totp(payload: TotpEnrollRequest, session: SessionDep) -> TotpSe
     if not payload.challenge:
         raise ValidationError(code="error.validation", details={"field": "challenge"})
     service = AccountService(session)
-    account = await service.account_from_challenge(payload.challenge, scope=TOTP_ENROLL_SCOPE)
+    account, _ = await service.account_from_challenge(
+        payload.challenge, scope=TOTP_ENROLL_SCOPE
+    )
     return await service.start_totp_enrollment(account)
 
 
@@ -176,9 +181,10 @@ async def confirm_totp(
     actor_ip: ClientIp,
 ) -> LoginResponse:
     login_ip_limiter.check(str(actor_ip))
-    verified_at = dt.datetime.now(tz=dt.UTC).timestamp()
     service = AccountService(session)
-    account = await service.account_from_challenge(payload.challenge, scope=TOTP_ENROLL_SCOPE)
+    account, verified_at = await service.account_from_challenge(
+        payload.challenge, scope=TOTP_ENROLL_SCOPE
+    )
     login_limiter.check(f"totp:{account.id}")
     await service.confirm_totp(account, payload.totp_code, actor_ip=actor_ip)
     login_limiter.reset(f"totp:{account.id}")
@@ -198,7 +204,9 @@ async def confirm_totp(
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(request: Request, response: Response, session: SessionDep) -> None:
+async def logout(
+    request: Request, response: Response, session: SessionDep, actor_ip: ClientIp
+) -> None:
     """Meldet ab - auch serverseitig.
 
     Das Loeschen des Cookies erreicht nur den Browser. Eine zuvor kopierte
@@ -218,6 +226,15 @@ async def logout(request: Request, response: Response, session: SessionDep) -> N
                 dt.datetime.fromtimestamp(claims.absolute_expiry, tz=dt.UTC).replace(
                     tzinfo=None
                 ),
+            )
+            # Ohne Eintrag liesse sich ein ausdrueckliches Abmelden nicht vom
+            # Ablauf oder einem administrativen Entzug unterscheiden (FR-9).
+            await AuditService(session).log(
+                action="auth.logout",
+                object_type="account",
+                object_id=claims.username,
+                actor=claims,
+                actor_ip=actor_ip,
             )
             await session.commit()
     clear_session_cookie(response)

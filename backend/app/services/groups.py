@@ -286,7 +286,9 @@ class GroupService:
         actor: Principal,
         actor_ip: str | None,
     ) -> int:
-        if payload.action == "add" and not await self.repo.exists(groupname):
+        # Auch beim Entfernen: sonst meldete ein Tippfehler Erfolg und
+        # protokollierte eine Aenderung an einem Objekt, das es nie gab (FR-9).
+        if not await self.repo.exists(groupname):
             raise NotFoundError(code="error.not_found", details={"groupname": groupname})
 
         changed = 0

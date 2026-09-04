@@ -160,6 +160,13 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
       .filter((a) => !VLAN_ATTRIBUTES.has(a.attribute.toLowerCase()))
       .map((a) => ({ attribute: a.attribute, op: a.op, value: a.value })) ?? []);
 
+  const untouchedVlanRows =
+    vlan === null
+      ? (detail?.reply_attributes
+          .filter((a) => VLAN_ATTRIBUTES.has(a.attribute.toLowerCase()))
+          .map((a) => ({ attribute: a.attribute, op: a.op, value: a.value })) ?? [])
+      : [];
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     const body = {
@@ -171,7 +178,10 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
       // lässt das Backend unverändert.
       ...(vlan === null ? {} : { vlan: vlan || null, clear_vlan: vlan === "" }),
       check_attributes: expert ? currentChecks : undefined,
-      reply_attributes: expert ? currentReplies : undefined,
+      // Die gespeicherten VLAN-Zeilen wieder anhängen, solange der Assistent
+      // nicht bearbeitet wurde: der Expertenmodus blendet sie aus, das Backend
+      // ersetzt die Sammlung aber vollständig – die VLAN-Policy verschwände.
+      reply_attributes: expert ? [...currentReplies, ...untouchedVlanRows] : undefined,
     };
     // Der Dialog bleibt offen, wenn der Server Warnungen zurückgibt: sonst
     // verschwände der Hinweis auf ein unbekanntes Attribut ungelesen.
