@@ -34,8 +34,11 @@ class Settings(BaseSettings):
     db_name: str = "radius"
     db_user: str = "radmgr"
     db_password: str = ""
-    db_pool_size: int = 10
-    db_pool_max_overflow: int = 10
+    # Mindestens zwei gleichzeitige Verbindungen: benannte Sperren laufen ueber
+    # eine eigene Verbindung, waehrend die Sitzung des Aufrufers eine weitere
+    # haelt (siehe app/core/locking.py).
+    db_pool_size: int = Field(default=10, ge=2)
+    db_pool_max_overflow: int = Field(default=10, ge=0)
     db_echo: bool = False
 
     # --- Sicherheit ------------------------------------------------------

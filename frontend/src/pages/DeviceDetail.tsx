@@ -29,6 +29,7 @@ export function DeviceDetailPage() {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [memberships, setMemberships] = useState<string[] | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDisable, setConfirmDisable] = useState(false);
 
   if (isLoading) return <Spinner />;
   if (error) return <ErrorBox error={error} />;
@@ -94,9 +95,15 @@ export function DeviceDetailPage() {
             <>
           <button
             type="button"
-            onClick={() =>
-              toggle.mutate({ username: data.username, disabled: data.status !== "disabled" })
-            }
+            onClick={() => {
+              // Sperren trennt den Netzzugang und wird deshalb bestätigt;
+              // Entsperren wirkt sofort.
+              if (data.status !== "disabled") {
+                setConfirmDisable(true);
+                return;
+              }
+              toggle.mutate({ username: data.username, disabled: false });
+            }}
           >
             {data.status === "disabled" ? t("users.enable") : t("users.disable")}
           </button>
@@ -226,6 +233,21 @@ export function DeviceDetailPage() {
           ) : null}
         </div>
       </div>
+
+      {confirmDisable ? (
+        <ConfirmDialog
+          title={t("users.disable")}
+          message={t("users.disableConfirm", { name: data.username })}
+          onConfirm={() =>
+            toggle.mutate(
+              { username: data.username, disabled: true },
+              { onSuccess: () => setConfirmDisable(false) },
+            )
+          }
+          onCancel={() => setConfirmDisable(false)}
+          busy={toggle.isPending}
+        />
+      ) : null}
 
       {confirmDelete ? (
         <ConfirmDialog

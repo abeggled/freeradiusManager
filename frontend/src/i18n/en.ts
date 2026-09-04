@@ -100,6 +100,7 @@ export const en: Record<TranslationKey, string> = {
   "users.password": "Password",
   "users.setPassword": "Set password",
   "users.disable": "Disable",
+  "users.disableConfirm": "Disable “{name}”? Network access is blocked immediately; running sessions persist until the next authentication.",
   "users.enable": "Enable",
   "users.includeDevices": "Include devices",
   "users.checkAttributes": "Check attributes (radcheck)",

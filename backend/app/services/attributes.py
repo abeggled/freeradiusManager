@@ -32,8 +32,14 @@ def validate_triple(
     attribute: str, op: str, value: str, *, table: str, language: str = "de"
 ) -> list[AttributeWarning]:
     """Prueft ein Tripel und liefert Warnungen. Harte Fehler werfen ``ValidationError``."""
-    attribute = (attribute or "").strip()
-    op = (op or "").strip()
+    if attribute != (attribute or "").strip() or op != (op or "").strip():
+        # Nicht stillschweigend trimmen: der Aufrufer speichert den
+        # urspruenglichen Wert, FreeRADIUS saehe dann ein anderes Attribut als
+        # das hier gepruefte.
+        raise ValidationError(
+            code="error.validation",
+            details={"attribute": attribute, "op": op, "reason": "whitespace"},
+        )
     if not attribute:
         raise ValidationError(code="error.validation", details={"field": "attribute"})
 

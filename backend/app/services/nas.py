@@ -176,6 +176,9 @@ class NasService:
         if row is None:
             raise NotFoundError(code="error.not_found", details={"id": nas_id})
         nasname = row.nasname
+        # Vollstaendiger Zustand vor dem Loeschen; das Shared Secret bleibt dabei
+        # maskiert (NFR-1).
+        before = self._to_item(row, await self.extra.get(nasname)).model_dump(mode="json")
         await self.repo.delete(nas_id)
         await self.extra.delete(nasname)
         await self.audit.log(
@@ -184,7 +187,7 @@ class NasService:
             object_id=nasname,
             actor=actor,
             actor_ip=actor_ip,
-            before={"nasname": nasname},
+            before=before,
         )
         await self.session.commit()
 

@@ -11,7 +11,7 @@ import ipaddress
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import ColumnElement, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.pagination import KeysetPage, clamp_limit, cursor_position, encode_cursor
@@ -63,15 +63,18 @@ class AccountingRepository:
             conditions.append(RadAcct.callingstationid == flt.calling_station_id)
         if flt.nas_ip_address:
             conditions.append(RadAcct.nasipaddress == flt.nas_ip_address)
-        matches: list[ColumnElement[bool]] = []
-        if flt.nas_ip_addresses:
-            matches.append(RadAcct.nasipaddress.in_(flt.nas_ip_addresses))
-        for network in flt.nas_networks or []:
-            prefix = _network_prefix(network)
-            if prefix is not None:
-                matches.append(RadAcct.nasipaddress.like(f"{prefix}%"))
-        if matches:
-            conditions.append(or_(*matches))
+        if flt.nas_ip_addresses or flt.nas_networks:
+            matches: list[ColumnElement[bool]] = []
+            if flt.nas_ip_addresses:
+                matches.append(RadAcct.nasipaddress.in_(flt.nas_ip_addresses))
+            for network in flt.nas_networks or []:
+                prefix = _network_prefix(network)
+                if prefix is not None:
+                    matches.append(RadAcct.nasipaddress.like(f"{prefix}%"))
+            # Auch wenn sich kein Netz uebersetzen liess, bleibt die Bedingung
+            # bestehen: eine nicht darstellbare Einschraenkung darf nicht zu
+            # einer Abfrage ohne jede Einschraenkung werden.
+            conditions.append(or_(*matches) if matches else false())
         if flt.called_station_id:
             conditions.append(RadAcct.calledstationid.like(f"%{flt.called_station_id}%"))
         if flt.framed_ip_address:

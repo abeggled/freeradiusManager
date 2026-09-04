@@ -25,8 +25,18 @@ AUTH_TYPE = "Auth-Type"
 EXPIRATION = "Expiration"
 REJECT = "Reject"
 
-# Format, in dem der Manager Expiration schreibt (siehe app/core/dates.py).
-EXPIRATION_SQL_FORMAT = "%d %b %Y %H:%i:%s"
+# Dieselben Formate, die ``app/core/dates.from_expiration`` liest. Sonst
+# bewertete die Liste eine Bestandszeile anders als die Detailansicht - und eine
+# Sammelaktion traefe eine andere Menge als angezeigt.
+EXPIRATION_SQL_FORMATS = (
+    "%d %b %Y %H:%i:%s",
+    "%d %b %Y %H:%i",
+    "%d %b %Y",
+    "%b %d %Y %H:%i:%s",
+    "%b %d %Y",
+    "%Y-%m-%d %H:%i:%s",
+    "%Y-%m-%d",
+)
 
 
 @dataclass(slots=True)
@@ -132,15 +142,18 @@ class DirectoryRepository:
                 RadCheck.value == REJECT,
             )
         )
-        # Nicht interpretierbare Datumswerte liefern NULL und gelten damit nicht
-        # als abgelaufen - die sichere Richtung.
+        # Nicht interpretierbare Werte ergeben NULL und gelten nicht als
+        # abgelaufen - die sichere Richtung.
+        parsed_expiration = func.coalesce(
+            *[func.str_to_date(RadCheck.value, fmt) for fmt in EXPIRATION_SQL_FORMATS]
+        )
         expired = exists(
             select(RadCheck.id).where(
                 RadCheck.username == names.c.username,
                 RadCheck.attribute == EXPIRATION,
                 # UTC_TIMESTAMP statt NOW(): die Werte werden in UTC
                 # geschrieben, die Sitzungszeitzone der Datenbank ist offen.
-                func.str_to_date(RadCheck.value, EXPIRATION_SQL_FORMAT) < func.utc_timestamp(),
+                parsed_expiration < func.utc_timestamp(),
             )
         )
         has_password = exists(

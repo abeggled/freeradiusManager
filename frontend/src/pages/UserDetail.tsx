@@ -37,6 +37,7 @@ export function UserDetailPage() {
 
   const [showPassword, setShowPassword] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDisable, setConfirmDisable] = useState(false);
   const [password, setPasswordValue] = useState("");
   const [credentialType, setCredentialType] = useState<string | null>(null);
   const [vlan, setVlan] = useState<string | null>(null);
@@ -94,9 +95,15 @@ export function UserDetailPage() {
           </button>
           <button
             type="button"
-            onClick={() =>
-              toggle.mutate({ username: data.username, disabled: data.status !== "disabled" })
-            }
+            onClick={() => {
+              // Sperren trennt den Netzzugang und wird deshalb bestätigt;
+              // Entsperren wirkt sofort.
+              if (data.status !== "disabled") {
+                setConfirmDisable(true);
+                return;
+              }
+              toggle.mutate({ username: data.username, disabled: false });
+            }}
           >
             {data.status === "disabled" ? t("users.enable") : t("users.disable")}
           </button>
@@ -258,6 +265,21 @@ export function UserDetailPage() {
             )}
           </Field>
         </Modal>
+      ) : null}
+
+      {confirmDisable ? (
+        <ConfirmDialog
+          title={t("users.disable")}
+          message={t("users.disableConfirm", { name: data.username })}
+          onConfirm={() =>
+            toggle.mutate(
+              { username: data.username, disabled: true },
+              { onSuccess: () => setConfirmDisable(false) },
+            )
+          }
+          onCancel={() => setConfirmDisable(false)}
+          busy={toggle.isPending}
+        />
       ) : null}
 
       {confirmDelete ? (

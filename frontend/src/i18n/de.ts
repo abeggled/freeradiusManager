@@ -98,6 +98,7 @@ export const de = {
   "users.password": "Passwort",
   "users.setPassword": "Passwort setzen",
   "users.disable": "Sperren",
+  "users.disableConfirm": "„{name}“ sperren? Der Netzzugang wird sofort unterbunden; laufende Sitzungen bleiben bis zur nächsten Anmeldung bestehen.",
   "users.enable": "Entsperren",
   "users.includeDevices": "Geräte einschliessen",
   "users.checkAttributes": "Prüfattribute (radcheck)",

@@ -1694,3 +1694,83 @@ async def test_import_preview_shows_late_errors(session, admin_principal) -> Non
     shown = _preview_rows(report)
     assert any(row.action == "error" for row in shown)
     assert len(shown) <= PREVIEW_ROWS
+
+
+# --- Einundzwanzigste Runde ------------------------------------------------
+
+
+async def test_legacy_expiration_formats_match_the_filter(session, admin_principal) -> None:
+    """Liste und Detailansicht müssen dasselbe Datum gleich bewerten."""
+    from app.repositories.directory import SubjectFilter
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    # Bestandsformat statt der eigenen Schreibweise.
+    await users.attrs.set_check("anna", "Expiration", ":=", "2020-01-01")
+    await session.commit()
+
+    assert (await users.get("anna")).status == "expired"
+    expired, _ = await users.search(SubjectFilter(status="expired"))
+    assert [i.username for i in expired] == ["anna"]
+    active, _ = await users.search(SubjectFilter(status="active"))
+    assert active == []
+
+
+async def test_untranslatable_network_filter_returns_nothing(session, admin_principal) -> None:
+    """Eine nicht darstellbare Einschränkung darf nicht alles liefern."""
+    from app.repositories.radius.acct import SessionFilter
+
+    await NasService(session).create(
+        NasCreate(nasname="10.0.0.0/9", shortname="weit", secret="s"), actor=admin_principal
+    )
+    session.add(
+        RadAcct(
+            acctsessionid="s1",
+            acctuniqueid="u1",
+            username="anna",
+            nasipaddress="203.0.113.1",
+            acctstarttime=dt.datetime(2026, 9, 1, 8, 0),
+            callingstationid="AA-BB-CC-DD-EE-FF",
+        )
+    )
+    await session.commit()
+
+    items, _, _ = await SessionService(session).search(SessionFilter(nas_ip_address="weit"))
+    assert items == []
+
+
+async def test_nas_deletion_records_its_configuration(session, admin_principal) -> None:
+    from app.models.mgr import MgrAudit
+
+    service = NasService(session)
+    item, _ = await service.create(
+        NasCreate(nasname="10.0.0.1", shortname="sw01", secret="topsecret", coa_enabled=True),
+        actor=admin_principal,
+    )
+    await service.delete(item.id, actor=admin_principal)
+
+    entry = await session.scalar(select(MgrAudit).where(MgrAudit.action == "nas.delete"))
+    assert "sw01" in (entry.before_json or "")
+    assert "topsecret" not in (entry.before_json or "")
+
+
+async def test_attribute_whitespace_is_rejected() -> None:
+    """Sonst würde ein anderer Wert gespeichert als geprüft."""
+    from app.core.errors import ValidationError as AppValidationError
+    from app.services.attributes import validate_triple
+
+    with pytest.raises(AppValidationError):
+        validate_triple("Filter-Id ", ":=", "x", table="radreply")
+    with pytest.raises(AppValidationError):
+        validate_triple("Filter-Id", ":= ", "x", table="radreply")
+
+
+async def test_pool_must_allow_two_connections() -> None:
+    """Benannte Sperren brauchen eine Verbindung neben der Sitzung."""
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(PydanticValidationError):
+        Settings(db_pool_size=1)
+    assert Settings(db_pool_size=2).db_pool_size == 2

@@ -16,6 +16,12 @@ const BASE = API_BASE;
  */
 let onUnauthenticated: (() => void) | null = null;
 
+/** Fehlercodes, die eine beendete Sitzung bedeuten. */
+const SESSION_ENDED_CODES = new Set([
+  "error.unauthenticated",
+  "error.reauthentication_required",
+]);
+
 export function setUnauthenticatedHandler(handler: () => void): void {
   onUnauthenticated = handler;
 }
@@ -90,11 +96,14 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     } catch {
       /* Antwort ohne JSON-Körper */
     }
-    // Weder die Anmeldung selbst noch die Sitzungsabfrage lösen den Handler
-    // aus: erstere kennt ihren Fehler, letztere würde sich sonst im Kreis
-    // drehen.
+    // Nur eine tatsächlich beendete Sitzung führt zur Anmeldemaske. Ein
+    // falsches aktuelles Passwort oder ein falscher TOTP-Code sind 401, aber
+    // behebbare Formularfehler – sie dürfen die Sitzung nicht verwerfen.
+    // Die Sitzungsabfrage selbst bleibt aussen vor, sonst drehte sie sich im
+    // Kreis.
     if (
       response.status === 401 &&
+      SESSION_ENDED_CODES.has(payload.code) &&
       !path.startsWith("/auth/login") &&
       path !== "/auth/me"
     ) {
@@ -113,6 +122,8 @@ export async function download(path: string, filename: string): Promise<void> {
   if (!response.ok) {
     // Wie in request(): eine abgelaufene Sitzung führt zur Anmeldemaske statt
     // in eine stille Fehlermeldung.
+    // Downloads kennen keinen Fehlerkörper; ein 401 bedeutet hier immer eine
+    // beendete Sitzung.
     if (response.status === 401) onUnauthenticated?.();
     throw new ApiError(response.status, {
       code: "error.generic",

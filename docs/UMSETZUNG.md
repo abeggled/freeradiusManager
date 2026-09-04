@@ -75,8 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Zwanzig Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
-12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11, 8, 10 und 8 Befunde;
+Einundzwanzig Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10,
+11, 12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11, 8, 10, 8 und 7 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
@@ -511,6 +511,22 @@ Die zwanzigste Runde:
 * Die Import-Vorschau zeigt Fehlerzeilen vollständig, auch jenseits der
   Anzeigegrenze.
 * VLAN-Werte sind auch beim Gruppen-Update begrenzt.
+
+Die einundzwanzigste Runde (keine P1-Befunde):
+
+* Der SQL-Statusfilter liest dieselben Datumsformate wie die Detailansicht;
+  ein Bestandswert wie `2026-09-01` wurde sonst unterschiedlich bewertet.
+* Ein NAS-Netz, das sich nicht in ein SQL-Prädikat übersetzen lässt, liefert
+  eine leere Menge statt aller Sessions.
+* Das Löschen eines NAS hält dessen Konfiguration im Audit-Log fest (ohne das
+  Shared Secret).
+* Attributnamen und Operatoren mit Leerraum werden abgewiesen, statt geprüft und
+  dann anders gespeichert zu werden.
+* Der Verbindungspool muss zwei gleichzeitige Verbindungen zulassen, weil
+  benannte Sperren eine eigene benötigen.
+* Ein falsches aktuelles Passwort oder ein falscher TOTP-Code führt nicht mehr
+  zur Anmeldemaske – das sind behebbare Formularfehler, keine beendete Sitzung.
+* Das Sperren eines Benutzers oder Geräts verlangt eine Bestätigung.
 
 ## Prüfschritte
 
