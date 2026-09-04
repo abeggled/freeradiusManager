@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseMutationResult } from "@tanstack/react-query";
 
-import { request } from "./client";
+import { endSession, request } from "./client";
 import type {
   Account,
   AuditItem,
@@ -465,11 +465,13 @@ export function useOwnTotpEnroll() {
 }
 
 export function useOwnTotpConfirm() {
-  const client = useQueryClient();
   return useMutation({
     mutationFn: (body: { code: string }) =>
       request<void>("/auth/me/totp/confirm", { method: "POST", body }),
-    onSuccess: invalidator(client, ["me"]),
+    // Die Bestätigung setzt `totp_changed_at` und entwertet damit das eigene
+    // Cookie. Ohne diesen Schritt bliebe die Oberfläche mit den alten Daten
+    // stehen und erst die nächste Aktion liefe ins Leere.
+    onSuccess: () => endSession(),
   });
 }
 

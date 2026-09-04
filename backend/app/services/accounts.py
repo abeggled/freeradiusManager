@@ -318,6 +318,16 @@ class AccountService:
         secret = generate_totp_secret()
         account.totp_secret_enc = _box().encrypt(secret)
         account.totp_enabled = False
+        # Auch der Beginn ist eine sicherheitsrelevante Aenderung: das
+        # Geheimnis wird dauerhaft geschrieben und ersetzt ein evtl. bereits
+        # begonnenes. Wird die Einrichtung abgebrochen, gaebe es sonst gar
+        # keinen Eintrag dazu (FR-9). Das Geheimnis selbst steht nie im
+        # Protokoll.
+        await self.audit.log(
+            action="account.totp_enrollment_started",
+            object_type="account",
+            object_id=account.username,
+        )
         await self.session.commit()
         return TotpSetupResponse(
             secret=secret, provisioning_uri=totp_provisioning_uri(secret, account.username)

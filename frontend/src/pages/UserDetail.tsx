@@ -210,12 +210,17 @@ export function UserDetailPage() {
               <input
                 type="checkbox"
                 checked={expert}
+                // Erst wenn die Liste der reservierten Attribute vorliegt:
+                // sonst enthielte die Sammlung die maskierten Passwort-,
+                // Auth-Type- und Expiration-Zeilen und jede Änderung würde
+                // als reserviert abgewiesen.
+                disabled={!dictionary.data}
                 onChange={(event) => setExpert(event.target.checked)}
               />
               {t("groups.expert")}
             </label>
           ) : null}
-          {expert ? (
+          {expert && dictionary.data ? (
             <>
               <p className="hint">{t("users.expertHint")}</p>
               <AttributeEditor

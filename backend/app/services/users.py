@@ -698,9 +698,13 @@ class UserService:
                     code="error.not_found", details={"groupname": membership.groupname}
                 )
         # Eine entfernte Zuordnung darf keine attributlose Gruppe aufloesen.
-        wanted = {g.groupname for g in groups}
+        # Ueber die Vergleichsform: eine bestehende Mitgliedschaft "staff" und
+        # der angeforderte Name "Staff" bezeichnen dieselbe Gruppe. Exakt
+        # verglichen galte das als Entfernung - und der Schutz der letzten
+        # Mitgliedschaft wiese eine inhaltlich unveraenderte Anfrage ab.
+        wanted = {fold(g.groupname) for g in groups}
         for current in await self.groups.memberships(username):
-            if current.groupname in wanted:
+            if fold(current.groupname) in wanted:
                 continue
             if current.groupname not in locked:
                 # Die Mitgliedschaft ist erst nach dem Setzen der Sperren

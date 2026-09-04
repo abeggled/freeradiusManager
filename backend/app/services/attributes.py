@@ -10,6 +10,7 @@ import ipaddress
 from dataclasses import dataclass
 
 from app.core import radius_dict
+from app.core.dates import from_expiration
 from app.core.errors import ValidationError
 from app.core.i18n import translate
 
@@ -94,6 +95,14 @@ def validate_triple(
                     "maximum": MAX_RADIUS_INTEGER,
                     "value": value,
                 },
+            )
+    elif info.value_type == "date" and value:
+        # Dieselben Formate wie beim regulaeren Ablaufdatum: ein unlesbarer Wert
+        # bliebe sonst gespeichert, waehrend die gemeinte Sperre nie greift.
+        if from_expiration(value) is None:
+            raise ValidationError(
+                code="error.validation",
+                details={"attribute": attribute, "expected": "date", "value": value},
             )
     elif info.value_type == "enum" and value:
         # Die Wertelisten im Woerterbuch sind bewusst eine kuratierte Auswahl:

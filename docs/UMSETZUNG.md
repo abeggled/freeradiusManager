@@ -801,6 +801,38 @@ Die fünfundzwanzigste Runde:
 * Die Warnung einer Gruppenanlage bleibt beim Wechsel in den Bearbeitungsmodus
   sichtbar.
 
+### Siebzehnte Runde
+
+* **Der Import prüft die Zeilenzahl, bevor er irgendetwas schreibt.** Die Grenze
+  wirkte bisher erst während des Durchlaufs; bei einem echten Import blieben die
+  ersten 10 000 Änderungen bestehen, obwohl die Antwort nur einen Fehler meldete.
+* **Die Sammelzuordnung prüft die Existenz innerhalb der Sperre.** Ein
+  gleichzeitiges Löschen zwischen Prüfung und Einfügen liess sonst einen
+  Phantom-Benutzer ohne Anmeldedaten entstehen.
+* **Audit-Nutzlasten sind nach Bytes begrenzt.** `mgr_audit.after_json` fasst
+  65 535 *Bytes*; 50 Check- und 50 Reply-Werte mit mehrbytigen Zeichen sprengten
+  die Spalte und rissen den ganzen Vorgang mit. Zu grosse Nutzlasten werden mit
+  einer Kürzungsmarke abgelegt.
+* **Der Vergleich der gewünschten Gruppen folgt der Kollation.** Eine bestehende
+  Mitgliedschaft `staff` und der angeforderte Name `Staff` galten als Entfernung
+  – der Schutz der letzten Mitgliedschaft wies eine inhaltlich unveränderte
+  Anfrage ab.
+* **`date`-Attribute werden geprüft.** Ein `Expiration := not-a-date` im
+  Expertenmodus blieb gespeichert, während die gemeinte Sperre nie griff.
+* **Der Beginn der TOTP-Einrichtung wird protokolliert.** Ein abgebrochener
+  Versuch hinterliess bisher gar keinen Eintrag, obwohl dabei ein Geheimnis
+  dauerhaft geschrieben wird (FR-9).
+* **Das IP-Kontingent greift vor dem Dekodieren der TOTP-Challenge**, und deren
+  Länge ist begrenzt. Ungültige Challenges liefen sonst unbegrenzt durch die
+  Signaturprüfung, ohne das Kontingent zu verbrauchen.
+* **Nach der eigenen TOTP-Einrichtung führt die Oberfläche zur Anmeldung.** Die
+  Bestätigung entwertet das eigene Cookie; die Oberfläche blieb bisher mit den
+  alten Daten stehen und erst die nächste Aktion lief ins Leere.
+* Der Expertenmodus der Benutzerdetailansicht ist erst verfügbar, wenn die Liste
+  der reservierten Attribute geladen ist.
+* Die Rate-Limiter werden zwischen Tests zurückgesetzt: ein Test, der das
+  Kontingent absichtlich ausreizt, beeinflusste sonst die nachfolgenden.
+
 ## Prüfschritte
 
 ```bash

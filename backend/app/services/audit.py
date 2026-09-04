@@ -72,10 +72,33 @@ def redact(payload: Any) -> Any:
     return payload
 
 
+MAX_PAYLOAD_BYTES = 60_000
+"""Obergrenze je JSON-Spalte.
+
+``mgr_audit.before_json``/``after_json`` sind TEXT-Spalten mit 65 535 *Bytes*.
+Gezaehlt wird deshalb die UTF-8-Laenge: mehrbytige Zeichen sprengen eine reine
+Zeichengrenze. Der Rest ist Puffer fuer die uebrigen Spalten der Zeile.
+"""
+
+
 def _dump(payload: Any) -> str | None:
     if payload is None:
         return None
-    return json.dumps(redact(payload), ensure_ascii=False, default=str)
+    encoded = json.dumps(redact(payload), ensure_ascii=False, default=str)
+    if len(encoded.encode("utf-8")) <= MAX_PAYLOAD_BYTES:
+        return encoded
+    # Lieber ein gekuerzter Eintrag als ein Datenbankfehler, der den ganzen
+    # Vorgang zurueckrollt: der Aufrufer haelt sich an gueltige Feldlaengen,
+    # nur die Summe passt nicht in die Spalte (FR-9).
+    return json.dumps(
+        {
+            "truncated": True,
+            "reason": "payload_too_large",
+            "bytes": len(encoded.encode("utf-8")),
+            "preview": encoded[:1000],
+        },
+        ensure_ascii=False,
+    )
 
 
 class AuditService:

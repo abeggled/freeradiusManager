@@ -7,7 +7,7 @@ import datetime as dt
 import pytest
 import pytest_asyncio
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.errors import ValidationError
 from app.core.identifiers import fold
@@ -996,3 +996,121 @@ async def test_session_cookie_is_scoped_to_the_root_path(session, client) -> Non
     finally:
         app_settings.root_path = original
     assert deps.cookie_path() == "/"
+
+
+# --- Siebzehnte Runde -----------------------------------------------------
+
+
+async def test_oversized_import_writes_nothing(session, admin_principal) -> None:
+    """Die Zeilen schreiben einzeln fest; ein Abbruch im Lauf liesse sie bestehen."""
+    from app.services.importexport import MAX_IMPORT_ROWS, ImportExportService
+
+    rows = "\n".join(f"user{index:06d},geheim123456" for index in range(MAX_IMPORT_ROWS + 1))
+    csv = f"username,password\n{rows}\n"
+    with pytest.raises(ValidationError) as excinfo:
+        await ImportExportService(session).import_csv(
+            csv, kind="user", dry_run=False, actor=admin_principal
+        )
+    assert excinfo.value.code == "error.import_too_many_rows"
+
+    written = await session.scalar(select(func.count()).select_from(RadCheck))
+    assert written == 0
+
+
+async def test_membership_replacement_accepts_another_spelling(session, admin_principal) -> None:
+    """ "staff" und "Staff" bezeichnen dieselbe Gruppe - das ist keine Entfernung."""
+    from app.schemas.users import UserUpdate
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.groups.add_membership("anna", "staff", 1)
+    await session.commit()
+
+    detail = await users.update(
+        "anna",
+        UserUpdate(groups=[MembershipIn(groupname="Staff", priority=1)]),
+        actor=admin_principal,
+    )
+    assert [m.groupname for m in detail.memberships] == ["Staff"]
+
+
+async def test_totp_enrollment_start_is_audited(session) -> None:
+    """Ein abgebrochener Versuch hinterliesse sonst gar keinen Eintrag (FR-9)."""
+    from sqlalchemy import select as sa_select
+
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, MgrAudit, Role
+    from app.services.accounts import AccountService
+
+    account = MgrAccount(
+        username="admin",
+        role=Role.ADMINISTRATOR,
+        password_hash=hash_password("ein-sicheres-passwort"),
+    )
+    session.add(account)
+    await session.commit()
+
+    await AccountService(session).start_totp_enrollment(account)
+    entry = await session.scalar(
+        sa_select(MgrAudit).where(MgrAudit.action == "account.totp_enrollment_started").limit(1)
+    )
+    assert entry is not None
+    assert "secret" not in (entry.after_json or "")
+
+
+async def test_bulk_assignment_checks_inside_the_lock() -> None:
+    """Ein Loeschen zwischen Pruefung und Einfuegen erzeugte einen Phantom-Benutzer."""
+    import inspect
+
+    from app.services.importexport import ImportExportService
+
+    source = inspect.getsource(ImportExportService._bulk_one)
+    lock_at = source.index('named_lock(self.session, f"group:{groupname}", f"user:{username}")')
+    check_at = source.index("exists_anywhere(", lock_at)
+    assert check_at > lock_at
+
+
+@pytest.mark.parametrize("value", ["not-a-date", "31 Foo 2026"])
+async def test_date_attributes_are_validated(value: str) -> None:
+    """Ein unlesbarer Wert bliebe gespeichert, waehrend die Sperre nie greift."""
+    from app.services.attributes import validate_triple
+
+    with pytest.raises(ValidationError):
+        validate_triple("Expiration", ":=", value, table="radgroupcheck")
+
+    validate_triple("Expiration", ":=", "31 Dec 2026 23:59:59", table="radgroupcheck")
+
+
+async def test_audit_payload_is_bounded_by_bytes(session, admin_principal) -> None:
+    """``after_json`` fasst 65 535 *Bytes*; mehrbytige Zeichen sprengen eine Zeichengrenze."""
+    from app.services.audit import MAX_PAYLOAD_BYTES, _dump
+
+    dumped = _dump({"value": "ä" * 60_000})
+    assert dumped is not None
+    assert len(dumped.encode("utf-8")) <= MAX_PAYLOAD_BYTES
+    assert '"truncated": true' in dumped
+
+    small = _dump({"value": "kurz"})
+    assert small == '{"value": "kurz"}'
+
+
+async def test_challenge_length_is_bounded() -> None:
+    """Ohne Grenze liesse sich die Signaturpruefung beliebig beschaeftigen."""
+    from app.schemas.accounts import MAX_CHALLENGE_LENGTH, TotpLoginRequest
+
+    with pytest.raises(PydanticValidationError):
+        TotpLoginRequest(challenge="x" * (MAX_CHALLENGE_LENGTH + 1), totp_code="123456")
+
+
+async def test_invalid_challenge_consumes_the_ip_quota(session, client) -> None:
+    """Sonst liefen ungueltige Challenges unbegrenzt durch die Signaturpruefung."""
+    from app.core.config import settings as app_settings
+
+    last = None
+    for _ in range(app_settings.login_ip_rate_limit + 1):
+        last = await client.post(
+            "/api/v1/auth/login/totp",
+            json={"challenge": "ungueltig", "totp_code": "000000"},
+        )
+    assert last is not None
+    assert last.status_code == 429

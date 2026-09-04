@@ -116,9 +116,7 @@ def set_session_cookie(response: Response, token: str, max_age: int | None = Non
 
 
 def clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(
-        settings.cookie_name, domain=settings.cookie_domain, path=cookie_path()
-    )
+    response.delete_cookie(settings.cookie_name, domain=settings.cookie_domain, path=cookie_path())
 
 
 async def current_principal(request: Request, response: Response, session: SessionDep) -> Principal:

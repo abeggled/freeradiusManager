@@ -50,6 +50,23 @@ def _statements(sql: str) -> list[str]:
     return [s.strip() for s in cleaned.split(";") if s.strip()]
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters():
+    """Die Zaehler sind Prozesszustand und leben ueber Tests hinweg.
+
+    Ohne dieses Zuruecksetzen erschoepft ein Test, der das Kontingent absichtlich
+    ausreizt, das Limit fuer alle nachfolgenden - und zwar nur in der vollen
+    Suite, nicht bei einzelner Ausfuehrung.
+    """
+    from app.api.deps import login_ip_limiter, login_limiter
+
+    login_limiter.clear()
+    login_ip_limiter.clear()
+    yield
+    login_limiter.clear()
+    login_ip_limiter.clear()
+
+
 @pytest.fixture(scope="session")
 def sync_database_url() -> Iterator[str]:
     """Startet MariaDB als Container, sofern keine URL vorgegeben ist."""

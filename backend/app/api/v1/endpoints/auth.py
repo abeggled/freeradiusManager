@@ -110,12 +110,15 @@ async def login_totp(
     session: SessionDep,
     actor_ip: ClientIp,
 ) -> LoginResponse:
+    # Vor dem Dekodieren: eine ungueltige Challenge kam sonst nie bis zur
+    # Zaehlung und liesse sich unbegrenzt oft durch die Signaturpruefung
+    # schicken, ohne das Kontingent zu verbrauchen.
+    login_ip_limiter.check(str(actor_ip))
     service = AccountService(session)
     account = await service.account_from_challenge(payload.challenge)
-    # Je Konto begrenzen statt je IP: hinter einem NAT teilen sich sonst alle
+    # Je Konto zusaetzlich begrenzen: hinter einem NAT teilen sich sonst alle
     # Benutzer dasselbe Kontingent und sperren sich gegenseitig aus.
     login_limiter.check(f"totp:{account.id}")
-    login_ip_limiter.check(str(actor_ip))
     await service.verify_totp_code(account, payload.totp_code, actor_ip=actor_ip)
     login_limiter.reset(f"totp:{account.id}")
     await service.clear_failures(account)

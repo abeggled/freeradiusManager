@@ -26,6 +26,18 @@ export function setUnauthenticatedHandler(handler: () => void): void {
   onUnauthenticated = handler;
 }
 
+/**
+ * Beendet die Oberflächen-Sitzung, ohne auf eine 401-Antwort zu warten.
+ *
+ * Nötig, wenn eine Aktion die eigene Sitzung serverseitig entwertet – etwa das
+ * Einrichten des zweiten Faktors. Ein anschliessendes `/auth/me` ist von der
+ * Behandlung oben ausgenommen, die Oberfläche bliebe sonst vollständig
+ * gerendert, aber unbenutzbar.
+ */
+export function endSession(): void {
+  onUnauthenticated?.();
+}
+
 export class ApiError extends Error {
   readonly code: string;
   readonly status: number;

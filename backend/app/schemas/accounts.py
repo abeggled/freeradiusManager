@@ -10,6 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.core.constants import MAX_ACCOUNT_USERNAME_LENGTH, MIN_PASSWORD_LENGTH
 from app.models.mgr import Role
 
+MAX_CHALLENGE_LENGTH = 1024
+"""Obergrenze fuer das Challenge-Token.
+
+Ohne sie liesse sich die Signaturpruefung mit beliebig grossen Werten
+beschaeftigen; ein regulaeres Token bleibt weit darunter."""
+
 
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1, max_length=MAX_ACCOUNT_USERNAME_LENGTH)
@@ -18,7 +24,7 @@ class LoginRequest(BaseModel):
 
 
 class TotpLoginRequest(BaseModel):
-    challenge: str
+    challenge: str = Field(max_length=MAX_CHALLENGE_LENGTH)
     totp_code: str = Field(min_length=6, max_length=10)
 
 
@@ -29,12 +35,12 @@ class TotpEnrollRequest(BaseModel):
     Zugriffsprotokollen von Reverse-Proxys und liesse sich dort mitlesen.
     """
 
-    challenge: str
+    challenge: str = Field(max_length=MAX_CHALLENGE_LENGTH)
 
 
 class LoginResponse(BaseModel):
     status: str = "authenticated"
-    challenge: str | None = None
+    challenge: str | None = Field(default=None, max_length=MAX_CHALLENGE_LENGTH)
     account: AccountOut | None = None
 
 

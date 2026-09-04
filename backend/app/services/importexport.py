@@ -363,14 +363,18 @@ class ImportExportService:
         # denselben Datensatz.
         seen_usernames: set[str] = set()
 
-        for index, raw in enumerate(reader, start=2):
-            if report.total >= MAX_IMPORT_ROWS:
-                # Abbrechen statt stillschweigend zu kuerzen: sonst meldete der
-                # Bericht Erfolg fuer eine Datei, von der ein Teil nie
-                # betrachtet wurde (NFR-4).
-                raise ValidationError(
-                    code="error.import_too_many_rows", details={"maximum": MAX_IMPORT_ROWS}
-                )
+        # Vollstaendig einlesen, bevor irgendetwas geschrieben wird: die Zeilen
+        # schreiben einzeln fest, ein Abbruch mitten im Lauf liesse die ersten
+        # 10 000 Aenderungen bestehen und meldete dennoch nur einen Fehler.
+        # Die Datei liegt ohnehin vollstaendig im Speicher (Upload-Grenze).
+        raw_rows = list(reader)
+        if len(raw_rows) > MAX_IMPORT_ROWS:
+            raise ValidationError(
+                code="error.import_too_many_rows",
+                details={"maximum": MAX_IMPORT_ROWS, "rows": len(raw_rows)},
+            )
+
+        for index, raw in enumerate(raw_rows, start=2):
             report.total += 1
             row: dict[str, str] = {}
             try:
@@ -820,23 +824,24 @@ class ImportExportService:
         elif payload.action in ("assign_group", "remove_group"):
             groupname = str(payload.groupname)
             if payload.action == "assign_group":
-                # Ohne diese Pruefung entstuenden aus einem Tippfehler ein
-                # Phantom-Benutzer und eine Phantom-Gruppe, beide ohne Inhalt.
-                if not await self.users.attrs.exists_anywhere(
-                    username
-                ) and not await self.users.subjects.get(username):
-                    raise NotFoundError(code="error.not_found", details={"username": username})
-                if not await self.users.groups.exists(groupname):
-                    raise NotFoundError(code="error.not_found", details={"groupname": groupname})
                 # Dieselbe Sperre wie Umbenennen und Loeschen der Gruppe: sonst
                 # koennte eine Mitgliedschaft nach einer Umbenennung unter dem
                 # alten Namen entstehen und die Gruppe wiederauferstehen lassen.
-                # Die Sperre umschliesst Einfuegen *und* Commit: sonst saehe die
-                # naechste Anfrage die Zeile nicht und legte eine zweite an.
-                # Auch die Lebenszyklus-Sperre des Benutzers: sonst legte ein
-                # gleichzeitiges Loeschen und dieses Einfuegen zusammen einen
-                # Phantom-Benutzer ohne Anmeldedaten an.
+                # Die Sperre umschliesst Pruefung, Einfuegen *und* Commit: sonst
+                # saehe die naechste Anfrage die Zeile nicht und legte eine
+                # zweite an - und ein gleichzeitiges Loeschen zwischen Pruefung
+                # und Einfuegen liesse einen Phantom-Benutzer entstehen.
                 async with named_lock(self.session, f"group:{groupname}", f"user:{username}"):
+                    # Ohne diese Pruefung entstuenden aus einem Tippfehler ein
+                    # Phantom-Benutzer und eine Phantom-Gruppe, beide ohne Inhalt.
+                    if not await self.users.attrs.exists_anywhere(
+                        username
+                    ) and not await self.users.subjects.get(username):
+                        raise NotFoundError(code="error.not_found", details={"username": username})
+                    if not await self.users.groups.exists(groupname):
+                        raise NotFoundError(
+                            code="error.not_found", details={"groupname": groupname}
+                        )
                     await self.users.groups.add_membership(username, groupname, payload.priority)
                     await self._log_membership(payload.action, username, groupname, actor, actor_ip)
                     await self.session.commit()
