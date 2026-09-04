@@ -9,7 +9,7 @@ import {
   useUpdateGroup,
 } from "@/api/hooks";
 import { MASKED } from "@/api/types";
-import type { AttributeInput } from "@/api/types";
+import type { AttributeInput, GroupDetail } from "@/api/types";
 import { ConfirmDialog, ErrorBox, Field, Modal, Spinner, WarningList } from "@/components/ui";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n";
@@ -159,12 +159,18 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
       check_attributes: expert ? currentChecks : undefined,
       reply_attributes: expert ? currentReplies : undefined,
     };
+    // Der Dialog bleibt offen, wenn der Server Warnungen zurückgibt: sonst
+    // verschwände der Hinweis auf ein unbekanntes Attribut ungelesen.
+    const close = (result: GroupDetail) => {
+      if (result.warnings.length === 0) onClose();
+    };
     if (groupname) {
-      update.mutate(body, { onSuccess: onClose });
+      update.mutate(body, { onSuccess: close });
     } else {
-      create.mutate({ ...body, check_attributes: currentChecks, reply_attributes: currentReplies }, {
-        onSuccess: onClose,
-      });
+      create.mutate(
+        { ...body, check_attributes: currentChecks, reply_attributes: currentReplies },
+        { onSuccess: close },
+      );
     }
   };
 

@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.crypto import SecretBox, hash_password, nt_hash
 from app.core.errors import ConflictError, ValidationError
 from app.main import create_app
-from app.models.mgr import CredentialType, MgrAccount, Role
+from app.models.mgr import CredentialType, MgrAccount, Role, SubjectType
 from app.models.radius import RadAcct, RadCheck
 from app.schemas.nas import NasCreate
 from app.schemas.users import DeviceCreate, DeviceUpdate, UserCreate, UserUpdate
@@ -1461,3 +1461,135 @@ async def test_session_identifiers_are_strings(session, client) -> None:
 
     listing = await client.get("/api/v1/sessions?active_only=false")
     assert listing.json()["items"][0]["radacctid"] == "9007199254740993"
+
+
+# --- Neunzehnte Runde ------------------------------------------------------
+
+
+async def test_challenge_is_void_after_a_password_change(session) -> None:
+    """Eine vor der Änderung ausgestellte Challenge darf nicht mehr gelten."""
+    from app.core.dates import utcnow
+    from app.core.errors import AuthenticationError
+    from app.services.accounts import AccountService
+
+    account, _ = await _account(session, "admin", Role.ADMINISTRATOR, totp=True)
+    service = AccountService(session)
+    challenge = service.challenge_for(account)
+
+    account.password_changed_at = utcnow() + dt.timedelta(seconds=5)
+    await session.commit()
+
+    with pytest.raises(AuthenticationError) as excinfo:
+        await service.account_from_challenge(challenge)
+    assert excinfo.value.code == "error.reauthentication_required"
+
+
+async def test_exact_mac_wins_over_the_preferred_format(session, admin_principal) -> None:
+    """Liegen zwei Schreibweisen vor, ist die angefragte gemeint."""
+    from app.services.settings_service import KEY_MAC_FORMAT, SettingsService
+
+    devices = DeviceService(session)
+    await devices.create(
+        DeviceCreate(mac="aa:bb:cc:dd:ee:ff", meta={"location": "colon"}),
+        actor=admin_principal,
+    )
+    await SettingsService(session).update({KEY_MAC_FORMAT: "plain_lower"})
+    await session.commit()
+    # Zweiter Datensatz in der neuen Schreibweise – über den Benutzerdienst,
+    # damit die Geräte-Auflösung ihn nicht zusammenführt.
+    await UserService(session).create(
+        UserCreate(username="aabbccddeeff", password="x", meta={"location": "plain"}),
+        actor=admin_principal,
+    )
+    plain = await UserService(session).subjects.get("aabbccddeeff")
+    plain.subject_type = SubjectType.DEVICE
+    await session.commit()
+
+    assert (await devices.get("aa:bb:cc:dd:ee:ff")).location == "colon"
+    assert (await devices.get("aabbccddeeff")).location == "plain"
+
+
+async def test_worker_intervals_must_be_positive() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(PydanticValidationError):
+        Settings(stats_refresh_seconds=0)
+    with pytest.raises(PydanticValidationError):
+        Settings(audit_purge_interval_seconds=-5)
+
+
+async def test_unknown_csv_columns_are_rejected(session, admin_principal) -> None:
+    """Ein Tippfehler in der Kopfzeile darf nicht stillschweigend wirkungslos sein."""
+    from app.core.errors import ValidationError as AppValidationError
+
+    with pytest.raises(AppValidationError) as excinfo:
+        await ImportExportService(session).import_csv(
+            "username,groupss\nanna,g1\n",
+            kind="user",
+            dry_run=True,
+            actor=admin_principal,
+        )
+    assert excinfo.value.code == "error.import_unknown_columns"
+
+
+async def test_dry_run_rejects_impossible_credential_change(session, admin_principal) -> None:
+    """Was der Import nicht leisten kann, darf die Vorschau nicht zusagen."""
+    from app.models.mgr import CredentialType
+    from app.schemas.users import PasswordSet
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.set_password(
+        "anna",
+        PasswordSet(password="geheim123", credential_type=CredentialType.NT),
+        actor=admin_principal,
+    )
+
+    preview = await ImportExportService(session).import_csv(
+        "username,credential_type\nanna,both\n",
+        kind="user",
+        dry_run=True,
+        actor=admin_principal,
+    )
+    assert preview.errors == 1
+    assert preview.to_update == 0
+
+
+async def test_bulk_expiry_rejects_unknown_users(session, admin_principal) -> None:
+    from app.repositories.directory import SubjectFilter
+    from app.schemas.users import BulkAction
+
+    _, succeeded, errors = await ImportExportService(session).bulk(
+        BulkAction(
+            action="set_expiry",
+            usernames=["gibtsnicht"],
+            expires_at=dt.datetime(2030, 1, 1, 12, 0),
+        ),
+        SubjectFilter(),
+        actor=admin_principal,
+    )
+    assert succeeded == 0 and len(errors) == 1
+    _, total = await UserService(session).search(SubjectFilter())
+    assert total == 0
+
+
+async def test_manual_oidc_link_rejects_whitespace() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.schemas.accounts import OidcLink
+
+    with pytest.raises(PydanticValidationError):
+        OidcLink(oidc_subject=" alice")
+    assert OidcLink(oidc_subject="alice").oidc_subject == "alice"
+    assert OidcLink(oidc_subject=None).oidc_subject is None
+
+
+async def test_ip_attribute_values_are_validated() -> None:
+    from app.core.errors import ValidationError as AppValidationError
+    from app.services.attributes import validate_triple
+
+    with pytest.raises(AppValidationError):
+        validate_triple("Framed-IP-Address", ":=", "keine-ip", table="radreply")
+    assert validate_triple("Framed-IP-Address", ":=", "192.0.2.10", table="radreply") == []

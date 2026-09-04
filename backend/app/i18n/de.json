@@ -39,6 +39,7 @@
   "error.totp_setup_required": "Für Administratoren ist die Einrichtung von TOTP verpflichtend.",
   "error.totp_already_enrolled": "Für dieses Konto ist bereits ein zweiter Faktor eingerichtet. Das Zurücksetzen erfolgt durch einen Administrator.",
   "error.import_invalid": "Die Importdatei konnte nicht verarbeitet werden.",
+  "error.import_unknown_columns": "Unbekannte Spalten in der Importdatei: {columns}.",
   "error.subject_type_mismatch": "Für diesen Namen existiert bereits ein Objekt einer anderen Art ({actual} statt {expected}).",
   "diag.no_attempts": "Für {subject} sind keine Anmeldeversuche protokolliert.",
   "diag.user_unknown": "Der Benutzer {subject} existiert nicht in radcheck.",

@@ -46,6 +46,14 @@ class DeviceService:
         noch nicht gibt - sonst waeren vorhandene Geraete nach einer Umstellung
         weder aufrufbar noch aenderbar (FR-3).
         """
+        # Die genaue Schreibweise des Aufrufers zuerst: liegen dieselbe MAC in
+        # zwei Formaten vor, ist sonst nicht der gemeinte Datensatz gemeint.
+        exact = mac.strip()
+        if exact and (
+            await self.users.attrs.exists_anywhere(exact) or await self.users.subjects.get(exact)
+        ):
+            return exact
+
         preferred = await self.normalise(mac)
         if await self.users.attrs.exists_anywhere(preferred) or await self.users.subjects.get(
             preferred

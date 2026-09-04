@@ -137,17 +137,19 @@ class GroupService:
         actor_ip: str | None = None,
         language: str = "de",
     ) -> GroupDetail:
-        if payload.groupname and payload.groupname != groupname:
-            # Die Sperre umschliesst Pruefung *und* Commit: gaebe man sie vorher
-            # frei, saehe die naechste Anfrage den noch nicht festgeschriebenen
-            # Zielnamen nicht und schriebe ihn ein zweites Mal.
-            async with named_lock(self.session, f"group:{payload.groupname}"):
-                return await self._update_locked(
-                    groupname, payload, actor=actor, actor_ip=actor_ip, language=language
-                )
-        return await self._update_locked(
-            groupname, payload, actor=actor, actor_ip=actor_ip, language=language
-        )
+        # Der ganze Vorgang laeuft unter der Sperre des Namens: das Schreiben
+        # ersetzt beide Attributsammlungen, zwei gleichzeitige PATCH-Aufrufe
+        # wuerden sich sonst gegenseitig ueberschreiben. Bei einer Umbenennung
+        # wird zusaetzlich der Zielname gesperrt.
+        async with named_lock(self.session, f"group:{groupname}"):
+            if payload.groupname and payload.groupname != groupname:
+                async with named_lock(self.session, f"group:{payload.groupname}"):
+                    return await self._update_locked(
+                        groupname, payload, actor=actor, actor_ip=actor_ip, language=language
+                    )
+            return await self._update_locked(
+                groupname, payload, actor=actor, actor_ip=actor_ip, language=language
+            )
 
     async def _update_locked(
         self,

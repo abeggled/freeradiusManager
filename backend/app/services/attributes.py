@@ -6,6 +6,7 @@ sollen weiterhin pflegbar bleiben.
 
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import dataclass
 
 from app.core import radius_dict
@@ -68,6 +69,16 @@ def validate_triple(
             code="error.validation",
             details={"attribute": attribute, "expected": "integer", "value": value},
         )
+    elif info.value_type == "ipaddr" and value:
+        try:
+            ipaddress.ip_address(value)
+        except ValueError as exc:
+            # Ein unbrauchbarer Wert wuerde vom Server verworfen oder liesse die
+            # Antwort scheitern - besser gleich hier abweisen.
+            raise ValidationError(
+                code="error.validation",
+                details={"attribute": attribute, "expected": "ipaddr", "value": value},
+            ) from exc
     if radius_dict.is_password_attribute(attribute) and table.endswith("check"):
         warnings.append(
             AttributeWarning(

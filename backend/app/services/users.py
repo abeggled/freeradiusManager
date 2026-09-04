@@ -507,6 +507,17 @@ class UserService:
             credential_type = subject.credential_type if subject else CredentialType.CLEARTEXT
             await self._write_credentials(new, new, credential_type)
 
+    async def check_credential_change(self, username: str, target: CredentialType) -> None:
+        """Prueft einen Typwechsel, ohne zu schreiben - fuer die Import-Vorschau."""
+        wanted = set(CREDENTIAL_ATTRIBUTES[target])
+        if "Cleartext-Password" not in wanted:
+            return
+        if await self.attrs.find_check(username, "Cleartext-Password") is None:
+            raise ValidationError(
+                code="error.credential_type_needs_password",
+                details={"username": username, "credential_type": target.value},
+            )
+
     async def _change_credential_type(
         self, username: str, subject: MgrSubject, target: CredentialType
     ) -> None:

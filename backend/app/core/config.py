@@ -100,8 +100,10 @@ class Settings(BaseSettings):
 
     # --- Betrieb ---------------------------------------------------------
     schema_check_on_startup: bool = True
-    stats_refresh_seconds: int = 300
-    audit_purge_interval_seconds: int = 6 * 3600
+    # Positive Intervalle erzwungen: bei 0 liefen die Hintergrundjobs ohne
+    # Pause und belasteten die Datenbank dauerhaft.
+    stats_refresh_seconds: int = Field(default=300, ge=1)
+    audit_purge_interval_seconds: int = Field(default=6 * 3600, ge=1)
     coa_timeout_seconds: float = 5.0
     coa_retries: int = 2
 

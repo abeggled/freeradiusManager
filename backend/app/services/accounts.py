@@ -202,6 +202,13 @@ class AccountService:
         account = await self.repo.get(int(payload["sub"]))
         if account is None or not account.is_active:
             raise AuthenticationError(code="error.unauthenticated")
+        # Eine vor der Passwortaenderung ausgestellte Challenge darf den zweiten
+        # Schritt nicht mehr freischalten.
+        issued_at = int(payload.get("iat", 0))
+        if account.password_changed_at is not None and issued_at < int(
+            account.password_changed_at.replace(tzinfo=dt.UTC).timestamp()
+        ):
+            raise AuthenticationError(code="error.reauthentication_required")
         # Die Sperre muss auch hier greifen: sonst liesse sich der zweite Faktor
         # mit derselben Challenge unbegrenzt weiterraten, und ein spaeter
         # richtiger Code haette die Sperre sogar wieder aufgehoben.

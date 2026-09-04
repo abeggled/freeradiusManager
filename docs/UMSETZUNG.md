@@ -75,8 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Achtzehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
-12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11 und 8 Befunde;
+Neunzehn Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10, 11,
+12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11, 8 und 10 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
@@ -478,6 +478,23 @@ Die achtzehnte Runde (keine P1-Befunde):
 * `radacctid` und die Auth-Log-ID werden als Zeichenkette ausgeliefert: als
   JavaScript-Zahl verlören BIGINT-Werte an Genauigkeit und die Oberfläche
   spräche eine benachbarte Session an.
+
+Die neunzehnte Runde (keine P1-Befunde):
+
+* Eine vor einer Passwortänderung ausgestellte TOTP-Challenge gilt nicht mehr.
+* Die Geräte-Auflösung nimmt die angefragte Schreibweise, bevor sie normalisiert –
+  bei zwei Formaten desselben Geräts war sonst der falsche Datensatz gemeint.
+* Ein `PATCH` auf eine Gruppe läuft vollständig unter deren Sperre; zwei
+  gleichzeitige Änderungen überschrieben sich sonst gegenseitig.
+* Arbeitsintervalle der Hintergrundjobs müssen positiv sein.
+* Unbekannte CSV-Spalten sind ein Fehler; die Vorschau prüft auch einen
+  Typwechsel gegen den Bestand; `set_expiry` legt keine Phantom-Benutzer an.
+* Eine manuelle OIDC-Verknüpfung mit Leerraum wird abgewiesen – sie hätte sich
+  nie anmelden können.
+* Werte für IP-Attribute werden geprüft; der Gruppendialog bleibt offen, solange
+  Warnungen anzuzeigen sind.
+* Die Vorgabewerte der Enum-Spalten in den Migrationen entsprechen jetzt den
+  gespeicherten Namen (Migration 0005).
 
 ## Prüfschritte
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.constants import MIN_PASSWORD_LENGTH
 from app.models.mgr import Role
@@ -84,6 +84,20 @@ class OidcLink(BaseModel):
 
     oidc_subject: str | None = Field(default=None, max_length=255)
     """``None`` loest eine bestehende Verknuepfung."""
+
+    @field_validator("oidc_subject")
+    @classmethod
+    def _check(cls, value: str | None) -> str | None:
+        """Dieselbe Pruefung wie im Callback.
+
+        Ein Wert mit Leerraum liesse sich verknuepfen, koennte sich aber nie
+        anmelden - die API meldete einen Erfolg ohne Wirkung.
+        """
+        if value is None:
+            return None
+        if not value or value != value.strip():
+            raise ValueError("oidc_subject darf keinen fuehrenden oder anhaengenden Leerraum haben")
+        return value
 
 
 class PasswordChange(BaseModel):

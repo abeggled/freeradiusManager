@@ -79,6 +79,12 @@ EXPORT_COLUMNS = (
     "credential_type",
 )
 
+# Die Spalten des Exports gehoeren dazu, damit der Weg exportieren, bearbeiten,
+# importieren funktioniert. Rein informative Spalten wie ``status`` werden dabei
+# gelesen und ignoriert - im Gegensatz zu einem Tippfehler, der auffallen soll.
+ALLOWED_USER_COLUMNS = frozenset(USER_COLUMNS) | frozenset(EXPORT_COLUMNS) | {"username"}
+ALLOWED_DEVICE_COLUMNS = frozenset(DEVICE_COLUMNS) | frozenset(EXPORT_COLUMNS) | {"mac", "username"}
+
 
 TRUE_VALUES = frozenset({"1", "true", "ja", "yes", "y", "wahr"})
 FALSE_VALUES = frozenset({"0", "false", "nein", "no", "n", "falsch"})
@@ -305,6 +311,18 @@ class ImportExportService:
         if reader.fieldnames is None:
             raise ValidationError(code="error.import_invalid")
 
+        # Ein Tippfehler in der Kopfzeile wuerde sonst stillschweigend ignoriert
+        # und die Zeile trotzdem als "aktualisiert" gemeldet.
+        allowed = ALLOWED_USER_COLUMNS if kind == "user" else ALLOWED_DEVICE_COLUMNS
+        unknown = sorted(
+            {(name or "").strip().lower() for name in reader.fieldnames} - allowed - {""}
+        )
+        if unknown:
+            raise ValidationError(
+                code="error.import_unknown_columns",
+                details={"columns": unknown, "allowed": sorted(allowed)},
+            )
+
         report = ImportReport(dry_run=dry_run)
 
         for index, raw in enumerate(reader, start=2):
@@ -356,6 +374,10 @@ class ImportExportService:
                 )
                 # Wirft dieselben Validierungsfehler wie der Schreibvorgang.
                 self._payloads(parsed, kind, exists)
+                # Ein Typwechsel ohne Passwort haengt vom Bestand ab; auch das
+                # gehoert in die Vorschau.
+                if exists and parsed.credential_type is not None and not parsed.password:
+                    await self.users.check_credential_change(username, parsed.credential_type)
                 # Auch die Existenz der Gruppen wird schon hier geprueft, damit
                 # die Vorschau nicht mehr meldet als der Import leistet.
                 for membership in parsed.groups:
@@ -734,6 +756,12 @@ class ImportExportService:
             expires = payload.expires_at
             if expires is None:
                 raise ValidationError(code="error.validation", details={"field": "expires_at"})
+            # Wie bei den uebrigen Sammelaktionen: ein Tippfehler darf keinen
+            # Datensatz ohne Anmeldedaten erzeugen.
+            if not await self.users.attrs.exists_anywhere(
+                username
+            ) and not await self.users.subjects.get(username):
+                raise NotFoundError(code="error.not_found", details={"username": username})
             subject = await self.users.subjects.ensure(username)
             subject.expires_at = expires
             await self.users.attrs.set_check(username, "Expiration", ":=", to_expiration(expires))
