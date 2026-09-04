@@ -59,19 +59,26 @@ class GroupService:
         if query:
             needle = query.lower()
             names = [n for n in names if needle in n.lower()]
-        counts = await self.repo.member_counts()
-        replies_by_group = await self.repo.reply_attributes_for(names)
+        # Die Schreibweise kann zwischen Attribut- und Mitgliedschaftszeilen
+        # abweichen ("Staff" gegen "staff"); die Datenbank meint dieselbe Gruppe.
+        # Ein exakter Zeichenvergleich meldete hier null Mitglieder.
+        counts = {fold(name): value for name, value in (await self.repo.member_counts()).items()}
+        replies_by_group = {
+            fold(name): value
+            for name, value in (await self.repo.reply_attributes_for(names)).items()
+        }
         items: list[GroupListItem] = []
         for name in names:
+            key = fold(name)
             vlan = next(
                 (
                     r.value
-                    for r in replies_by_group.get(name, [])
+                    for r in replies_by_group.get(key, [])
                     if r.attribute.lower() == VLAN_ATTRIBUTE
                 ),
                 None,
             )
-            items.append(GroupListItem(groupname=name, members=counts.get(name, 0), vlan=vlan))
+            items.append(GroupListItem(groupname=name, members=counts.get(key, 0), vlan=vlan))
         return items
 
     async def get(self, groupname: str) -> GroupDetail:

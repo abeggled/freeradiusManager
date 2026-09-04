@@ -727,6 +727,19 @@ Die fünfundzwanzigste Runde:
   Ein gleichzeitiges Löschen liess sonst einen Phantom-Benutzer ohne
   Anmeldedaten zurück.
 
+### Vierzehnte Runde
+
+* **Auch die TOTP-Challenge trägt Sekundenbruchteile.** `iat` ist laut JWT eine
+  ganze Sekunde; eine Passwortänderung in derselben Sekunde liess die Challenge
+  deshalb weiterlaufen – bei einer laufenden TOTP-Ersteinrichtung sogar bis zur
+  fertigen Sitzung.
+* **Die Gruppenübersicht verbindet ihre Teilabfragen über die Vergleichsform.**
+  Attributzeilen (`Staff`) und Mitgliedschaften (`staff`) können verschiedene
+  Schreibweisen führen; die Übersicht meldete dann null Mitglieder.
+* **Eine als Filter eingegebene NAS-Adresse wird exakt behandelt.** `10.0.0.1`
+  lieferte über die Teiltextsuche auch die Sitzungen von `10.0.0.10`. Die Suche
+  über Kurz- und Anzeigenamen bleibt unverändert.
+
 ## Prüfschritte
 
 ```bash

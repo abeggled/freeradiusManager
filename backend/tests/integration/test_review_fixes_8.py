@@ -9,6 +9,7 @@ from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import select
 
 from app.core.errors import ValidationError
+from app.core.identifiers import fold
 from app.core.security import Principal
 from app.models.radius import RadAcct, RadCheck
 from app.repositories.radius.acct import AccountingRepository, SessionFilter
@@ -655,3 +656,71 @@ async def test_totp_code_is_accepted_only_once(session) -> None:
     with pytest.raises(AuthenticationError) as excinfo:
         await service.verify_totp_code(account, code)
     assert excinfo.value.code == "error.totp_invalid"
+
+
+# --- Vierzehnte Runde -----------------------------------------------------
+
+
+async def test_challenge_is_revoked_by_a_same_second_password_change(session) -> None:
+    """Sonst bliebe die Challenge trotz Passwortwechsel ihre volle Laufzeit gueltig."""
+    from app.core.crypto import hash_password
+    from app.core.dates import utcnow
+    from app.core.errors import AuthenticationError
+    from app.models.mgr import MgrAccount, Role
+    from app.services.accounts import AccountService
+
+    account = MgrAccount(
+        username="admin",
+        role=Role.ADMINISTRATOR,
+        password_hash=hash_password("ein-sicheres-passwort"),
+    )
+    session.add(account)
+    await session.commit()
+
+    service = AccountService(session)
+    challenge = service.challenge_for(account)
+    # Wechsel in derselben Sekunde, aber danach.
+    account.password_changed_at = utcnow()
+    await session.commit()
+
+    with pytest.raises(AuthenticationError) as excinfo:
+        await service.account_from_challenge(challenge)
+    assert excinfo.value.code == "error.reauthentication_required"
+
+
+async def test_group_summary_joins_with_the_collation(session, admin_principal) -> None:
+    """Attribut- und Mitgliedschaftszeilen koennen verschiedene Schreibweisen fuehren."""
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    groups = GroupService(session)
+    await groups.create(GroupCreate(groupname="Staff", vlan="10"), actor=admin_principal)
+    await groups.repo.add_membership("anna", "staff", 1)
+    await session.commit()
+
+    item = next(g for g in await groups.search() if fold(g.groupname) == "staff")
+    assert item.members == 1
+    assert item.vlan == "10"
+
+
+async def test_exact_nas_address_does_not_match_neighbours(session, admin_principal) -> None:
+    """ "10.0.0.1" darf nicht auch die Sitzungen von "10.0.0.10" liefern."""
+    from app.schemas.nas import NasCreate
+    from app.services.nas import NasService
+    from app.services.sessions import SessionService
+
+    nas = NasService(session)
+    await nas.create(
+        NasCreate(nasname="10.0.0.1", shortname="ap-1", secret="s"), actor=admin_principal
+    )
+    await nas.create(
+        NasCreate(nasname="10.0.0.10", shortname="ap-10", secret="s"), actor=admin_principal
+    )
+
+    addresses, networks = await SessionService(session).resolve_nas_filter("10.0.0.1")
+    assert addresses == ["10.0.0.1"]
+    assert networks == []
+
+    # Ueber den Kurznamen bleibt die Teiltextsuche erhalten.
+    addresses, _ = await SessionService(session).resolve_nas_filter("ap-1")
+    assert sorted(addresses) == ["10.0.0.1", "10.0.0.10"]

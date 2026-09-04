@@ -120,6 +120,10 @@ def create_totp_challenge_token(
         "sub": str(account_id),
         "scope": scope,
         "iat": int(now.timestamp()),
+        # ``iat`` muss laut JWT eine ganze Sekunde sein; fuer den Vergleich mit
+        # ``password_changed_at`` (DATETIME(6)) braucht es die Bruchteile, sonst
+        # gilt eine Challenge aus derselben Sekunde weiterhin als aktuell.
+        "auth_at": now.timestamp(),
         "exp": int((now + dt.timedelta(minutes=minutes)).timestamp()),
     }
     return jwt.encode(payload, config.secret_key, algorithm=config.jwt_algorithm)

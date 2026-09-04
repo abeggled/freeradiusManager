@@ -73,16 +73,18 @@ class SessionService:
         Praefix-Vergleich ausgewertet, damit auch die per CIDR eingetragenen
         NAS-Clients filterbar sind (FR-5).
         """
-        matches = await self.nas.find_by_label(text)
-        addresses = [nas.nasname for nas in matches if "/" not in nas.nasname]
-        networks = [nas.nasname for nas in matches if "/" in nas.nasname]
+        # Eine eingegebene Adresse ist eine Adresse, kein Textbaustein: sonst
+        # traefe der Filter "10.0.0.1" auch die Sitzungen von "10.0.0.10".
         try:
             ipaddress.ip_network(text, strict=False)
         except ValueError:
             pass
         else:
-            if "/" in text:
-                networks.append(text)
+            return ([], [text]) if "/" in text else ([text], [])
+
+        matches = await self.nas.find_by_label(text)
+        addresses = [nas.nasname for nas in matches if "/" not in nas.nasname]
+        networks = [nas.nasname for nas in matches if "/" in nas.nasname]
         if not addresses and not networks:
             addresses = [text]
         return addresses, networks
