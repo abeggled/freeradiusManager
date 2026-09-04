@@ -20,3 +20,6 @@ backend/static/
 # Lokale Konfiguration
 .env
 backend/.env
+
+# TypeScript-Inkrementalstand; ein Bauartefakt.
+*.tsbuildinfo

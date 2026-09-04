@@ -129,3 +129,142 @@ async def test_diagnosis_reports_the_nas_shortname(session, admin_principal) -> 
     result = await AuthLogService(session).diagnose("anna")
     assert result.last_session is not None
     assert result.last_session.nas_shortname == "ap-eg"
+
+
+# --- Zehnte Runde ---------------------------------------------------------
+
+
+async def test_named_lock_uses_the_dedicated_engine() -> None:
+    """``session.bind`` ist im Betrieb die Abfrage-Engine - die Trennung entfiele."""
+    import inspect
+
+    from app.core import locking
+
+    source = inspect.getsource(locking.named_lock)
+    # Kommentarzeilen erwaehnen ``session.bind`` als das, was gerade nicht
+    # verwendet wird; geprueft wird der Code.
+    code = "\n".join(line for line in source.splitlines() if not line.lstrip().startswith("#"))
+    assert "get_lock_engine()" in code
+    assert "session.bind" not in code
+
+
+async def test_named_lock_takes_several_names_on_one_connection(session) -> None:
+    """Geschachtelte Aufrufe braeuchten je eine Verbindung; der Sperrpool ist klein."""
+    from app.core.locking import named_lock
+
+    async with named_lock(session, "group:b", "group:a", "user:anna"):
+        pass
+
+    with pytest.raises(ValueError):
+        async with named_lock(session):
+            pass
+
+
+async def test_creating_a_user_locks_its_target_groups(session, admin_principal) -> None:
+    """Sonst konnte eine geloeschte Gruppe als Mitgliedschaftsgruppe zurueckkehren."""
+    import inspect
+
+    source = inspect.getsource(UserService.create)
+    assert "_lock_names(payload.username, payload.groups)" in source
+    assert "named_lock" in inspect.getsource(UserService.update)
+
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    await GroupService(session).create(
+        GroupCreate(groupname="wlan", vlan="10"), actor=admin_principal
+    )
+    service = UserService(session)
+    detail = await service.create(
+        UserCreate(
+            username="anna",
+            password="geheim123",
+            groups=[MembershipIn(groupname="wlan", priority=7)],
+        ),
+        actor=admin_principal,
+    )
+    assert [(m.groupname, m.priority) for m in detail.memberships] == [("wlan", 7)]
+
+
+async def test_membership_removal_runs_under_the_group_lock() -> None:
+    """Zwei gleichzeitige Entfernungen liessen die attributlose Gruppe verschwinden."""
+    import inspect
+
+    from app.services.groups import GroupService
+
+    source = inspect.getsource(GroupService.change_membership)
+    assert source.count("named_lock") == 1
+    assert 'if payload.action == "add"' not in source
+
+
+@pytest.mark.parametrize("value", ["2001:db8::1", "::1"])
+async def test_ipv6_is_rejected_for_ipv4_radius_attributes(value: str) -> None:
+    """``ipaddr`` ist im Woerterbuch der Vier-Byte-Typ; FreeRADIUS koennte IPv6 nicht kodieren."""
+    from app.services.attributes import validate_triple
+
+    with pytest.raises(ValidationError):
+        validate_triple("Framed-IP-Address", ":=", value, table="radreply")
+
+    # IPv4 bleibt zulaessig.
+    validate_triple("Framed-IP-Address", ":=", "10.0.0.1", table="radreply")
+
+
+async def test_bootstrap_username_is_validated(session) -> None:
+    """Ein zu langer Wert aus der Umgebung liefe sonst in einen Datenbankfehler."""
+    from app.services.accounts import AccountService
+
+    service = AccountService(session)
+    with pytest.raises(ValidationError):
+        await service.ensure_bootstrap_admin("a" * 65, "ein-sicheres-passwort")
+    with pytest.raises(ValidationError):
+        await service.ensure_bootstrap_admin("   ", "ein-sicheres-passwort")
+
+    account = await service.ensure_bootstrap_admin("admin", "ein-sicheres-passwort")
+    assert account is not None
+
+
+async def test_cookie_domain_ignores_the_request_host_for_csrf() -> None:
+    """Ein Cookie fuer die Elterndomain geht an jeden Host darunter."""
+    from starlette.datastructures import Headers
+    from starlette.requests import Request
+
+    from app.api.csrf import _expected
+    from app.core.config import settings as app_settings
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/",
+        "scheme": "https",
+        "server": ("radius.example.org", 443),
+        "client": ("10.0.0.1", 1234),
+        "headers": Headers({"host": "evil.example.org"}).raw,
+        "query_string": b"",
+    }
+    request = Request(scope)
+
+    original_domain = app_settings.cookie_domain
+    original_allowed = app_settings.allowed_origins
+    try:
+        app_settings.cookie_domain = None
+        assert "https://evil.example.org" in _expected(request)
+
+        app_settings.cookie_domain = ".example.org"
+        app_settings.allowed_origins = ["https://radius.example.org"]
+        expected = _expected(request)
+        assert expected == {"https://radius.example.org"}
+    finally:
+        app_settings.cookie_domain = original_domain
+        app_settings.allowed_origins = original_allowed
+
+
+async def test_cookie_domain_requires_configured_origins() -> None:
+    """Ohne eingetragene Herkunft wiese die Pruefung jeden Schreibzugriff ab."""
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(PydanticValidationError):
+        Settings(cookie_domain=".example.org", allowed_origins=[], cors_origins=[])
+
+    Settings(cookie_domain=".example.org", allowed_origins=["https://radius.example.org"])

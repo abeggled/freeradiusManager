@@ -802,10 +802,15 @@ class ImportExportService:
                     await self._log_membership(payload.action, username, groupname, actor, actor_ip)
                     await self.session.commit()
             else:
-                await self.users.guard_last_membership(groupname, username)
-                await self.users.groups.remove_membership(username, groupname)
-                await self._log_membership(payload.action, username, groupname, actor, actor_ip)
-                await self.session.commit()
+                # Ebenfalls unter der Gruppensperre: zwei gleichzeitige
+                # Entfernungen saehen sonst beide noch zwei Mitglieder und
+                # loeschten anschliessend beide - die attributlose Gruppe
+                # verschwaende trotz der Schutzpruefung.
+                async with named_lock(self.session, f"group:{groupname}"):
+                    await self.users.guard_last_membership(groupname, username)
+                    await self.users.groups.remove_membership(username, groupname)
+                    await self._log_membership(payload.action, username, groupname, actor, actor_ip)
+                    await self.session.commit()
         elif payload.action == "set_expiry":
             expires = payload.expires_at
             if expires is None:

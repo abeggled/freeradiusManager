@@ -7,12 +7,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.core.constants import MIN_PASSWORD_LENGTH
+from app.core.constants import MAX_ACCOUNT_USERNAME_LENGTH, MIN_PASSWORD_LENGTH
 from app.models.mgr import Role
 
 
 class LoginRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=64)
+    username: str = Field(min_length=1, max_length=MAX_ACCOUNT_USERNAME_LENGTH)
     password: str = Field(min_length=1, max_length=256)
     totp_code: str | None = Field(default=None, max_length=10)
 
@@ -57,7 +57,7 @@ class AccountOut(BaseModel):
 class AccountCreate(BaseModel):
     """Laengen entsprechen den Spalten in ``mgr_account``."""
 
-    username: str = Field(min_length=1, max_length=64)
+    username: str = Field(min_length=1, max_length=MAX_ACCOUNT_USERNAME_LENGTH)
     password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
     role: Role = Role.AUDITOR
     email: str | None = Field(default=None, max_length=255)

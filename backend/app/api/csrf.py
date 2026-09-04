@@ -35,6 +35,12 @@ def _origin_of(request: Request) -> str | None:
 def _expected(request: Request) -> set[str]:
     allowed = {origin.rstrip("/") for origin in settings.allowed_origins}
     allowed.update(origin.rstrip("/") for origin in settings.cors_origins)
+    if settings.cookie_domain:
+        # Ein Cookie fuer die uebergeordnete Domain geht an jeden Host darunter.
+        # Genau davor soll diese Pruefung schuetzen - der vom Aufrufer gesetzte
+        # Host-Header taugt dann nicht als Quelle der eigenen Adresse. In dieser
+        # Betriebsart muessen die erlaubten Herkuenfte konfiguriert sein.
+        return allowed
     host = request.headers.get("host")
     if host:
         # Hinter einem TLS-Proxy meldet der Client https, der Request selbst http.

@@ -59,6 +59,16 @@ CREDENTIAL_ATTRIBUTES = {
 }
 
 
+def _lock_names(username: str, groups: list[MembershipIn]) -> list[str]:
+    """Sperrnamen fuer eine Aenderung an einem Benutzer und seinen Gruppen.
+
+    ``named_lock`` nimmt sie auf einer Verbindung und in sortierter Reihenfolge;
+    geschachtelte Aufrufe brauchten je eine Verbindung und zwei Aufrufer in
+    verschiedener Reihenfolge liefen in eine Verklemmung.
+    """
+    return [f"user:{username}", *(f"group:{g.groupname}" for g in groups)]
+
+
 class UserService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -197,6 +207,28 @@ class UserService:
         subject_type: SubjectType = SubjectType.USER,
         language: str = "de",
     ) -> UserDetail:
+        # Neben dem eigenen Namen auch die Zielgruppen: waere eine davon
+        # zwischen Existenzpruefung und Schreiben geloescht worden, liesse die
+        # neue radusergroup-Zeile sie als reine Mitgliedschaftsgruppe wieder
+        # auferstehen.
+        async with named_lock(self.session, *_lock_names(payload.username, payload.groups)):
+            return await self._create_locked(
+                payload,
+                actor=actor,
+                actor_ip=actor_ip,
+                subject_type=subject_type,
+                language=language,
+            )
+
+    async def _create_locked(
+        self,
+        payload: UserCreate,
+        *,
+        actor: Principal,
+        actor_ip: str | None,
+        subject_type: SubjectType,
+        language: str,
+    ) -> UserDetail:
         # Geprueft wird ueber alle RADIUS-Tabellen: in einer Bestandsinstallation
         # kann ein Name auch nur Antwortattribute oder Gruppen besitzen, die
         # sonst beim Anlegen ueberschrieben wuerden.
@@ -261,6 +293,23 @@ class UserService:
         actor: Principal,
         actor_ip: str | None = None,
         language: str = "de",
+    ) -> UserDetail:
+        names = _lock_names(username, payload.groups or [])
+        if payload.username and payload.username != username:
+            names.append(f"user:{payload.username}")
+        async with named_lock(self.session, *names):
+            return await self._update_locked(
+                username, payload, actor=actor, actor_ip=actor_ip, language=language
+            )
+
+    async def _update_locked(
+        self,
+        username: str,
+        payload: UserUpdate,
+        *,
+        actor: Principal,
+        actor_ip: str | None,
+        language: str,
     ) -> UserDetail:
         before = await self.get(username, language)
         subject = await self._ensure_subject(username)

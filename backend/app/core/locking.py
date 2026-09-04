@@ -12,7 +12,7 @@ import hashlib
 from collections.abc import AsyncIterator
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_lock_engine
 from app.core.errors import ConflictError
@@ -36,36 +36,50 @@ def _lock_key(name: str) -> str:
 
 
 @contextlib.asynccontextmanager
-async def named_lock(session: AsyncSession, name: str) -> AsyncIterator[None]:
-    """Haelt eine MariaDB-``GET_LOCK``-Sperre fuer die Dauer des Blocks.
+async def named_lock(session: AsyncSession, *names: str) -> AsyncIterator[None]:
+    """Haelt MariaDB-``GET_LOCK``-Sperren fuer die Dauer des Blocks.
 
-    Die Sperre laeuft ueber eine eigene, fuer den ganzen Block gehaltene
-    Verbindung. Ueber die Sitzung des Aufrufers ginge sie verloren, sobald
+    Die Sperren laufen ueber eine eigene, fuer den ganzen Block gehaltene
+    Verbindung. Ueber die Sitzung des Aufrufers gingen sie verloren, sobald
     dessen ``commit()`` die Verbindung an den Pool zurueckgibt - das
     anschliessende ``RELEASE_LOCK`` liefe dann auf einer fremden Verbindung und
     die Sperre bliebe haengen.
 
-    Laesst sie sich nicht erlangen, wird abgebrochen. Den Block trotzdem zu
-    betreten waere schlimmer als ein Fehler: genau dann laeuft eine zweite, noch
-    nicht festgeschriebene Aenderung - und beide wuerden schreiben.
+    Mehrere Namen werden auf *einer* Verbindung und in sortierter Reihenfolge
+    erlangt. Geschachtelte Aufrufe brauchten je eine eigene Verbindung - bei
+    einer Mitgliedschaftsliste waere der Sperrpool damit erschoepft - und zwei
+    Aufrufer in verschiedener Reihenfolge liefen in eine Verklemmung.
+
+    Laesst sich eine Sperre nicht erlangen, wird abgebrochen. Den Block trotzdem
+    zu betreten waere schlimmer als ein Fehler: genau dann laeuft eine zweite,
+    noch nicht festgeschriebene Aenderung - und beide wuerden schreiben.
     """
-    key = _lock_key(name)
+    wanted = {_lock_key(name): name for name in names}
+    if not wanted:
+        raise ValueError("named_lock benoetigt mindestens einen Namen")
+    keys = sorted(wanted)
+
     # Eigener Pool, damit Sperrverbindungen nicht mit den Abfragen der Anfragen
-    # um dieselben Plaetze konkurrieren. In Tests zeigt er auf dieselbe Engine.
-    engine = session.bind if isinstance(session.bind, AsyncEngine) else get_lock_engine()
-    async with engine.connect() as connection:
-        acquired = bool(
-            await connection.scalar(
-                text("SELECT GET_LOCK(:key, :timeout)"),
-                {"key": key, "timeout": LOCK_TIMEOUT_SECONDS},
-            )
-        )
-        if not acquired:
-            log.warning("named_lock_timeout", key=key)
-            raise ConflictError(code="error.busy", details={"resource": name})
+    # um dieselben Plaetze konkurrieren. Bewusst nicht ``session.bind``: das ist
+    # im Betrieb die Abfrage-Engine, die Trennung entfiele damit vollstaendig.
+    # Tests richten beide ueber ``db.configure()`` auf dieselbe Engine.
+    async with get_lock_engine().connect() as connection:
+        held: list[str] = []
         try:
+            for key in keys:
+                acquired = bool(
+                    await connection.scalar(
+                        text("SELECT GET_LOCK(:key, :timeout)"),
+                        {"key": key, "timeout": LOCK_TIMEOUT_SECONDS},
+                    )
+                )
+                if not acquired:
+                    log.warning("named_lock_timeout", key=key)
+                    raise ConflictError(code="error.busy", details={"resource": wanted[key]})
+                held.append(key)
             yield
         finally:
             # Gebunden statt eingesetzt: ein Name wie O'Reilly ergaebe sonst
             # ungueltiges SQL - und die Sperre bliebe an der Verbindung haengen.
-            await connection.execute(text("SELECT RELEASE_LOCK(:key)"), {"key": key})
+            for key in reversed(held):
+                await connection.execute(text("SELECT RELEASE_LOCK(:key)"), {"key": key})

@@ -142,6 +142,7 @@ export const de = {
   "groups.maskedValue": "gespeicherter Wert bleibt erhalten",
   "groups.addAttribute": "Attribut hinzufügen",
   "groups.priority": "Priorität",
+  "groups.priorityHint": "Reihenfolge, in der FreeRADIUS die Gruppen auswertet; kleinere Werte zuerst.",
 
   "nas.title": "NAS-Clients",
   "nas.new": "NAS anlegen",

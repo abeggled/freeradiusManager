@@ -8,3 +8,10 @@ MIN_PASSWORD_LENGTH = 12
 Gilt auch fuer den Bootstrap-Administrator aus der Umgebung; sonst waere ein
 Platzhalter dort ein vollwertiger Zugang mit ratbarem Passwort.
 """
+
+MAX_ACCOUNT_USERNAME_LENGTH = 64
+"""Breite von ``mgr_account.username``.
+
+Gilt auch fuer den Bootstrap-Administrator aus der Umgebung: ein zu langer Wert
+liefe sonst erst in einen Datenbankfehler und liesse den Start scheitern.
+"""

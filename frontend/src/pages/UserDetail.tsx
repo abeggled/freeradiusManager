@@ -18,6 +18,8 @@ import {
   StatusBadge,
   WarningList,
 } from "@/components/ui";
+import { MembershipEditor } from "@/components/MembershipEditor";
+import type { Membership } from "@/api/types";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n";
 import { formatDateTime, toIso, toLocalInput } from "@/lib/format";
@@ -44,7 +46,7 @@ export function UserDetailPage() {
   const [expires, setExpires] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [owner, setOwner] = useState<string | null>(null);
-  const [memberships, setMemberships] = useState<string[] | null>(null);
+  const [memberships, setMemberships] = useState<Membership[] | null>(null);
 
   if (isLoading) return <Spinner />;
   if (error) return <ErrorBox error={error} />;
@@ -58,13 +60,7 @@ export function UserDetailPage() {
       clear_expiry: expires === "",
       // Alle Mitgliedschaften werden gemeinsam gesendet: das Backend ersetzt die
       // Sammlung vollständig, eine einzelne Auswahl würde die übrigen löschen.
-      groups:
-        memberships === null
-          ? undefined
-          : memberships.map((groupname) => ({
-              groupname,
-              priority: data.memberships.find((m) => m.groupname === groupname)?.priority ?? 1,
-            })),
+      groups: memberships ?? undefined,
       meta: {
         note: note ?? undefined,
         owner: owner ?? undefined,
@@ -142,27 +138,13 @@ export function UserDetailPage() {
               />
             )}
           </Field>
-          <Field label={t("users.groups")} hint={t("users.groupsHint")}>
-            {(id) => (
-              <select
-                id={id}
-                multiple
-                size={Math.min(6, Math.max(3, (groups.data ?? []).length))}
-                value={memberships ?? data.groups}
-                onChange={(event) =>
-                  setMemberships(
-                    Array.from(event.target.selectedOptions).map((option) => option.value),
-                  )
-                }
-              >
-                {(groups.data ?? []).map((entry) => (
-                  <option key={entry.groupname} value={entry.groupname}>
-                    {entry.groupname}
-                  </option>
-                ))}
-              </select>
-            )}
-          </Field>
+          <MembershipEditor
+            label={t("users.groups")}
+            hint={t("users.groupsHint")}
+            value={memberships ?? data.memberships}
+            available={(groups.data ?? []).map((entry) => entry.groupname)}
+            onChange={setMemberships}
+          />
           <Field label={t("users.expires")}>
             {(id) => (
               <input

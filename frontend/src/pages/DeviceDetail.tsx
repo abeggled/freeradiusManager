@@ -9,6 +9,8 @@ import {
   useUpdateDevice,
 } from "@/api/hooks";
 import { ConfirmDialog, ErrorBox, Field, Spinner, StatusBadge, WarningList } from "@/components/ui";
+import { MembershipEditor } from "@/components/MembershipEditor";
+import type { Membership } from "@/api/types";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n";
 import { formatDateTime, toIso, toLocalInput } from "@/lib/format";
@@ -27,7 +29,7 @@ export function DeviceDetailPage() {
   const groups = useGroups();
 
   const [draft, setDraft] = useState<Record<string, string>>({});
-  const [memberships, setMemberships] = useState<string[] | null>(null);
+  const [memberships, setMemberships] = useState<Membership[] | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmDisable, setConfirmDisable] = useState(false);
 
@@ -48,14 +50,7 @@ export function DeviceDetailPage() {
         clear_expiry: draft.expires_at === "",
         // Vollständige Sammlung senden; eine Einzelauswahl würde die übrigen
         // Mitgliedschaften löschen.
-        groups:
-          memberships === null
-            ? undefined
-            : memberships.map((groupname) => ({
-                groupname,
-                priority:
-                  data.memberships.find((m) => m.groupname === groupname)?.priority ?? 1,
-              })),
+        groups: memberships ?? undefined,
         meta: {
           device_type: draft.device_type ?? undefined,
           location: draft.location ?? undefined,
@@ -186,27 +181,13 @@ export function DeviceDetailPage() {
 
         <div className="card">
           <h2>{t("users.groups")}</h2>
-          <Field label={t("groups.name")} hint={t("users.groupsHint")}>
-            {(id) => (
-              <select
-                id={id}
-                multiple
-                size={Math.min(6, Math.max(3, (groups.data ?? []).length))}
-                value={memberships ?? data.groups}
-                onChange={(event) =>
-                  setMemberships(
-                    Array.from(event.target.selectedOptions).map((option) => option.value),
-                  )
-                }
-              >
-                {(groups.data ?? []).map((entry) => (
-                  <option key={entry.groupname} value={entry.groupname}>
-                    {entry.groupname}
-                  </option>
-                ))}
-              </select>
-            )}
-          </Field>
+          <MembershipEditor
+            label={t("groups.name")}
+            hint={t("users.groupsHint")}
+            value={memberships ?? data.memberships}
+            available={(groups.data ?? []).map((entry) => entry.groupname)}
+            onChange={setMemberships}
+          />
           <Field label={t("users.vlan")}>
             {(id) => (
               <input

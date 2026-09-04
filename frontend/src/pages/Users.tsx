@@ -22,6 +22,7 @@ import {
   WarningList,
 } from "@/components/ui";
 import { usePermissions } from "@/hooks/usePermissions";
+import { DEFAULT_PRIORITY } from "@/components/MembershipEditor";
 import { useI18n, type TranslationKey } from "@/i18n";
 import { formatDateTime, toIso } from "@/lib/format";
 
@@ -54,6 +55,7 @@ export function UsersPage() {
   const [showImport, setShowImport] = useState(false);
   const [bulk, setBulk] = useState<BulkActionName | "">("");
   const [bulkGroup, setBulkGroup] = useState("");
+  const [bulkPriority, setBulkPriority] = useState(DEFAULT_PRIORITY);
   const [bulkExpiry, setBulkExpiry] = useState("");
   const [bulkAll, setBulkAll] = useState(false);
   const [confirmBulk, setConfirmBulk] = useState(false);
@@ -146,6 +148,7 @@ export function UsersPage() {
           usernames: bulkAll ? [] : selected,
           filter_all: bulkAll,
           groupname: bulkGroup || null,
+          priority: bulkPriority,
           expires_at: bulk === "set_expiry" ? toIso(bulkExpiry) : null,
         },
         query: filters,
@@ -262,6 +265,17 @@ export function UsersPage() {
               ))}
             </select>
           )}
+          {bulk === "assign_group" && (
+            <input
+              type="number"
+              min={0}
+              max={10000}
+              aria-label={t("groups.priority")}
+              title={t("groups.priorityHint")}
+              value={bulkPriority}
+              onChange={(event) => setBulkPriority(Number(event.target.value) || 0)}
+            />
+          )}
           {bulk === "set_expiry" && (
             <input
               type="datetime-local"
@@ -359,6 +373,7 @@ function CreateUserDialog({ onClose }: { onClose: () => void }) {
   const [vlan, setVlan] = useState("");
   const [group, setGroup] = useState("");
   const [expires, setExpires] = useState("");
+  const [priority, setPriority] = useState(DEFAULT_PRIORITY);
   const [note, setNote] = useState("");
   const [owner, setOwner] = useState("");
 
@@ -371,7 +386,7 @@ function CreateUserDialog({ onClose }: { onClose: () => void }) {
         credential_type: credentialType,
         vlan: vlan || null,
         expires_at: toIso(expires),
-        groups: group ? [{ groupname: group, priority: 1 }] : [],
+        groups: group ? [{ groupname: group, priority }] : [],
         meta: { note: note || null, owner: owner || null },
       },
       { onSuccess: onClose },
@@ -441,6 +456,20 @@ function CreateUserDialog({ onClose }: { onClose: () => void }) {
             </select>
           )}
         </Field>
+        {group ? (
+          <Field label={t("groups.priority")} hint={t("groups.priorityHint")}>
+            {(id) => (
+              <input
+                id={id}
+                type="number"
+                min={0}
+                max={10000}
+                value={priority}
+                onChange={(event) => setPriority(Number(event.target.value) || 0)}
+              />
+            )}
+          </Field>
+        ) : null}
         <Field label={t("users.vlan")}>
           {(id) => <input id={id} value={vlan} onChange={(event) => setVlan(event.target.value)} />}
         </Field>

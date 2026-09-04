@@ -170,6 +170,21 @@ class Settings(BaseSettings):
             raise ValueError("Bei aktiviertem OIDC fehlen: " + ", ".join(missing))
         return self
 
+    @model_validator(mode="after")
+    def _require_origins_with_cookie_domain(self) -> Settings:
+        """Ein geteiltes Cookie verlangt konfigurierte Herkuenfte.
+
+        Mit ``FRM_COOKIE_DOMAIN`` geht das Sitzungscookie an jeden Host der
+        Domain. Die Herkunftspruefung darf sich dann nicht auf den Host-Header
+        der Anfrage stuetzen (app/api/csrf.py) - ohne eingetragene Herkunft
+        wiese sie jeden Schreibzugriff ab, und zwar erst im Betrieb.
+        """
+        if self.cookie_domain and not (self.allowed_origins or self.cors_origins):
+            raise ValueError(
+                "FRM_COOKIE_DOMAIN verlangt FRM_ALLOWED_ORIGINS (oder FRM_CORS_ORIGINS)"
+            )
+        return self
+
     @field_validator("oidc_role_map")
     @classmethod
     def _check_role_map(cls, value: dict[str, str]) -> dict[str, str]:

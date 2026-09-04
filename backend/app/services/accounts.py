@@ -7,7 +7,7 @@ import datetime as dt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings as app_settings
-from app.core.constants import MIN_PASSWORD_LENGTH
+from app.core.constants import MAX_ACCOUNT_USERNAME_LENGTH, MIN_PASSWORD_LENGTH
 from app.core.crypto import SecretBox, hash_password, needs_rehash, verify_password
 from app.core.dates import utcnow
 from app.core.errors import (
@@ -520,6 +520,14 @@ class AccountService:
             return None
         if await self.repo.get_by_username(username) is not None:
             return None
+        # Dieselben Grenzen wie ueber die Kontenverwaltung: ein zu langer Wert
+        # aus der Umgebung liefe sonst in einen Datenbankfehler - der Start
+        # scheiterte, statt eine lesbare Meldung zu erzeugen.
+        if not username.strip() or len(username) > MAX_ACCOUNT_USERNAME_LENGTH:
+            raise ValidationError(
+                code="error.validation",
+                details={"field": "username", "maximum": MAX_ACCOUNT_USERNAME_LENGTH},
+            )
         if len(password) < MIN_PASSWORD_LENGTH:
             raise ValidationError(
                 code="error.password_too_short", details={"minimum": MIN_PASSWORD_LENGTH}

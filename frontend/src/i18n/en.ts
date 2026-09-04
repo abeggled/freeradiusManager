@@ -144,6 +144,7 @@ export const en: Record<TranslationKey, string> = {
   "groups.maskedValue": "stored value is kept",
   "groups.addAttribute": "Add attribute",
   "groups.priority": "Priority",
+  "groups.priorityHint": "Order in which FreeRADIUS evaluates the groups; lower values first.",
 
   "nas.title": "NAS clients",
   "nas.new": "Create NAS",

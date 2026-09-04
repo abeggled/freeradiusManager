@@ -19,6 +19,7 @@ import pytest_asyncio
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from app.core import db as db_module
 from app.core.security import Principal
 from app.models.mgr import Role
 from app.schemas.groups import GroupCreate
@@ -161,9 +162,14 @@ def radtest(container: object, username: str, password: str) -> str:
 async def manager_session(radius_stack) -> AsyncSession:
     url, _ = radius_stack
     engine = create_async_engine(url, pool_pre_ping=True)
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        yield session
-    await engine.dispose()
+    # Wie in den Integrationstests: sonst baute ``get_lock_engine()`` seine
+    # Verbindung aus der Prozesskonfiguration statt aus dem Container.
+    db_module.configure(engine)
+    try:
+        async with AsyncSession(engine, expire_on_commit=False) as session:
+            yield session
+    finally:
+        await db_module.dispose()
 
 
 @pytest.fixture

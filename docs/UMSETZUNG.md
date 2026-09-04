@@ -618,6 +618,37 @@ Die fünfundzwanzigste Runde:
   Gruppenliste beim Anlegen eines Geräts auf dieselbe Länge wie überall sonst –
   beides scheiterte vorher erst beim Schreiben, mit einem allgemeinen 500.
 
+### Zehnte Runde
+
+* **Benannte Sperren nutzen jetzt tatsächlich den eigenen Pool.** Im Betrieb ist
+  `session.bind` die Abfrage-Engine – die Bedingung wählte damit immer den
+  Abfragepool, die in der achten Runde eingeführte Trennung war wirkungslos.
+* **`named_lock` nimmt mehrere Namen auf einer Verbindung**, sortiert. Geschachtelte
+  Aufrufe brauchten je eine Verbindung (eine Mitgliedschaftsliste hätte den
+  Sperrpool erschöpft) und zwei Aufrufer in unterschiedlicher Reihenfolge liefen
+  in eine Verklemmung.
+* **Anlegen und Ändern eines Benutzers sperren auch die Zielgruppen.** Wurde eine
+  Gruppe zwischen Existenzprüfung und Schreiben gelöscht, liess die neue
+  `radusergroup`-Zeile sie als reine Mitgliedschaftsgruppe wieder auferstehen.
+* **Das Entfernen einer Mitgliedschaft läuft unter der Gruppensperre** – in der
+  Gruppenverwaltung wie in den Sammelaktionen. Zwei gleichzeitige Aufrufe sahen
+  sonst beide noch zwei Mitglieder und löschten anschliessend beide; die
+  attributlose Gruppe verschwand trotz der Schutzprüfung.
+* **`ipaddr`-Attribute nehmen nur noch IPv4 an.** Das RADIUS-Wörterbuch führt
+  `NAS-IP-Address` und `Framed-IP-Address` als Vier-Byte-Typ; ein IPv6-Wert war
+  bisher speicherbar, aber für FreeRADIUS weder lesbar noch kodierbar.
+* **Der Bootstrap-Administrator wird vor dem Einfügen geprüft.** Ein zu langer
+  `FRM_BOOTSTRAP_ADMIN_USERNAME` umging die Schemavalidierung und liess den
+  ersten Start mit einem Datenbankfehler scheitern.
+* **Die Herkunftsprüfung traut dem Host-Header nicht mehr, wenn
+  `FRM_COOKIE_DOMAIN` gesetzt ist.** Genau dann geht das Sitzungscookie an jeden
+  Host der Domain – die vom Aufrufer gesetzte Adresse als eigene zu übernehmen
+  hob den Schutz auf. In dieser Betriebsart verlangt die Konfiguration jetzt
+  eingetragene Herkünfte, mit einem Startfehler statt einem 403 im Betrieb.
+* **Die Oberfläche kann Mitgliedschafts-Prioritäten setzen.** Benutzer- und
+  Gerätedetail, beide Anlegedialoge und die Sammelaktion bieten jetzt ein Feld
+  für `radusergroup.priority`; bisher schrieb jedes Speichern den Wert 1 zurück.
+
 ## Prüfschritte
 
 ```bash

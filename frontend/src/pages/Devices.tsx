@@ -8,6 +8,7 @@ import type { UserListItem } from "@/api/types";
 import { DataTable } from "@/components/DataTable";
 import { ErrorBox, Field, Modal, Pagination, Spinner, StatusBadge } from "@/components/ui";
 import { usePermissions } from "@/hooks/usePermissions";
+import { DEFAULT_PRIORITY } from "@/components/MembershipEditor";
 import { useI18n } from "@/i18n";
 import { formatDateTime, toIso } from "@/lib/format";
 
@@ -173,6 +174,7 @@ function CreateDeviceDialog({ onClose }: { onClose: () => void }) {
   const [owner, setOwner] = useState("");
   const [vlan, setVlan] = useState("");
   const [group, setGroup] = useState("");
+  const [priority, setPriority] = useState(DEFAULT_PRIORITY);
   const [expires, setExpires] = useState("");
 
   return (
@@ -205,7 +207,7 @@ function CreateDeviceDialog({ onClose }: { onClose: () => void }) {
               use_mac_as_password: true,
               vlan: vlan || null,
               expires_at: toIso(expires),
-              groups: group ? [{ groupname: group, priority: 1 }] : [],
+              groups: group ? [{ groupname: group, priority }] : [],
               meta: {
                 device_type: deviceType || null,
                 location: location || null,
@@ -270,6 +272,20 @@ function CreateDeviceDialog({ onClose }: { onClose: () => void }) {
             </select>
           )}
         </Field>
+        {group ? (
+          <Field label={t("groups.priority")} hint={t("groups.priorityHint")}>
+            {(id) => (
+              <input
+                id={id}
+                type="number"
+                min={0}
+                max={10000}
+                value={priority}
+                onChange={(event) => setPriority(Number(event.target.value) || 0)}
+              />
+            )}
+          </Field>
+        ) : null}
         <Field label={t("users.vlan")}>
           {(id) => <input id={id} value={vlan} onChange={(event) => setVlan(event.target.value)} />}
         </Field>

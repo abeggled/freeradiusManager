@@ -77,7 +77,10 @@ def validate_triple(
         )
     elif info.value_type == "ipaddr" and value:
         try:
-            ipaddress.ip_address(value)
+            # Ausdruecklich IPv4: ``ipaddr`` ist im RADIUS-Woerterbuch der
+            # Vier-Byte-Typ. ``ip_address`` nimmt auch IPv6 an - FreeRADIUS
+            # koennte den Wert dann weder lesen noch kodieren.
+            ipaddress.IPv4Address(value)
         except ValueError as exc:
             # Ein unbrauchbarer Wert wuerde vom Server verworfen oder liesse die
             # Antwort scheitern - besser gleich hier abweisen.

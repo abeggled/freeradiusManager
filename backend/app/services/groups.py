@@ -156,12 +156,10 @@ class GroupService:
         # ersetzt beide Attributsammlungen, zwei gleichzeitige PATCH-Aufrufe
         # wuerden sich sonst gegenseitig ueberschreiben. Bei einer Umbenennung
         # wird zusaetzlich der Zielname gesperrt.
-        async with named_lock(self.session, f"group:{groupname}"):
-            if payload.groupname and payload.groupname != groupname:
-                async with named_lock(self.session, f"group:{payload.groupname}"):
-                    return await self._update_locked(
-                        groupname, payload, actor=actor, actor_ip=actor_ip, language=language
-                    )
+        names = [f"group:{groupname}"]
+        if payload.groupname and payload.groupname != groupname:
+            names.append(f"group:{payload.groupname}")
+        async with named_lock(self.session, *names):
             return await self._update_locked(
                 groupname, payload, actor=actor, actor_ip=actor_ip, language=language
             )
@@ -256,17 +254,16 @@ class GroupService:
         actor: Principal,
         actor_ip: str | None = None,
     ) -> int:
-        if payload.action == "add":
-            # Die Sperre umschliesst Pruefung *und* Commit: sonst saehe die
-            # naechste Anfrage die noch nicht festgeschriebene Zeile nicht und
-            # legte eine zweite an (radusergroup kennt keine Eindeutigkeit).
-            async with named_lock(self.session, f"group:{groupname}"):
-                return await self._change_membership_locked(
-                    groupname, payload, actor=actor, actor_ip=actor_ip
-                )
-        return await self._change_membership_locked(
-            groupname, payload, actor=actor, actor_ip=actor_ip
-        )
+        # Die Sperre umschliesst Pruefung *und* Commit. Beim Hinzufuegen saehe
+        # die naechste Anfrage die noch nicht festgeschriebene Zeile sonst nicht
+        # und legte eine zweite an (radusergroup kennt keine Eindeutigkeit);
+        # beim Entfernen saehen zwei gleichzeitige Aufrufe beide noch zwei
+        # Mitglieder und loeschten anschliessend beide - die attributlose Gruppe
+        # verschwaende trotz der Schutzpruefung.
+        async with named_lock(self.session, f"group:{groupname}"):
+            return await self._change_membership_locked(
+                groupname, payload, actor=actor, actor_ip=actor_ip
+            )
 
     async def _change_membership_locked(
         self,

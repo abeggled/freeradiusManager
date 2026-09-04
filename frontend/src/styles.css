@@ -372,3 +372,9 @@ dd { margin: 0; }
   }
   main { padding: 1rem; }
 }
+
+/* Prioritäten je Mitgliedschaft (radusergroup.priority). */
+.membership-priorities { list-style: none; padding: 0; margin: 0.5rem 0 0; display: grid; gap: 0.35rem; }
+.membership-priorities li { display: flex; align-items: center; gap: 0.5rem; justify-content: space-between; }
+.membership-priorities label { font-size: 0.85rem; color: var(--muted); }
+.membership-priorities input { width: 6rem; }
