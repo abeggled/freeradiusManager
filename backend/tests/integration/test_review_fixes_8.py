@@ -1356,3 +1356,100 @@ async def test_expired_lockout_is_cleared_before_password_change(session) -> Non
     await session.refresh(account)
     assert account.failed_logins == 0
     assert account.locked_until is None
+
+
+# --- Zwanzigste Runde -----------------------------------------------------
+
+
+async def test_forwarded_address_must_be_an_ip(monkeypatch) -> None:
+    """Ein frei waehlbarer Wert ergaebe je Versuch einen neuen Limiter-Schluessel."""
+    from starlette.datastructures import Headers
+    from starlette.requests import Request
+
+    from app.api import deps
+    from app.core.config import settings as app_settings
+
+    def _request(forwarded: str) -> Request:
+        return Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/",
+                "client": ("127.0.0.1", 1234),
+                "headers": Headers({"x-forwarded-for": forwarded}).raw,
+                "query_string": b"",
+            }
+        )
+
+    original = app_settings.trusted_proxies
+    app_settings.trusted_proxies = ["127.0.0.0/8"]
+    deps._trusted_networks.cache_clear()
+    try:
+        assert deps.client_ip(_request("x" * 200)) == "127.0.0.1"
+        assert deps.client_ip(_request("nicht-ip, 127.0.0.1")) == "127.0.0.1"
+        assert deps.client_ip(_request("198.51.100.7, 127.0.0.1")) == "198.51.100.7"
+        # Angehaengter Port und geklammertes IPv6 werden abgetrennt.
+        assert deps.client_ip(_request("198.51.100.7:1234")) == "198.51.100.7"
+        assert deps.client_ip(_request("[2001:db8::1]:443")) == "2001:db8::1"
+    finally:
+        app_settings.trusted_proxies = original
+        deps._trusted_networks.cache_clear()
+
+
+async def test_credential_type_change_removes_legacy_rows(session, admin_principal) -> None:
+    """Ein Crypt-Hash blieb sonst nutzbar, obwohl der Manager "nt" meldet."""
+    from app.schemas.users import UserUpdate
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.attrs.add_check("anna", "Crypt-Password", ":=", "$1$alt")
+    await session.commit()
+
+    await users.update("anna", UserUpdate(credential_type="nt"), actor=admin_principal)
+    rows = (await session.scalars(select(RadCheck).where(RadCheck.username == "anna"))).all()
+    names = {r.attribute.lower() for r in rows}
+    assert "crypt-password" not in names
+    assert "cleartext-password" not in names
+    assert "nt-password" in names
+
+
+async def test_totp_reset_clears_the_replay_marker(session) -> None:
+    """Sonst wiese die Bestaetigung des neuen Faktors den ersten Code ab."""
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, Role
+    from app.schemas.accounts import AccountUpdate
+    from app.services.accounts import AccountService
+
+    account = MgrAccount(
+        username="admin",
+        role=Role.ADMINISTRATOR,
+        password_hash=hash_password("ein-sicheres-passwort"),
+        totp_enabled=True,
+        totp_secret_enc="egal",
+        totp_last_counter=123456,
+    )
+    session.add(account)
+    await session.commit()
+
+    principal = Principal(
+        account_id=account.id,
+        username="admin",
+        role=Role.ADMINISTRATOR,
+        language="de",
+        session_id="test",
+        absolute_expiry=0,
+    )
+    await AccountService(session).update(
+        account.id, AccountUpdate(reset_totp=True), actor=principal
+    )
+    await session.refresh(account)
+    assert account.totp_last_counter is None
+
+
+async def test_delete_verifies_the_group_lock_set() -> None:
+    """Eine erst danach entstandene Mitgliedschaft liefe ohne ihre Gruppensperre."""
+    import inspect
+
+    source = inspect.getsource(UserService._groups_vanishing_with)
+    assert "error.busy" in source
+    assert "locked" in inspect.signature(UserService._delete_locked).parameters

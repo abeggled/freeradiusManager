@@ -67,11 +67,37 @@ def client_ip(request: Request) -> str | None:
         return peer
     # Von rechts nach links: der erste Wert, der nicht aus einem Proxynetz
     # stammt, ist die aeusserste nicht selbst gesetzte Adresse.
-    candidates = [part.strip() for part in forwarded.split(",") if part.strip()]
+    # Nur syntaktisch gueltige Adressen: ein frei waehlbarer Wert ergaebe je
+    # Versuch einen neuen Schluessel im Rate-Limiter, und ein zu langer sprengte
+    # ``mgr_audit.actor_ip`` - der Audit-Eintrag risse den Fehlversuch mit
+    # zurueck und das Passwortraten waere unbegrenzt.
+    candidates = [
+        normalised
+        for part in forwarded.split(",")
+        if (normalised := _as_address(part.strip())) is not None
+    ]
     for candidate in reversed(candidates):
         if not _is_trusted(candidate):
             return candidate
     return candidates[0] if candidates else peer
+
+
+def _as_address(value: str) -> str | None:
+    """Kanonische Form einer IP-Adresse; ``None`` fuer alles andere.
+
+    Manche Proxys haengen einen Port an (``203.0.113.7:1234``) oder klammern
+    IPv6 (``[2001:db8::1]:443``); beides wird abgetrennt.
+    """
+    if not value:
+        return None
+    if value.startswith("["):
+        value = value.partition("]")[0].removeprefix("[")
+    elif value.count(":") == 1:
+        value = value.partition(":")[0]
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        return None
 
 
 ClientIp = Annotated[str | None, Depends(client_ip)]

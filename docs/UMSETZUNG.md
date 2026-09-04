@@ -883,6 +883,25 @@ Die fünfundzwanzigste Runde:
 * Der Gruppendialog zeigt nach einer Umbenennung mit Warnung auf den neuen
   Namen; jede Korrektur lief sonst als PATCH auf den alten Pfad.
 
+### Zwanzigste Runde
+
+* **Weitergereichte Client-Adressen werden geprüft.** Hinter einem eingetragenen
+  Proxy war der Wert von `X-Forwarded-For` bisher beliebig: jede Variante ergab
+  einen neuen Schlüssel im Rate-Limiter, und ein Wert über 45 Zeichen sprengte
+  `mgr_audit.actor_ip` – der Audit-Eintrag riss den Fehlversuch mit zurück und
+  das Passwortraten wäre unbegrenzt gewesen. Angehängte Ports und geklammertes
+  IPv6 werden abgetrennt, alles andere verworfen.
+* **Auch ein reiner Typwechsel entfernt Bestands-Anmeldedaten.** Ein
+  `Crypt-`, `MD5-` oder `SSHA-Password` blieb sonst nutzbar, obwohl der Manager
+  einen anderen Typ meldet; ohne Klartextquelle wird der Wechsel jetzt
+  abgewiesen, statt einen Typ ohne passende Daten zu melden.
+* **Die Wiedereinsatz-Marke wird mit dem Geheimnis zurückgesetzt.** Nach einem
+  administrativen Reset wies die Bestätigung des neuen Faktors den ersten
+  richtigen Code als Wiedereinsatz ab.
+* **Das Löschen prüft die gehaltenen Gruppensperren.** Eine erst nach dem Setzen
+  der Sperren entstandene Mitgliedschaft führt zu `error.busy` statt zu einer
+  ungesicherten Löschung – wie im Aktualisierungspfad.
+
 ## Prüfschritte
 
 ```bash

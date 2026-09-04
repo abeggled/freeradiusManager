@@ -318,6 +318,8 @@ class AccountService:
         secret = generate_totp_secret()
         account.totp_secret_enc = _box().encrypt(secret)
         account.totp_enabled = False
+        # Neues Geheimnis, neue Zeitfensterrechnung (siehe ``reset_totp``).
+        account.totp_last_counter = None
         # Auch der Beginn ist eine sicherheitsrelevante Aenderung: das
         # Geheimnis wird dauerhaft geschrieben und ersetzt ein evtl. bereits
         # begonnenes. Wird die Einrichtung abgebrochen, gaebe es sonst gar
@@ -477,6 +479,10 @@ class AccountService:
         if payload.reset_totp:
             account.totp_enabled = False
             account.totp_secret_enc = None
+            # Die Marke gilt nur fuer das jeweilige Geheimnis. Bliebe sie
+            # stehen, wiese die Bestaetigung des neuen Faktors den ersten
+            # richtigen Code als Wiedereinsatz ab.
+            account.totp_last_counter = None
             # Beendet auch bereits laufende Sitzungen dieses Kontos.
             account.totp_changed_at = utcnow()
 

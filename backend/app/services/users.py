@@ -601,10 +601,12 @@ class UserService:
             *(f"group:{m.groupname}" for m in await self.groups.memberships(username)),
         ]
         async with named_lock(self.session, *names):
-            await self._delete_locked(username, actor=actor, actor_ip=actor_ip)
+            await self._delete_locked(
+                username, actor=actor, actor_ip=actor_ip, locked=_locked_groups(names)
+            )
 
     async def _delete_locked(
-        self, username: str, *, actor: Principal, actor_ip: str | None
+        self, username: str, *, actor: Principal, actor_ip: str | None, locked: set[str]
     ) -> None:
         subject = await self.subjects.get(username)
         exists = await self.attrs.exists_anywhere(username)
@@ -619,7 +621,7 @@ class UserService:
         # verschwindet mit dem Benutzer. Das Loeschen des Benutzers deswegen zu
         # verweigern waere eine Sackgasse - stattdessen wird der Wegfall wie ein
         # ``group.delete`` protokolliert (FR-9).
-        vanishing = await self._groups_vanishing_with(username)
+        vanishing = await self._groups_vanishing_with(username, locked)
         await self.attrs.delete_user(username)
         await self.subjects.delete(username)
         for groupname in vanishing:
@@ -642,11 +644,16 @@ class UserService:
         )
         await self.session.commit()
 
-    async def _groups_vanishing_with(self, username: str) -> list[str]:
+    async def _groups_vanishing_with(self, username: str, locked: set[str]) -> list[str]:
         """Attributlose Gruppen, deren letzte Mitgliedschaft dieser Benutzer ist."""
         vanishing: list[str] = []
         for membership in await self.groups.memberships(username):
             name = membership.groupname
+            if name not in locked:
+                # Die Mitgliedschaft ist erst nach dem Setzen der Sperren
+                # entstanden. Ohne ihre Gruppensperre waeren die Pruefung und
+                # der Protokolleintrag unten wertlos - deshalb abbrechen.
+                raise ConflictError(code="error.busy", details={"groupname": name})
             if await self.groups.check_attributes(name) or await self.groups.reply_attributes(name):
                 continue
             members = await self.groups.members(name, limit=2, offset=0)
@@ -792,6 +799,7 @@ class UserService:
         melden, den die Daten nicht hergeben.
         """
         wanted = set(CREDENTIAL_ATTRIBUTES[target])
+        wanted_lower = {a.lower() for a in wanted}
         cleartext = await self.attrs.find_check(username, "Cleartext-Password")
 
         if "Cleartext-Password" in wanted and cleartext is None:
@@ -799,11 +807,28 @@ class UserService:
                 code="error.credential_type_needs_password",
                 details={"username": username, "credential_type": target.value},
             )
+        rows = list(await self.attrs.check_attributes(username))
+        if "NT-Password" in wanted and cleartext is None:
+            # Ohne Klartextquelle liesse sich kein NT-Hash bilden. Ein
+            # Bestandsbenutzer mit Crypt- oder SSHA-Password behielte damit ein
+            # Geheimnis, das nicht zum gemeldeten Typ passt.
+            has_nt = any(row.attribute.lower() == "nt-password" for row in rows)
+            if not has_nt:
+                raise ValidationError(
+                    code="error.credential_type_needs_password",
+                    details={"username": username, "credential_type": target.value},
+                )
         if "NT-Password" in wanted and cleartext is not None:
             await self.attrs.set_check(username, "NT-Password", ":=", nt_hash(cleartext.value))
-        for attribute in ("Cleartext-Password", "NT-Password"):
-            if attribute not in wanted:
-                await self.attrs.delete_check(username, attribute)
+        # Alle Passwort-Attribute ausserhalb der Zielmenge, nicht nur die beiden
+        # eigenen: ein Bestandsbenutzer mit Crypt-, MD5- oder SSHA-Password
+        # behielte sonst ein Geheimnis, das der gemeldete Typ nicht vorsieht.
+        for row in rows:
+            if (
+                radius_dict.is_password_attribute(row.attribute)
+                and row.attribute.lower() not in wanted_lower
+            ):
+                await self.attrs.delete_check_row(row.id)
         subject.credential_type = target
 
     async def _write_credentials(
