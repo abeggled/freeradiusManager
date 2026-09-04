@@ -347,9 +347,17 @@ class ImportExportService:
         # Ein Tippfehler in der Kopfzeile wuerde sonst stillschweigend ignoriert
         # und die Zeile trotzdem als "aktualisiert" gemeldet.
         allowed = ALLOWED_USER_COLUMNS if kind == "user" else ALLOWED_DEVICE_COLUMNS
-        unknown = sorted(
-            {(name or "").strip().lower() for name in reader.fieldnames} - allowed - {""}
-        )
+        headers = [(name or "").strip().lower() for name in reader.fieldnames]
+        # ``DictReader`` behaelt bei doppelten Spalten stillschweigend nur die
+        # letzte; Namen, die sich nur in Gross-/Kleinschreibung oder Leerzeichen
+        # unterscheiden, fallen spaeter ebenso zusammen. Eine unbeabsichtigt
+        # angewandte Passwortspalte taucht dabei in keiner Meldung auf.
+        duplicates = sorted({name for name in headers if name and headers.count(name) > 1})
+        if duplicates:
+            raise ValidationError(
+                code="error.import_duplicate_columns", details={"columns": duplicates}
+            )
+        unknown = sorted(set(headers) - allowed - {""})
         if unknown:
             raise ValidationError(
                 code="error.import_unknown_columns",
@@ -797,13 +805,18 @@ class ImportExportService:
         await self.users.attrs.set_check(username, "Expiration", ":=", to_expiration(expires))
         await self.audit.log(
             action="user.set_expiry",
-            object_type="user",
+            object_type=subject.subject_type.value,
             object_id=username,
             actor=actor,
             actor_ip=actor_ip,
             after={"expires_at": expires},
         )
         await self.session.commit()
+
+    async def _object_type(self, username: str) -> str:
+        """Benutzer oder Geraet - fest verdrahtet waere die Filterung falsch."""
+        subject = await self.users.subjects.get(username)
+        return subject.subject_type.value if subject else SubjectType.USER.value
 
     async def _log_membership(
         self,
@@ -815,7 +828,7 @@ class ImportExportService:
     ) -> None:
         await self.audit.log(
             action=f"user.{action}",
-            object_type="user",
+            object_type=await self._object_type(username),
             object_id=username,
             actor=actor,
             actor_ip=actor_ip,

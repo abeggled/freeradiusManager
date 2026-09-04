@@ -130,6 +130,9 @@ PASSWORD_ATTRIBUTES = frozenset(
         "ns-mta-md5-password",
         "password",
         "password-with-header",
+        # FreeRADIUS 3 kennt PBKDF2-Password; unmaskiert waere der Verifier ein
+        # Ansatzpunkt fuer Offline-Rateangriffe.
+        "pbkdf2-password",
         "sha-password",
         "sha1-password",
         "sha2-password",

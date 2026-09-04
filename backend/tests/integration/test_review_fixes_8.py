@@ -1453,3 +1453,78 @@ async def test_delete_verifies_the_group_lock_set() -> None:
     source = inspect.getsource(UserService._groups_vanishing_with)
     assert "error.busy" in source
     assert "locked" in inspect.signature(UserService._delete_locked).parameters
+
+
+# --- Einundzwanzigste Runde -----------------------------------------------
+
+
+async def test_pbkdf2_password_is_masked(session, admin_principal) -> None:
+    """FreeRADIUS 3 kennt das Attribut; unmaskiert waere es ein Rateansatz."""
+    from app.core import radius_dict
+    from app.schemas.users import MASKED
+
+    assert radius_dict.is_password_attribute("PBKDF2-Password")
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.attrs.add_check("anna", "PBKDF2-Password", ":=", "$pbkdf2$geheim")
+    await session.commit()
+
+    detail = await users.get("anna")
+    value = next(a.value for a in detail.check_attributes if a.attribute == "PBKDF2-Password")
+    assert value == MASKED
+
+
+async def test_oidc_issuer_keeps_its_trailing_slash() -> None:
+    """Der ``iss``-Claim wird exakt geprueft; ein gekuerzter Wert wiese alles ab."""
+    import inspect
+
+    from app.services.oidc import OidcService
+
+    source = inspect.getsource(OidcService._verify_id_token)
+    assert 'meta.get("issuer") or self.config.oidc_issuer)' in source
+    assert 'rstrip("/")' not in source
+
+
+async def test_duplicate_csv_columns_are_rejected(session, admin_principal) -> None:
+    """``DictReader`` behaelt sonst stillschweigend nur die letzte Spalte."""
+    from app.services.importexport import ImportExportService
+
+    with pytest.raises(ValidationError) as excinfo:
+        await ImportExportService(session).import_csv(
+            "username,password,Password\nanna,a,b\n",
+            kind="user",
+            dry_run=True,
+            actor=admin_principal,
+        )
+    assert excinfo.value.code == "error.import_duplicate_columns"
+
+
+async def test_bulk_audit_records_the_device_type(session, admin_principal) -> None:
+    """Fest verdrahtet waere die Filterung des Audit-Logs falsch."""
+    from sqlalchemy import select as sa_select
+
+    from app.models.mgr import MgrAudit
+    from app.repositories.directory import SubjectFilter
+    from app.schemas.users import BulkAction, DeviceCreate
+    from app.services.devices import DeviceService
+    from app.services.importexport import ImportExportService
+
+    await DeviceService(session).create(
+        DeviceCreate(mac="aa:bb:cc:dd:ee:ff"), actor=admin_principal
+    )
+    await ImportExportService(session).bulk(
+        BulkAction(
+            action="set_expiry",
+            usernames=["aa:bb:cc:dd:ee:ff"],
+            expires_at=dt.datetime(2030, 1, 1, tzinfo=dt.UTC),
+        ),
+        SubjectFilter(),
+        actor=admin_principal,
+    )
+
+    entry = await session.scalar(
+        sa_select(MgrAudit).where(MgrAudit.action == "user.set_expiry").limit(1)
+    )
+    assert entry is not None
+    assert entry.object_type == "device"

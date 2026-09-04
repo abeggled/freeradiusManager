@@ -902,6 +902,21 @@ Die fünfundzwanzigste Runde:
   der Sperren entstandene Mitgliedschaft führt zu `error.busy` statt zu einer
   ungesicherten Löschung – wie im Aktualisierungspfad.
 
+### Einundzwanzigste Runde
+
+* **`PBKDF2-Password` wird als Passwort-Attribut erkannt.** FreeRADIUS 3
+  unterstützt es; im Wörterbuch fehlte es, damit stand der Verifier unmaskiert
+  in API-Antwort und Audit-Log (NFR-1).
+* **Der OIDC-Aussteller wird exakt geprüft.** Ein abgeschnittener Schrägstrich
+  liess jeden Rückruf scheitern, obwohl derselbe Aussteller beim Abruf der
+  Discovery-Metadaten akzeptiert wurde.
+* **Doppelte CSV-Spalten werden abgewiesen.** `DictReader` behielt still nur die
+  letzte; eine unbeabsichtigt angewandte Passwortspalte tauchte in keiner
+  Meldung auf.
+* **Sammelaktionen protokollieren den richtigen Objekttyp.** `object_type` war
+  fest auf `user` verdrahtet, auch für Geräte – die Filterung des Audit-Logs
+  ordnete den Vorgang damit falsch ein (FR-9).
+
 ## Prüfschritte
 
 ```bash

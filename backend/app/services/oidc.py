@@ -113,7 +113,10 @@ class OidcService:
         # Der Aussteller wird gegen die Discovery-Metadaten geprueft. Ohne diese
         # Bindung akzeptierte ein Anbieter mit gemeinsamem Token-Endpunkt oder
         # JWKS auch ein korrekt signiertes Token eines fremden Issuers.
-        expected_issuer = str(meta.get("issuer") or self.config.oidc_issuer).rstrip("/")
+        # Unveraendert aus den Discovery-Metadaten: der ``iss``-Claim wird exakt
+        # verglichen. Ein abgeschnittener Schraegstrich wiese jeden Rueckruf ab,
+        # obwohl derselbe Aussteller beim Abruf der Metadaten akzeptiert wurde.
+        expected_issuer = str(meta.get("issuer") or self.config.oidc_issuer)
         try:
             claims = self._decode(id_token, key_set, expected_issuer)
         except AuthenticationError:
@@ -132,7 +135,9 @@ class OidcService:
                     code="error.unauthenticated", details={"stage": "signature"}
                 ) from exc
 
-        if str(claims.get("iss", "")).rstrip("/") != expected_issuer:
+        # Exakt, wie ``_decode`` es prueft: der Aussteller kommt unveraendert
+        # aus dem Discovery-Dokument.
+        if str(claims.get("iss", "")) != expected_issuer:
             raise AuthenticationError(code="error.unauthenticated", details={"stage": "issuer"})
         if claims.get("nonce") != nonce:
             raise AuthenticationError(code="error.unauthenticated", details={"stage": "nonce"})
