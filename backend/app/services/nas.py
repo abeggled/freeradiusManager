@@ -145,7 +145,11 @@ class NasService:
         old_name = row.nasname
 
         if payload.nasname and payload.nasname != old_name:
-            if await self.repo.get_by_name(payload.nasname) is not None:
+            # Eine reine Schreibweisenaenderung findet die Kollision als das NAS
+            # selbst wieder: die Kollation vergleicht ohne Ruecksicht auf Gross-
+            # und Kleinschreibung.
+            collision = await self.repo.get_by_name(payload.nasname)
+            if collision is not None and collision.id != row.id:
                 raise ConflictError(code="error.nas_exists", details={"nasname": payload.nasname})
             row.nasname = payload.nasname
             await self.extra.rename(old_name, payload.nasname)

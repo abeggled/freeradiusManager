@@ -25,7 +25,7 @@ from app.core.identifiers import fold
 from app.core.locking import named_lock
 from app.core.security import Principal
 from app.models.mgr import CredentialType, MgrSubject, SubjectType
-from app.models.radius import RadCheck
+from app.models.radius import RadCheck, RadReply
 from app.repositories.directory import DirectoryRepository, SubjectFilter
 from app.repositories.mgr.subjects import SubjectRepository
 from app.repositories.radius.acct import AccountingRepository
@@ -80,6 +80,13 @@ def _lock_names(username: str, groups: list[MembershipIn]) -> list[str]:
     verschiedener Reihenfolge liefen in eine Verklemmung.
     """
     return [f"user:{username}", *(f"group:{g.groupname}" for g in groups)]
+
+
+def _vlan_of(replies: Sequence[Any]) -> str | None:
+    """VLAN-Zuweisung aus den Antwortattributen eines Subjekts."""
+    return next(
+        (r.value for r in replies if r.attribute.lower() == "tunnel-private-group-id"), None
+    )
 
 
 def _locked_groups(names: list[str]) -> set[str]:
@@ -142,6 +149,11 @@ class UserService:
         # Die Check-Attribute der Gruppen gehoeren zur wirksamen Policy und
         # damit in die Statusspalte; ohne sie meldete die Liste "aktiv", waehrend
         # FreeRADIUS den Benutzer ablehnt (siehe ``_status``).
+        # Fuer VLAN-Spalte und Export: eine Abfrage statt einer je Benutzer.
+        replies_by_user: dict[str, list[RadReply]] = {}
+        for reply in await self.attrs.reply_attributes_for(usernames):
+            replies_by_user.setdefault(fold(reply.username), []).append(reply)
+
         group_checks = await self.groups.check_attributes_for(
             [m.groupname for rows in by_user.values() for m in rows]
         )
@@ -172,7 +184,14 @@ class UserService:
                         by_user.get(key, []), key=lambda m: (m.priority, m.groupname)
                     ),
                     status=self._status(user_checks, effective_group_checks),
-                    expires_at=self._expiry(user_checks, subject),
+                    expires_at=self._expiry(
+                        [*user_checks, *effective_group_checks], subject
+                    ),
+                    vlan=_vlan_of(replies_by_user.get(key, [])),
+                    disabled=any(
+                        row.attribute.lower() == AUTH_TYPE.lower() and is_reject(row.value)
+                        for row in user_checks
+                    ),
                     credential_type=subject.credential_type if subject else None,
                     has_metadata=subject is not None,
                 )
@@ -236,7 +255,7 @@ class UserService:
             inventory_no=subject.inventory_no if subject else None,
             groups=[m.groupname for m in memberships],
             status=self._status(checks, detail_group_checks),
-            expires_at=self._expiry(checks, subject),
+            expires_at=self._expiry([*checks, *detail_group_checks], subject),
             credential_type=subject.credential_type if subject else None,
             has_metadata=subject is not None,
             check_attributes=mask_attributes(checks),
@@ -245,6 +264,10 @@ class UserService:
                 MembershipOut(groupname=m.groupname, priority=m.priority) for m in memberships
             ],
             vlan=vlan,
+            disabled=any(
+                row.attribute.lower() == AUTH_TYPE.lower() and is_reject(row.value)
+                for row in checks
+            ),
             active_sessions=active_sessions,
             last_auth=recent[0].authdate if recent else None,
             last_auth_reply=recent[0].reply if recent else None,
@@ -521,6 +544,25 @@ class UserService:
             if row.attribute.lower() == AUTH_TYPE.lower()
         ]
         others = [row for row in rows if not is_reject(row.value)]
+        if not disabled:
+            # Kommt die Sperre aus einer Gruppe, brauchte es dort eine
+            # Aenderung. Ohne diese Pruefung meldete der Vorgang Erfolg und
+            # protokollierte ``user.enable``, waehrend die Liste weiter
+            # "gesperrt" zeigt.
+            inherited = [
+                check
+                for membership in await self.groups.memberships(username)
+                for check in await self.groups.check_attributes(membership.groupname)
+                if check.attribute.lower() == AUTH_TYPE.lower() and is_reject(check.value)
+            ]
+            if inherited:
+                raise ValidationError(
+                    code="error.disabled_by_group",
+                    details={
+                        "username": username,
+                        "groups": sorted({c.groupname for c in inherited}),
+                    },
+                )
         if disabled:
             # Eine vorhandene Auth-Type-Vorgabe (etwa "PAP") wird gemerkt und
             # beim Entsperren zurueckgeschrieben; sonst waere die Sperre eine
@@ -1018,7 +1060,7 @@ class UserService:
         return "active"
 
     @staticmethod
-    def _expiry(checks: Sequence[RadCheck], subject: MgrSubject | None) -> dt.datetime | None:
+    def _expiry(checks: Sequence[Any], subject: MgrSubject | None) -> dt.datetime | None:
         """Das wirksame, also frueheste Ablaufdatum.
 
         Bestandsdaten koennen mehrere ``Expiration``-Zeilen fuehren; die

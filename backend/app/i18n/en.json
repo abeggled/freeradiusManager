@@ -65,5 +65,6 @@
   "warn.unknown_enum_value": "The value \"{value}\" for \"{attribute}\" is not in the bundled dictionary (known: {allowed}). FreeRADIUS must be able to resolve it.",
   "warn.cleartext_stored": "The password is stored in cleartext – required for EAP-TTLS/PAP.",
   "warn.mab_not_authentication": "MAC Authentication Bypass is not real authentication; MAC addresses can be spoofed.",
-  "warn.nas_reload": "Changes to NAS clients take effect only after a radiusd restart or clients reload."
+  "warn.nas_reload": "Changes to NAS clients take effect only after a radiusd restart or clients reload.",
+  "error.disabled_by_group": "The block comes from group {groups}; it has to be removed there."
 }

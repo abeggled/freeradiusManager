@@ -65,5 +65,6 @@
   "warn.unknown_enum_value": "Der Wert \"{value}\" für \"{attribute}\" steht nicht im hinterlegten Wörterbuch (bekannt: {allowed}). FreeRADIUS muss ihn auflösen können.",
   "warn.cleartext_stored": "Das Passwort wird im Klartext gespeichert – dies ist für EAP-TTLS/PAP erforderlich.",
   "warn.mab_not_authentication": "MAC Authentication Bypass ist keine echte Authentifizierung; MAC-Adressen sind fälschbar.",
-  "warn.nas_reload": "Änderungen an NAS-Clients werden erst nach einem Neustart bzw. clients-Reload von radiusd wirksam."
+  "warn.nas_reload": "Änderungen an NAS-Clients werden erst nach einem Neustart bzw. clients-Reload von radiusd wirksam.",
+  "error.disabled_by_group": "Die Sperre stammt aus der Gruppe {groups}; sie muss dort aufgehoben werden."
 }

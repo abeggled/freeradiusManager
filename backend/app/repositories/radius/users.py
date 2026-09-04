@@ -34,6 +34,13 @@ class UserAttributeRepository:
         stmt = select(RadCheck).where(RadCheck.username.in_(usernames))
         return list((await self.session.scalars(stmt)).all())
 
+    async def reply_attributes_for(self, usernames: Sequence[str]) -> list[RadReply]:
+        """Antwortattribute mehrerer Benutzer in einer Abfrage (NFR-2)."""
+        if not usernames:
+            return []
+        stmt = select(RadReply).where(RadReply.username.in_(usernames))
+        return list((await self.session.scalars(stmt)).all())
+
     async def exists(self, username: str) -> bool:
         """Ob der Benutzer Check-Attribute besitzt."""
         stmt = select(func.count()).select_from(RadCheck).where(RadCheck.username == username)

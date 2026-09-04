@@ -1021,6 +1021,28 @@ Die fünfundzwanzigste Runde:
   Existenzprüfung fand unter der Kollation die Gruppe selbst und meldete
   `group_exists`.
 
+### Siebenundzwanzigste Runde
+
+* **Konten ohne lokales Passwort kosten dieselbe Rechenzeit.** Bei ihnen kehrte
+  die Prüfung sofort zurück, während ein unbekannter Name den teuren
+  Vergleichs-Hash durchlief – an der Antwortzeit war ablesbar, welche Kennung
+  nur über OIDC anmeldet.
+* **Das Entsperren meldet eine geerbte Gruppensperre.** Stammt der `Reject` aus
+  einer Gruppe, meldete der Vorgang Erfolg und protokollierte `user.enable`,
+  während die Liste weiter „gesperrt“ zeigte.
+* **Das angezeigte Ablaufdatum berücksichtigt die Gruppen.** Status und Datum
+  gingen auseinander: der Benutzer galt als abgelaufen, das Datum war leer.
+* **Der Export enthält `vlan` und `disabled`.** Ein Reimport legte ein
+  gesperrtes MAB-Gerät mit VLAN sonst aktiv und ohne VLAN wieder an – `status`
+  liest der Import bewusst nicht.
+* **Ungültige `FRM_TRUSTED_PROXIES` brechen den Start ab.** Ein still
+  verworfener Tippfehler liess hinter dem Proxy für alle Anfragen dessen
+  Adresse zählen: das IP-weite Kontingent traf alle Benutzer gemeinsam.
+* **Ein NAS lässt sich in seiner Schreibweise umbenennen** – die Kollision war
+  das NAS selbst.
+* Das Entfernen des CoA-Secrets schaltet CoA in der Oberfläche mit ab; das
+  Backend weist die Kombination sonst ab.
+
 ## Prüfschritte
 
 ```bash

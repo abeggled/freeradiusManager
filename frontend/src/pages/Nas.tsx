@@ -199,7 +199,9 @@ function NasDialog({
       type,
       description: description || null,
       secret: secret || (nas ? undefined : ""),
-      coa_enabled: coaEnabled,
+      // Ein entferntes Secret macht CoA unbenutzbar; das Backend weist die
+      // Kombination "aktiv und Secret löschen" ab.
+      coa_enabled: clearCoaSecret ? false : coaEnabled,
       coa_port: coaPort,
       coa_secret: coaSecret || null,
       // Das Backend behandelt null als "nicht geändert"; das Entfernen braucht
@@ -327,7 +329,12 @@ function NasDialog({
                 checked={clearCoaSecret}
                 onChange={(event) => {
                   setClearCoaSecret(event.target.checked);
-                  if (event.target.checked) setCoaSecret("");
+                  if (event.target.checked) {
+                    setCoaSecret("");
+                    // Ohne Secret ist CoA nicht benutzbar; das Kästchen zeigt
+                    // den Zustand, den das Speichern erzeugt.
+                    setCoaEnabled(false);
+                  }
                 }}
               />
               {t("nas.clearCoaSecret")}

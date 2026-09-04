@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import secrets
 from functools import lru_cache
 from typing import Annotated, Literal
@@ -190,6 +191,26 @@ class Settings(BaseSettings):
                 "FRM_COOKIE_DOMAIN verlangt FRM_ALLOWED_ORIGINS (oder FRM_CORS_ORIGINS)"
             )
         return self
+
+    @field_validator("trusted_proxies")
+    @classmethod
+    def _check_trusted_proxies(cls, value: list[str]) -> list[str]:
+        """Jeder Eintrag muss ein gueltiges Netz sein.
+
+        Ein stillschweigend verworfener Tippfehler faellt erst im Betrieb auf:
+        hinter dem Proxy zaehlte dann fuer alle Anfragen dessen Adresse, das
+        IP-weite Kontingent traefe alle Benutzer gemeinsam und das Audit-Log
+        verloere die tatsaechliche Herkunft.
+        """
+        invalid = []
+        for entry in value:
+            try:
+                ipaddress.ip_network(entry, strict=False)
+            except ValueError:
+                invalid.append(entry)
+        if invalid:
+            raise ValueError("FRM_TRUSTED_PROXIES enthaelt ungueltige Netze: " + ", ".join(invalid))
+        return value
 
     @field_validator("oidc_role_map")
     @classmethod

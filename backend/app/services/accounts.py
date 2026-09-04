@@ -94,10 +94,16 @@ class AccountService:
             # Konto waere praktisch dauerhaft gesperrt.
             account.locked_until = None
             account.failed_logins = 0
-        if account is None:
-            # Gleicher Aufwand wie bei einem vorhandenen Konto.
+        if account is None or not account.password_hash:
+            # Gleicher Aufwand wie bei einem Konto mit Passwort - auch fuer
+            # Konten, die nur ueber OIDC anmelden: sonst waere an der
+            # Antwortzeit ablesbar, welche Kennung welcher Art ist.
             await verify_password_async(password, _DUMMY_HASH)
-        if account is None or not await verify_password_async(password, account.password_hash):
+        if (
+            account is None
+            or not account.password_hash
+            or not await verify_password_async(password, account.password_hash)
+        ):
             if account is not None:
                 account.failed_logins += 1
                 self._apply_lockout(account)

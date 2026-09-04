@@ -119,12 +119,18 @@ class UserListItem(BaseModel):
     expires_at: dt.datetime | None = None
     credential_type: CredentialType | None = None
     has_metadata: bool = True
+    vlan: str | None = None
+    disabled: bool = False
+    """Eigene ``Auth-Type := Reject``-Zeile.
+
+    Nicht dasselbe wie ``status == "disabled"``: das kann auch aus einer Gruppe
+    stammen. Fuer den Export zaehlt der eigene Zustand, sonst schriebe ein
+    Reimport die Gruppenpolicy beim Benutzer fest."""
 
 
 class UserDetail(UserListItem):
     check_attributes: list[AttributeOut] = Field(default_factory=list)
     reply_attributes: list[AttributeOut] = Field(default_factory=list)
-    vlan: str | None = None
     active_sessions: int = 0
     last_auth: dt.datetime | None = None
     last_auth_reply: str | None = None

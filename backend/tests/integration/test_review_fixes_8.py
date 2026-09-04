@@ -2114,3 +2114,143 @@ async def test_group_can_be_renamed_by_case_only(session, admin_principal) -> No
     await groups.create(GroupCreate(groupname="Staff", vlan="10"), actor=admin_principal)
     detail = await groups.update("Staff", GroupUpdate(groupname="staff"), actor=admin_principal)
     assert detail.groupname == "staff"
+
+
+# --- Siebenundzwanzigste Runde --------------------------------------------
+
+
+async def test_passwordless_account_costs_the_same(session) -> None:
+    """Sonst waere an der Antwortzeit ablesbar, welche Kennung nur ueber OIDC geht."""
+    from app.core.errors import AuthenticationError
+    from app.models.mgr import MgrAccount, Role
+    from app.services import accounts as accounts_module
+    from app.services.accounts import AccountService
+
+    session.add(
+        MgrAccount(
+            username="idp-user",
+            role=Role.OPERATOR,
+            oidc_subject="subject-1",
+            password_hash=None,
+        )
+    )
+    await session.commit()
+
+    calls: list[str | None] = []
+    original = accounts_module.verify_password_async
+
+    async def counting(password: str, password_hash: str | None) -> bool:
+        calls.append(password_hash)
+        return await original(password, password_hash)
+
+    accounts_module.verify_password_async = counting  # type: ignore[assignment]
+    try:
+        with pytest.raises(AuthenticationError):
+            await AccountService(session).authenticate("idp-user", "egal")
+    finally:
+        accounts_module.verify_password_async = original  # type: ignore[assignment]
+
+    assert calls and calls[0] is not None
+    assert calls[0].startswith("$argon2id$")
+
+
+async def test_enable_reports_an_inherited_group_block(session, admin_principal) -> None:
+    """Sonst meldete der Vorgang Erfolg, waehrend die Liste weiter gesperrt zeigt."""
+    from app.schemas.groups import AttributeIn, GroupCreate
+    from app.services.groups import GroupService
+
+    await GroupService(session).create(
+        GroupCreate(
+            groupname="gesperrt",
+            check_attributes=[AttributeIn(attribute="Auth-Type", op=":=", value="Reject")],
+        ),
+        actor=admin_principal,
+    )
+    users = UserService(session)
+    await users.create(
+        UserCreate(
+            username="anna",
+            password="geheim123",
+            groups=[MembershipIn(groupname="gesperrt")],
+        ),
+        actor=admin_principal,
+    )
+
+    with pytest.raises(ValidationError) as excinfo:
+        await users.set_disabled("anna", False, actor=admin_principal)
+    assert excinfo.value.code == "error.disabled_by_group"
+
+
+async def test_group_expiration_shows_in_the_effective_expiry(session, admin_principal) -> None:
+    """Die Ansicht zeigte ein leeres Datum zu einem abgelaufenen Benutzer."""
+    from app.repositories.directory import SubjectFilter
+    from app.schemas.groups import AttributeIn, GroupCreate
+    from app.services.groups import GroupService
+
+    await GroupService(session).create(
+        GroupCreate(
+            groupname="befristet",
+            check_attributes=[
+                AttributeIn(attribute="Expiration", op=":=", value="01 Jan 2020 00:00:00")
+            ],
+        ),
+        actor=admin_principal,
+    )
+    users = UserService(session)
+    await users.create(
+        UserCreate(
+            username="anna",
+            password="geheim123",
+            groups=[MembershipIn(groupname="befristet")],
+        ),
+        actor=admin_principal,
+    )
+
+    detail = await users.get("anna")
+    assert detail.status == "expired"
+    assert detail.expires_at is not None and detail.expires_at.year == 2020
+
+    items, _ = await users.search(SubjectFilter())
+    entry = next(i for i in items if i.username == "anna")
+    assert entry.expires_at is not None and entry.expires_at.year == 2020
+
+
+async def test_export_carries_vlan_and_disabled(session, admin_principal) -> None:
+    """Ein Reimport legte das Geraet sonst aktiv und ohne VLAN wieder an."""
+    from app.repositories.directory import SubjectFilter
+    from app.schemas.users import DeviceCreate
+    from app.services.devices import DeviceService
+    from app.services.importexport import ImportExportService
+
+    await DeviceService(session).create(
+        DeviceCreate(mac="aa:bb:cc:dd:ee:ff", vlan="42", disabled=True),
+        actor=admin_principal,
+    )
+    csv = await ImportExportService(session).export(SubjectFilter())
+    header, row = csv.splitlines()[0], csv.splitlines()[1]
+    assert "vlan" in header and "disabled" in header
+    assert "42" in row
+    assert "true" in row
+
+
+async def test_invalid_trusted_proxy_fails_startup() -> None:
+    """Ein stillschweigend verworfener Tippfehler faellt sonst erst im Betrieb auf."""
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.core.config import Settings
+
+    with pytest.raises(PydanticValidationError):
+        Settings(trusted_proxies=["10.0.0.0/8", "keinnetz"])
+
+    Settings(trusted_proxies=["10.0.0.0/8"])
+
+
+async def test_nas_can_be_renamed_by_case_only(session, admin_principal) -> None:
+    """Die Kollision war das NAS selbst; die Schreibweise blieb korrigierbar."""
+    from app.schemas.nas import NasUpdate
+    from app.services.nas import NasService
+
+    service = NasService(session)
+    item, _ = await service.create(NasCreate(nasname="Switch-A", secret="s"), actor=admin_principal)
+    updated, _ = await service.update(item.id, NasUpdate(nasname="switch-a"), actor=admin_principal)
+    assert updated.nasname == "switch-a"

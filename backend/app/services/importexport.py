@@ -72,6 +72,10 @@ EXPORT_COLUMNS = (
     "subject_type",
     "status",
     "groups",
+    # Schreibbare Policy-Felder: ohne sie legte ein Reimport das Geraet aktiv
+    # und ohne VLAN wieder an (``status`` liest der Import bewusst nicht).
+    "vlan",
+    "disabled",
     "display_name",
     "owner",
     "device_type",
@@ -715,6 +719,10 @@ class ImportExportService:
                     # Der CSV-Writer setzt mehrzeilige Werte in Anfuehrungszeichen;
                     # ein Ersetzen wuerde gueltige Notizen dauerhaft veraendern.
                     "note": self._safe(item.note or ""),
+                    "vlan": self._safe(item.vlan or ""),
+                    # Der eigene Sperrzustand, nicht der aus einer Gruppe: sonst
+                    # schriebe ein Reimport die Gruppenpolicy beim Benutzer fest.
+                    "disabled": "true" if item.disabled else "false",
                     "expires_at": item.expires_at.isoformat() if item.expires_at else "",
                     "credential_type": item.credential_type.value if item.credential_type else "",
                 }
