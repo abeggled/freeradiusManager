@@ -21,6 +21,7 @@ export function AccountsPage() {
   const [confirmDelete, setConfirmDelete] = useState<Account | null>(null);
   const [confirmTotpReset, setConfirmTotpReset] = useState<Account | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState<Account | null>(null);
+  const [confirmRole, setConfirmRole] = useState<{ account: Account; role: Role } | null>(null);
 
   const { data, isLoading, error } = useAccounts({ limit: LIMIT, offset });
   const update = useUpdateAccount();
@@ -61,12 +62,16 @@ export function AccountsPage() {
                     <td>
                       <select
                         value={account.role}
-                        onChange={(event) =>
-                          update.mutate({
-                            id: account.id,
-                            body: { role: event.target.value },
-                          })
-                        }
+                        onChange={(event) => {
+                          const next = event.target.value as Role;
+                          // Eine Rollenänderung beendet die Sitzung des Kontos;
+                          // eine Einschränkung wird deshalb bestätigt.
+                          if (ROLES.indexOf(next) > ROLES.indexOf(account.role)) {
+                            setConfirmRole({ account, role: next });
+                            return;
+                          }
+                          update.mutate({ id: account.id, body: { role: next } });
+                        }}
                       >
                         {ROLES.map((role) => (
                           <option key={role} value={role}>
@@ -120,6 +125,24 @@ export function AccountsPage() {
       )}
 
       {creating ? <CreateAccountDialog onClose={() => setCreating(false)} /> : null}
+      {confirmRole ? (
+        <ConfirmDialog
+          title={t("accounts.role")}
+          message={t("accounts.roleConfirm", {
+            name: confirmRole.account.username,
+            role: t(`accounts.role.${confirmRole.role}` as TranslationKey),
+          })}
+          onConfirm={() =>
+            update.mutate(
+              { id: confirmRole.account.id, body: { role: confirmRole.role } },
+              { onSuccess: () => setConfirmRole(null) },
+            )
+          }
+          onCancel={() => setConfirmRole(null)}
+          busy={update.isPending}
+        />
+      ) : null}
+
       {confirmDeactivate ? (
         <ConfirmDialog
           title={t("accounts.deactivate")}

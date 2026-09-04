@@ -216,6 +216,7 @@ export const en: Record<TranslationKey, string> = {
   "accounts.role.administrator": "Administrator",
   "accounts.role.operator": "Operator",
   "accounts.role.auditor": "Auditor",
+  "accounts.roleConfirm": "Reduce the role of “{name}” to {role}? The account's current session ends immediately.",
   "accounts.active": "Active",
   "accounts.deactivate": "Deactivate account",
   "accounts.deactivateConfirm": "Deactivate account “{name}”? Active sessions end immediately.",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -56,7 +56,11 @@ class GroupUpdate(BaseModel):
 
 
 class MembershipChange(BaseModel):
-    usernames: list[str] = Field(default_factory=list, max_length=5000)
+    usernames: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(
+        default_factory=list, max_length=5000
+    )
+    """Namen wie in ``radusergroup.username``; auch die Laenge je Eintrag zaehlt,
+    weil der Vorgang ins Audit-Log geschrieben wird."""
     action: Literal["add", "remove"] = "add"
     priority: int = Field(default=1, ge=0, le=10_000)
 

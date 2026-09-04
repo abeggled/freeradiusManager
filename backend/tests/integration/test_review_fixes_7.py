@@ -1683,17 +1683,18 @@ async def test_account_deletion_records_its_state(session, admin_principal) -> N
 
 async def test_import_preview_shows_late_errors(session, admin_principal) -> None:
     """Eine Fehlerzeile jenseits der Anzeigegrenze muss sichtbar bleiben."""
-    from app.api.v1.endpoints.imports import PREVIEW_ROWS, _preview_rows
+    from app.services.importexport import PREVIEW_LIMIT
 
-    rows = "\n".join(f"user{i},geheim123" for i in range(PREVIEW_ROWS + 5))
+    rows = "\n".join(f"user{i},geheim123" for i in range(PREVIEW_LIMIT + 5))
     csv_text = f"username,password\n{rows}\n,ohne-namen\n"
     report = await ImportExportService(session).import_csv(
         csv_text, kind="user", dry_run=True, actor=admin_principal
     )
     assert report.errors == 1
-    shown = _preview_rows(report)
-    assert any(row.action == "error" for row in shown)
-    assert len(shown) <= PREVIEW_ROWS
+    # Der Bericht behaelt nur begrenzt viele Zeilen, Fehler aber bevorzugt.
+    assert any(row.action == "error" for row in report.rows)
+    assert len(report.rows) <= PREVIEW_LIMIT
+    assert report.rows_truncated is True
 
 
 # --- Einundzwanzigste Runde ------------------------------------------------
@@ -2038,3 +2039,83 @@ async def test_orm_metadata_matches_the_migration_indexes() -> None:
     subject = {index.name for index in Base.metadata.tables["mgr_subject"].indexes}
     assert "ix_mgr_audit_action" in audit
     assert {"ix_mgr_subject_type", "ix_mgr_subject_owner", "ix_mgr_subject_expires"} <= subject
+
+
+# --- Vierundzwanzigste Runde ----------------------------------------------
+
+
+async def test_membership_usernames_are_bounded() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.schemas.groups import MembershipChange
+    from app.schemas.users import BulkAction
+
+    with pytest.raises(PydanticValidationError):
+        MembershipChange(usernames=["x" * 200])
+    with pytest.raises(PydanticValidationError):
+        BulkAction(action="disable", usernames=["x" * 200])
+
+
+async def test_mab_warning_requires_a_boolean(session) -> None:
+    from app.core.errors import ValidationError as AppValidationError
+    from app.services.settings_service import KEY_MAB_WARNING, SettingsService
+
+    with pytest.raises(AppValidationError):
+        await SettingsService(session).update({KEY_MAB_WARNING: "false"})
+    await SettingsService(session).update({KEY_MAB_WARNING: False})
+    await session.commit()
+    assert await SettingsService(session).show_mab_warning() is False
+
+
+async def test_last_member_of_attribute_less_group_is_protected(session, admin_principal) -> None:
+    """Sonst verschwände die Gruppe ohne Bestätigung und ohne Audit-Eintrag."""
+    from app.core.errors import ValidationError as AppValidationError
+    from app.schemas.groups import GroupCreate, GroupUpdate, MembershipChange
+    from app.schemas.users import UserUpdate
+    from app.services.groups import GroupService
+
+    service = GroupService(session)
+    await service.create(GroupCreate(groupname="g1", vlan="10"), actor=admin_principal)
+    users = UserService(session)
+    await users.create(
+        UserCreate(
+            username="anna", password="geheim123", groups=[{"groupname": "g1", "priority": 1}]
+        ),
+        actor=admin_principal,
+    )
+    # Attribute entfernen: die Gruppe besteht nun nur noch über die Mitgliedschaft.
+    await service.update("g1", GroupUpdate(clear_vlan=True), actor=admin_principal)
+
+    with pytest.raises(AppValidationError) as excinfo:
+        await service.change_membership(
+            "g1", MembershipChange(usernames=["anna"], action="remove"), actor=admin_principal
+        )
+    assert excinfo.value.code == "error.group_last_member"
+
+    with pytest.raises(AppValidationError):
+        await users.update("anna", UserUpdate(groups=[]), actor=admin_principal)
+
+    assert (await service.get("g1")).members == 1
+
+
+async def test_import_rows_are_capped_while_parsing(session, admin_principal) -> None:
+    """Der Bericht darf bei sehr vielen Zeilen nicht unbegrenzt wachsen."""
+    from app.services.importexport import PREVIEW_LIMIT
+
+    rows = "\n".join(f"user{i},geheim123" for i in range(PREVIEW_LIMIT + 50))
+    report = await ImportExportService(session).import_csv(
+        f"username,password\n{rows}\n", kind="user", dry_run=True, actor=admin_principal
+    )
+    assert report.total == PREVIEW_LIMIT + 50
+    assert len(report.rows) == PREVIEW_LIMIT
+    assert report.rows_truncated is True
+
+
+async def test_delete_and_password_write_are_serialised(session, admin_principal) -> None:
+    """Beide Pfade laufen unter derselben Benutzersperre."""
+    import inspect
+
+    from app.services.users import UserService as Service
+
+    assert "named_lock" in inspect.getsource(Service.delete)
+    assert "named_lock" in inspect.getsource(Service.set_password)

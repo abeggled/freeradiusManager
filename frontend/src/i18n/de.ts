@@ -214,6 +214,7 @@ export const de = {
   "accounts.role.administrator": "Administrator",
   "accounts.role.operator": "Operator",
   "accounts.role.auditor": "Auditor",
+  "accounts.roleConfirm": "Rolle von „{name}“ auf {role} einschränken? Die laufende Sitzung dieses Kontos endet sofort.",
   "accounts.active": "Aktiv",
   "accounts.deactivate": "Konto deaktivieren",
   "accounts.deactivateConfirm": "Konto „{name}“ deaktivieren? Laufende Sitzungen enden sofort.",

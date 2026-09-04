@@ -25,6 +25,7 @@
   "error.subject_exists": "Für diesen Namen bestehen bereits RADIUS-Einträge.",
   "error.group_exists": "Eine Gruppe mit diesem Namen existiert bereits.",
   "error.group_empty": "Eine Gruppe braucht mindestens ein Attribut – etwa eine VLAN-Zuweisung.",
+  "error.group_last_member": "Die Gruppe „{groupname}“ besteht nur über diese Mitgliedschaft. Bitte die Gruppe löschen statt das letzte Mitglied zu entfernen.",
   "error.selection_too_large": "Die Auswahl ist zu gross ({cap} Objekte). Bitte den Filter enger fassen.",
   "error.nas_exists": "Ein NAS mit diesem Namen existiert bereits.",
   "error.invalid_mac": "Die MAC-Adresse ist ungültig.",

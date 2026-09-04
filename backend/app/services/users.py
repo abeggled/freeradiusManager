@@ -20,6 +20,7 @@ from app.core.crypto import nt_hash
 from app.core.dates import from_expiration, to_expiration, utcnow
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.i18n import translate
+from app.core.locking import named_lock
 from app.core.security import Principal
 from app.models.mgr import CredentialType, MgrSubject, SubjectType
 from app.models.radius import RadCheck
@@ -326,6 +327,17 @@ class UserService:
         actor: Principal,
         actor_ip: str | None = None,
     ) -> None:
+        async with named_lock(self.session, f"user:{username}"):
+            await self._set_password_locked(username, payload, actor=actor, actor_ip=actor_ip)
+
+    async def _set_password_locked(
+        self,
+        username: str,
+        payload: PasswordSet,
+        *,
+        actor: Principal,
+        actor_ip: str | None,
+    ) -> None:
         # Auch reine radreply-/radusergroup-Eintraege gelten als vorhanden: sie
         # erscheinen in der Liste und lassen sich dort oeffnen, also muessen sie
         # auch ein Passwort erhalten koennen.
@@ -404,6 +416,15 @@ class UserService:
         await self.session.commit()
 
     async def delete(self, username: str, *, actor: Principal, actor_ip: str | None = None) -> None:
+        # Unter derselben Sperre wie die schreibenden Pfade: sonst koennte ein
+        # gleichzeitiger Passwortwechsel die alten Zeilen noch sehen und nach dem
+        # Loeschen neue schreiben - der Benutzer waere ohne Metadaten zurueck.
+        async with named_lock(self.session, f"user:{username}"):
+            await self._delete_locked(username, actor=actor, actor_ip=actor_ip)
+
+    async def _delete_locked(
+        self, username: str, *, actor: Principal, actor_ip: str | None
+    ) -> None:
         subject = await self.subjects.get(username)
         exists = await self.attrs.exists_anywhere(username)
         if subject is None and not exists:
@@ -476,7 +497,26 @@ class UserService:
                 raise NotFoundError(
                     code="error.not_found", details={"groupname": membership.groupname}
                 )
+        # Eine entfernte Zuordnung darf keine attributlose Gruppe aufloesen.
+        wanted = {g.groupname for g in groups}
+        for current in await self.groups.memberships(username):
+            if current.groupname not in wanted:
+                await self.guard_last_membership(current.groupname, username)
         await self.groups.set_memberships(username, [(g.groupname, g.priority) for g in groups])
+
+    async def guard_last_membership(self, groupname: str, username: str) -> None:
+        """Schuetzt eine nur ueber Mitgliedschaften bestehende Gruppe.
+
+        Die letzte Zuordnung zu entfernen waere ein Loeschen ohne Bestaetigung
+        und ohne ``group.delete`` im Audit-Log.
+        """
+        if await self.groups.check_attributes(groupname) or await self.groups.reply_attributes(
+            groupname
+        ):
+            return
+        members = await self.groups.members(groupname, limit=2, offset=0)
+        if members == [username]:
+            raise ValidationError(code="error.group_last_member", details={"groupname": groupname})
 
     async def _rename(self, old: str, new: str) -> None:
         """Umbenennung fasst beide Seiten in einer Transaktion an (Abschnitt 4.1).

@@ -75,6 +75,9 @@ class SettingsService:
                 )
             if key == KEY_DEFAULT_CREDENTIAL and value not in {c.value for c in CredentialType}:
                 raise ValidationError(code="error.validation", details={"key": key})
+            if key == KEY_MAB_WARNING and not isinstance(value, bool):
+                # Ein "false" als Zeichenkette waere spaeter wahr.
+                raise ValidationError(code="error.validation", details={"key": key})
             if key in (KEY_AUDIT_RETENTION, KEY_ACCT_RETENTION_HINT) and (
                 # ``bool`` ist in Python ein ``int``: ``True`` wuerde sonst als
                 # ein Tag gelesen und der Job loeschte fast das ganze Audit-Log.

@@ -178,6 +178,14 @@ class ImportRow:
     values: dict[str, Any] = field(default_factory=dict)
 
 
+PREVIEW_LIMIT = 500
+"""Hoechstzahl behaltener Berichtszeilen.
+
+Eine 5-MB-Datei kann Millionen kurzer Zeilen enthalten; ohne Grenze schon beim
+Lesen entstuenden ebenso viele Objekte im Speicher.
+"""
+
+
 @dataclass
 class ImportReport:
     dry_run: bool
@@ -186,6 +194,20 @@ class ImportReport:
     to_update: int = 0
     errors: int = 0
     rows: list[ImportRow] = field(default_factory=list)
+    rows_truncated: bool = False
+
+    def add_row(self, row: ImportRow) -> None:
+        """Behaelt Fehlerzeilen bevorzugt und insgesamt hoechstens ``PREVIEW_LIMIT``."""
+        if len(self.rows) < PREVIEW_LIMIT:
+            self.rows.append(row)
+            return
+        self.rows_truncated = True
+        if row.action != "error":
+            return
+        for index, existing in enumerate(self.rows):
+            if existing.action != "error":
+                self.rows[index] = row
+                return
 
 
 META_FIELDS = ("display_name", "note", "owner", "device_type", "location", "inventory_no")
@@ -407,7 +429,7 @@ class ImportExportService:
                     report.to_update += 1
                 else:
                     report.to_create += 1
-                report.rows.append(
+                report.add_row(
                     ImportRow(
                         line=index,
                         action="update" if exists else "create",
@@ -420,7 +442,7 @@ class ImportExportService:
                 # langen Passwort stuende es damit in der API-Antwort.
                 await self.session.rollback()
                 report.errors += 1
-                report.rows.append(
+                report.add_row(
                     ImportRow(
                         line=index,
                         action="error",
@@ -434,7 +456,7 @@ class ImportExportService:
                 # weitere Zeile und am Ende der Audit-Eintrag.
                 await self.session.rollback()
                 report.errors += 1
-                report.rows.append(
+                report.add_row(
                     ImportRow(
                         line=index,
                         action="error",
@@ -534,6 +556,10 @@ class ImportExportService:
         # Ein neues Passwort wird vor der Typumstellung geschrieben: der Wechsel
         # zu einem Typ mit Klartext liesse sich sonst aus dem alten NT-Hash nicht
         # ableiten und die Zeile scheiterte, obwohl die Vorschau sie zuliess.
+        #
+        # Der ganze Zeilenvorgang laeuft unter der Benutzersperre, damit die
+        # Teilschritte nicht mit anderen Aenderungen an demselben Benutzer
+        # verschraenkt werden.
         if parsed.password:
             await self.users.set_password(
                 parsed.username,
@@ -776,6 +802,7 @@ class ImportExportService:
                     await self._log_membership(payload.action, username, groupname, actor, actor_ip)
                     await self.session.commit()
             else:
+                await self.users.guard_last_membership(groupname, username)
                 await self.users.groups.remove_membership(username, groupname)
                 await self._log_membership(payload.action, username, groupname, actor, actor_ip)
                 await self.session.commit()

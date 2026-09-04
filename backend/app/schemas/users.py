@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -193,7 +193,9 @@ class DeviceUpdate(BaseModel):
 
 
 class BulkAction(BaseModel):
-    usernames: list[str] = Field(default_factory=list, max_length=5000)
+    usernames: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(
+        default_factory=list, max_length=5000
+    )
     filter_all: bool = False
     action: Literal["disable", "enable", "delete", "assign_group", "remove_group", "set_expiry"]
     groupname: str | None = None

@@ -284,6 +284,7 @@ class GroupService:
                     await self.repo.add_membership(username, groupname, payload.priority)
                 )
             else:
+                await self._guard_last_membership(groupname, username)
                 changed += await self.repo.remove_membership(username, groupname)
         await self.audit.log(
             action=f"group.member_{payload.action}",
@@ -302,6 +303,21 @@ class GroupService:
         )
         await self.session.commit()
         return changed
+
+    async def _guard_last_membership(self, groupname: str, username: str) -> None:
+        """Verhindert, dass eine attributlose Gruppe stillschweigend verschwindet.
+
+        Sie existiert dann nur ueber ihre Mitgliedschaften; die letzte zu
+        entfernen waere ein Loeschen ohne Bestaetigung und ohne den
+        ``group.delete``-Eintrag im Audit-Log.
+        """
+        if await self.repo.check_attributes(groupname) or await self.repo.reply_attributes(
+            groupname
+        ):
+            return
+        members = await self.repo.members(groupname, limit=2, offset=0)
+        if members == [username]:
+            raise ValidationError(code="error.group_last_member", details={"groupname": groupname})
 
     async def _write_attributes(
         self,

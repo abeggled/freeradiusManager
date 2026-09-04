@@ -75,8 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Dreiundzwanzig Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10,
-11, 12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11, 8, 10, 8, 7, 7 und 9 Befunde;
+Vierundzwanzig Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10,
+11, 12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11, 8, 10, 8, 7, 7, 9 und 7 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
@@ -557,6 +557,19 @@ Die dreiundzwanzigste Runde (keine P1-Befunde):
 * Doppelte maskierte Gruppenattribute behalten ihre einzelnen Werte.
 * Die im Modell deklarierten Indizes entsprechen den Migrationen, damit eine
   spätere Autogenerierung sie nicht zum Löschen vorschlägt.
+
+Die vierundzwanzigste Runde (keine P1-Befunde):
+
+* Der Importbericht behält nur eine begrenzte Zahl Zeilen – bereits beim Lesen,
+  nicht erst in der Antwort; Fehlerzeilen werden dabei bevorzugt.
+* Löschen und Passwortwechsel eines Benutzers laufen unter derselben Sperre.
+* Die letzte Mitgliedschaft einer attributlosen Gruppe lässt sich nicht
+  entfernen – die Gruppe verschwände sonst ohne Bestätigung und ohne Eintrag im
+  Audit-Log.
+* Benutzernamen in Sammelaktionen sind auch einzeln längenbegrenzt.
+* `show_mab_warning` verlangt einen echten Wahrheitswert.
+* Das Einschränken einer Rolle verlangt eine Bestätigung, weil es die Sitzung
+  des Kontos beendet.
 
 ## Prüfschritte
 
