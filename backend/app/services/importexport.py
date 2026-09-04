@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dates import from_expiration, to_expiration
 from app.core.errors import NotFoundError, ValidationError
+from app.core.identifiers import fold
 from app.core.locking import named_lock
 from app.core.mac import is_mac
 from app.core.security import Principal
@@ -177,6 +178,15 @@ class ImportRow:
     message: str | None = None
     values: dict[str, Any] = field(default_factory=dict)
 
+
+MAX_IMPORT_ROWS = 10_000
+"""Obergrenze der Zeilen je Import.
+
+Die Groessenbeschraenkung des Uploads begrenzt die Zeilenzahl nicht: eine
+kompakte Datei enthaelt leicht Hunderttausende gueltiger Datensaetze, von denen
+jeder mehrere Abfragen ausloest. Dieselbe Groesse wie bei Sammelaktionen und
+Export (NFR-2).
+"""
 
 PREVIEW_LIMIT = 500
 """Hoechstzahl behaltener Berichtszeilen.
@@ -349,9 +359,18 @@ class ImportExportService:
         # Ein Name darf in derselben Datei nur einmal vorkommen: sonst meldete
         # die Vorschau mehrere Neuanlagen, waehrend der Import ab der zweiten
         # Zeile ueberschriebe - Vorschau und Ergebnis gingen auseinander.
+        # Verglichen wird wie in der Datenbank: "Alice" und "alice" bezeichnen
+        # denselben Datensatz.
         seen_usernames: set[str] = set()
 
         for index, raw in enumerate(reader, start=2):
+            if report.total >= MAX_IMPORT_ROWS:
+                # Abbrechen statt stillschweigend zu kuerzen: sonst meldete der
+                # Bericht Erfolg fuer eine Datei, von der ein Teil nie
+                # betrachtet wurde (NFR-4).
+                raise ValidationError(
+                    code="error.import_too_many_rows", details={"maximum": MAX_IMPORT_ROWS}
+                )
             report.total += 1
             row: dict[str, str] = {}
             try:
@@ -376,11 +395,11 @@ class ImportExportService:
                             code="error.validation", details={"field": "username"}
                         )
 
-                if username in seen_usernames:
+                if fold(username) in seen_usernames:
                     raise ValidationError(
                         code="error.import_duplicate_row", details={"username": username}
                     )
-                seen_usernames.add(username)
+                seen_usernames.add(fold(username))
 
                 subject = await self.users.subjects.get(username)
                 expected_type = SubjectType.DEVICE if kind == "device" else SubjectType.USER
@@ -553,23 +572,17 @@ class ImportExportService:
 
         subject_type = SubjectType.DEVICE if kind == "device" else SubjectType.USER
         await self.users.subjects.ensure(parsed.username, subject_type)
-        # Ein neues Passwort wird vor der Typumstellung geschrieben: der Wechsel
-        # zu einem Typ mit Klartext liesse sich sonst aus dem alten NT-Hash nicht
-        # ableiten und die Zeile scheiterte, obwohl die Vorschau sie zuliess.
-        #
-        # Der ganze Zeilenvorgang laeuft unter der Benutzersperre, damit die
-        # Teilschritte nicht mit anderen Aenderungen an demselben Benutzer
-        # verschraenkt werden.
-        if parsed.password:
-            await self.users.set_password(
-                parsed.username,
-                PasswordSet(password=parsed.password, credential_type=parsed.credential_type),
-                actor=actor,
-                actor_ip=actor_ip,
-            )
-        await self.users.update(
+        # Alle Teilschritte einer Zeile in einer Transaktion (siehe
+        # ``UserService.apply_row``): sonst bliebe ein bereits geschriebenes
+        # Passwort stehen, waehrend der Bericht die Zeile als Fehler meldet.
+        await self.users.apply_row(
             parsed.username,
-            UserUpdate(
+            password=(
+                PasswordSet(password=parsed.password, credential_type=parsed.credential_type)
+                if parsed.password
+                else None
+            ),
+            payload=UserUpdate(
                 # Der Credential-Typ wird mitgefuehrt: sonst bliebe eine Zeile,
                 # die nur ihn aendert, ohne jede Wirkung.
                 credential_type=parsed.credential_type if not parsed.password else None,
@@ -581,14 +594,11 @@ class ImportExportService:
                 clear_vlan=parsed.vlan_supplied and parsed.vlan is None,
                 meta=parsed.meta,
             ),
+            disabled=parsed.disabled if "disabled" in parsed.supplied else None,
             actor=actor,
             actor_ip=actor_ip,
             language=language,
         )
-        if "disabled" in parsed.supplied:
-            await self.users.set_disabled(
-                parsed.username, parsed.disabled, actor=actor, actor_ip=actor_ip
-            )
 
     async def _create_row(
         self,

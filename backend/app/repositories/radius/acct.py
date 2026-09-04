@@ -46,6 +46,23 @@ def _network_prefix(network: str) -> str | None:
     return ".".join(octets) + "."
 
 
+def _network_range(network: str) -> tuple[int, int] | None:
+    """Zahlenbereich eines Netzes fuer ``INET_ATON``.
+
+    Fuer Praefixe abseits der Oktettgrenzen (etwa ``/25`` oder ``/12``) gibt es
+    keinen gemeinsamen Zeichenanfang. Ohne diesen Zweig lieferte ein als solches
+    Netz eingetragenes NAS in der Sessionliste gar keinen Treffer, obwohl die
+    Anzeige und CoA es korrekt zuordnen (FR-4).
+    """
+    try:
+        parsed = ipaddress.ip_network(network, strict=False)
+    except ValueError:
+        return None
+    if parsed.version != 4:
+        return None
+    return int(parsed.network_address), int(parsed.broadcast_address)
+
+
 @dataclass(slots=True)
 class SessionFilter:
     username: str | None = None
@@ -86,6 +103,15 @@ class AccountingRepository:
                 prefix = _network_prefix(network)
                 if prefix is not None:
                     matches.append(RadAcct.nasipaddress.like(f"{prefix}%"))
+                    continue
+                # Kein gemeinsamer Zeichenanfang: ueber den Zahlenwert. Das
+                # nutzt keinen Index, liefert aber die richtigen Zeilen - besser
+                # als eine Ansicht, die das NAS anzeigt und leer filtert.
+                bounds = _network_range(network)
+                if bounds is not None:
+                    matches.append(
+                        func.inet_aton(RadAcct.nasipaddress).between(bounds[0], bounds[1])
+                    )
             # Auch wenn sich kein Netz uebersetzen liess, bleibt die Bedingung
             # bestehen: eine nicht darstellbare Einschraenkung darf nicht zu
             # einer Abfrage ohne jede Einschraenkung werden.

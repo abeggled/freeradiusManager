@@ -236,6 +236,7 @@ class UserService:
         subject_type: SubjectType,
         language: str,
         locked: set[str],
+        commit: bool = True,
     ) -> UserDetail:
         # Geprueft wird ueber alle RADIUS-Tabellen: in einer Bestandsinstallation
         # kann ein Name auch nur Antwortattribute oder Gruppen besitzen, die
@@ -288,7 +289,8 @@ class UserService:
             actor_ip=actor_ip,
             after=payload.model_dump(mode="json"),
         )
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
         detail = await self.get(payload.username, language)
         detail.warnings.extend(warnings)
         return detail
@@ -330,6 +332,7 @@ class UserService:
         actor_ip: str | None,
         language: str,
         locked: set[str],
+        commit: bool = True,
     ) -> UserDetail:
         before = await self.get(username, language)
         subject = await self._ensure_subject(username)
@@ -383,7 +386,8 @@ class UserService:
             before=before.model_dump(mode="json"),
             after=payload.model_dump(mode="json", exclude_unset=True),
         )
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
         detail = await self.get(username, language)
         detail.warnings.extend(warnings)
         return detail
@@ -406,6 +410,7 @@ class UserService:
         *,
         actor: Principal,
         actor_ip: str | None,
+        commit: bool = True,
     ) -> None:
         # Auch reine radreply-/radusergroup-Eintraege gelten als vorhanden: sie
         # erscheinen in der Liste und lassen sich dort oeffnen, also muessen sie
@@ -424,7 +429,8 @@ class UserService:
             actor_ip=actor_ip,
             after={"credential_type": credential_type.value, "password": payload.password},
         )
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
 
     async def set_disabled(
         self,
@@ -448,6 +454,7 @@ class UserService:
         *,
         actor: Principal,
         actor_ip: str | None,
+        commit: bool = True,
     ) -> None:
         if not await self.attrs.exists_anywhere(username) and not await self.subjects.get(username):
             raise NotFoundError(code="error.not_found", details={"username": username})
@@ -496,7 +503,62 @@ class UserService:
             actor_ip=actor_ip,
             after={"disabled": disabled},
         )
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+
+    async def apply_row(
+        self,
+        username: str,
+        *,
+        password: PasswordSet | None,
+        payload: UserUpdate,
+        disabled: bool | None,
+        actor: Principal,
+        actor_ip: str | None = None,
+        language: str = "de",
+    ) -> None:
+        """Eine Importzeile fuer einen bestehenden Datensatz - in einer Transaktion.
+
+        Die Einzelaufrufe schreiben jeweils sofort fest. Scheiterte ein spaeterer
+        Teilschritt, waere das Passwort bereits geaendert, obwohl der Bericht die
+        Zeile als Fehler meldet (FR-8). Deshalb laufen alle Teilschritte unter
+        derselben Sperre und mit einem gemeinsamen Commit.
+        """
+        names = _lock_names(username, payload.groups or [])
+        if payload.groups is not None:
+            names += [f"group:{m.groupname}" for m in await self.groups.memberships(username)]
+        if payload.username and payload.username != username:
+            names.append(f"user:{payload.username}")
+
+        async with named_lock(self.session, *names):
+            try:
+                # Ein neues Passwort wird vor der Typumstellung geschrieben: der
+                # Wechsel zu einem Typ mit Klartext liesse sich sonst aus dem
+                # alten NT-Hash nicht ableiten.
+                if password is not None:
+                    await self._set_password_locked(
+                        username, password, actor=actor, actor_ip=actor_ip, commit=False
+                    )
+                await self._update_locked(
+                    username,
+                    payload,
+                    actor=actor,
+                    actor_ip=actor_ip,
+                    language=language,
+                    locked=_locked_groups(names),
+                    commit=False,
+                )
+                target = payload.username or username
+                if disabled is not None:
+                    await self._set_disabled_locked(
+                        target, disabled, actor=actor, actor_ip=actor_ip, commit=False
+                    )
+            except Exception:
+                # Der Aufrufer faengt den Fehler zeilenweise ab; ohne dieses
+                # Zuruecknehmen truege die naechste Zeile die Teilaenderungen mit.
+                await self.session.rollback()
+                raise
+            await self.session.commit()
 
     async def delete(self, username: str, *, actor: Principal, actor_ip: str | None = None) -> None:
         # Unter derselben Sperre wie die schreibenden Pfade: sonst koennte ein

@@ -229,8 +229,13 @@ class GroupService:
                 details={"groupname": groupname, "members": members, "hint": "force"},
             )
         # Vollstaendiger Zustand vor dem Loeschen; danach waere die geloeschte
-        # Konfiguration nicht mehr rekonstruierbar (FR-9).
+        # Konfiguration nicht mehr rekonstruierbar (FR-9). Dazu gehoeren die
+        # Mitglieder: ohne sie liesse sich nicht mehr feststellen, wer die
+        # Policy verloren hat - die reine Anzahl genuegt dafuer nicht.
         before = (await self.get(groupname)).model_dump(mode="json")
+        names = await self.repo.members(groupname, limit=AUDIT_NAME_LIMIT + 1, offset=0)
+        before["members"] = names[:AUDIT_NAME_LIMIT]
+        before["members_truncated"] = len(names) > AUDIT_NAME_LIMIT
         await self.repo.delete_group(groupname)
         await self.audit.log(
             action="group.delete",

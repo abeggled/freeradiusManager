@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_lock_engine
 from app.core.errors import ConflictError
+from app.core.identifiers import fold
 from app.core.logging import get_logger
 
 LOCK_PREFIX = "frm"
@@ -29,9 +30,14 @@ def _lock_key(name: str) -> str:
 
     Ein blosses Abschneiden liesse zwei lange Namen auf denselben Schluessel
     fallen - eine Umbenennung zwischen ihnen wartete dann auf sich selbst.
+
+    Verglichen wird in der Vergleichsform der Datenbank: ``group:Staff`` und
+    ``group:staff`` bezeichnen dieselben Zeilen, ergaeben aber verschiedene
+    Schluessel - beide Aufrufer liefen dann gleichzeitig durch die Sperre.
     """
-    digest = hashlib.sha256(name.encode("utf-8")).hexdigest()[:16]
-    readable = name[:40]
+    folded = fold(name)
+    digest = hashlib.sha256(folded.encode("utf-8")).hexdigest()[:16]
+    readable = folded[:40]
     return f"{LOCK_PREFIX}:{readable}:{digest}"
 
 

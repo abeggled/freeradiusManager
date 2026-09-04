@@ -17,6 +17,7 @@ from app.core.errors import (
     PermissionDeniedError,
     ValidationError,
 )
+from app.core.locking import named_lock
 from app.core.security import (
     TOTP_ENROLL_SCOPE,
     TOTP_SCOPE,
@@ -268,6 +269,11 @@ class AccountService:
         wer nur das Passwort kennt die zweite Stufe durch eine eigene ersetzen.
         Das Zuruecksetzen erfolgt ausschliesslich durch einen Administrator.
         """
+        async with named_lock(self.session, f"account-totp:{account.id}"):
+            await self.session.refresh(account)
+            return await self._start_totp_enrollment_locked(account)
+
+    async def _start_totp_enrollment_locked(self, account: MgrAccount) -> TotpSetupResponse:
         if account.totp_enabled:
             raise ConflictError(code="error.totp_already_enrolled")
         # ``totp_changed_at`` wird erst bei der Bestaetigung gesetzt: waehrend
@@ -288,6 +294,22 @@ class AccountService:
         *,
         actor_ip: str | None = None,
         actor: Principal | None = None,
+    ) -> None:
+        # Unter derselben Sperre wie das Zuruecksetzen durch einen Administrator:
+        # sonst koennte dieses zwischen Pruefung und Schreiben das Geheimnis
+        # loeschen und das Konto bliebe als "TOTP aktiv, ohne Geheimnis" zurueck -
+        # eine Anmeldung waere danach unmoeglich.
+        async with named_lock(self.session, f"account-totp:{account.id}"):
+            await self.session.refresh(account)
+            await self._confirm_totp_locked(account, code, actor_ip=actor_ip, actor=actor)
+
+    async def _confirm_totp_locked(
+        self,
+        account: MgrAccount,
+        code: str,
+        *,
+        actor_ip: str | None,
+        actor: Principal | None,
     ) -> None:
         if not account.totp_secret_enc:
             raise ValidationError(code="error.totp_setup_required")
@@ -354,6 +376,20 @@ class AccountService:
         *,
         actor: Principal,
         actor_ip: str | None = None,
+    ) -> AccountOut:
+        # Dieselbe Sperre wie Einrichtung und Bestaetigung des zweiten Faktors:
+        # ein Zuruecksetzen dazwischen liesse das Konto als "TOTP aktiv, ohne
+        # Geheimnis" zurueck und die naechste Anmeldung waere unmoeglich.
+        async with named_lock(self.session, f"account-totp:{account_id}"):
+            return await self._update_locked(account_id, payload, actor=actor, actor_ip=actor_ip)
+
+    async def _update_locked(
+        self,
+        account_id: int,
+        payload: AccountUpdate,
+        *,
+        actor: Principal,
+        actor_ip: str | None,
     ) -> AccountOut:
         account = await self.get(account_id)
         before = AccountOut.model_validate(account).model_dump(mode="json")
@@ -496,6 +532,11 @@ class AccountService:
             raise AuthenticationError(code="error.invalid_credentials")
         account.password_hash = hash_password(payload.new_password)
         account.password_changed_at = utcnow()
+        # Wie nach einer vollstaendigen Anmeldung: das aktuelle Passwort wurde
+        # gerade bewiesen. Sonst traegt das Konto die frueheren Fehlversuche in
+        # die erzwungene Neuanmeldung mit und ein einziger Tippfehler sperrt es.
+        account.failed_logins = 0
+        account.locked_until = None
         await self.audit.log(
             action="account.change_password",
             object_type="account",

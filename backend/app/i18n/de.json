@@ -44,6 +44,7 @@
   "error.import_invalid": "Die Importdatei konnte nicht verarbeitet werden.",
   "error.import_unknown_columns": "Unbekannte Spalten in der Importdatei: {columns}.",
   "error.import_duplicate_row": "Der Name „{username}“ kommt in der Importdatei mehrfach vor.",
+  "error.import_too_many_rows": "Die Importdatei enthält mehr als {maximum} Zeilen. Bitte in kleinere Dateien aufteilen.",
   "error.subject_type_mismatch": "Für diesen Namen existiert bereits ein Objekt einer anderen Art ({actual} statt {expected}).",
   "diag.no_attempts": "Für {subject} sind keine Anmeldeversuche protokolliert.",
   "diag.user_unknown": "Der Benutzer {subject} existiert nicht in radcheck.",

@@ -44,6 +44,7 @@
   "error.import_invalid": "The import file could not be processed.",
   "error.import_unknown_columns": "Unknown columns in the import file: {columns}.",
   "error.import_duplicate_row": "The name “{username}” appears more than once in the import file.",
+  "error.import_too_many_rows": "The import file contains more than {maximum} rows. Please split it into smaller files.",
   "error.subject_type_mismatch": "An object of a different kind already exists for this name ({actual} instead of {expected}).",
   "diag.no_attempts": "No authentication attempts are recorded for {subject}.",
   "diag.user_unknown": "The user {subject} does not exist in radcheck.",

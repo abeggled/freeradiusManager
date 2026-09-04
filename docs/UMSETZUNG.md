@@ -672,6 +672,35 @@ Die fünfundzwanzigste Runde:
 * **Das Profil bietet die TOTP-Einrichtung nicht mehr an, wenn der Faktor aktiv
   ist.** Die Schaltfläche endete zwangsläufig mit `error.totp_already_enrolled`.
 
+### Zwölfte Runde
+
+* **Eine Importzeile läuft in einer Transaktion.** Passwort, Aktualisierung und
+  Sperrzustand schrieben je einzeln fest; scheiterte ein späterer Teilschritt,
+  blieb das neue Passwort stehen, obwohl der Bericht die Zeile als Fehler
+  meldete (FR-8). `UserService.apply_row` hält alle Teilschritte unter derselben
+  Sperre und schreibt einmal fest.
+* **Namensvergleiche folgen der Datenbank-Kollation.** Die Standardkollation
+  vergleicht ohne Rücksicht auf Gross-/Kleinschreibung; Sperrschlüssel,
+  Dublettenerkennung im Import und das Zusammenfassen von Mitgliedschaften
+  verglichen dagegen Zeichenketten exakt. `Staff` und `staff` liefen so
+  gleichzeitig durch dieselbe Sperre bzw. erzeugten zwei `radusergroup`-Zeilen.
+* **NAS-Netze abseits der Oktettgrenzen werden gefiltert.** Ein als `/25` oder
+  `/12` eingetragenes NAS wurde angezeigt und für CoA korrekt zugeordnet, als
+  Filter lieferte es aber gar keinen Treffer.
+* **TOTP-Einrichtung, -Bestätigung und administratives Zurücksetzen sind
+  serialisiert.** Ein Reset dazwischen liess das Konto als „TOTP aktiv, ohne
+  Geheimnis“ zurück – eine Anmeldung wäre danach unmöglich gewesen.
+* **Ein erfolgreicher Passwortwechsel leert den Fehlerzähler.** Sonst trug das
+  Konto frühere Fehlversuche in die erzwungene Neuanmeldung mit und ein
+  einzelner Tippfehler sperrte es.
+* **Das erzwungene Löschen einer Gruppe protokolliert die Mitglieder** (begrenzt
+  und mit Kürzungsmarke); die reine Anzahl liess nicht erkennen, wer die Policy
+  verloren hat (FR-9).
+* **Der Import ist auf 10 000 Zeilen begrenzt** – wie Sammelaktionen und Export.
+  Die Grössenbeschränkung des Uploads begrenzte die Zeilenzahl nicht.
+* Der Gruppendialog speichert nicht, solange die Details noch laden: ein Klick in
+  diesem Moment hätte VLAN und Attribute der Gruppe geleert.
+
 ## Prüfschritte
 
 ```bash

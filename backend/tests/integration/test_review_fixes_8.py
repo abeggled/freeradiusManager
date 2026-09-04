@@ -9,6 +9,7 @@ from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import select
 
 from app.core.errors import ValidationError
+from app.core.security import Principal
 from app.models.radius import RadAcct, RadCheck
 from app.repositories.radius.acct import AccountingRepository, SessionFilter
 from app.schemas.nas import NasCreate, NasUpdate
@@ -352,3 +353,191 @@ async def test_integer_attributes_stay_in_the_radius_range(value: str) -> None:
         validate_triple("Session-Timeout", ":=", value, table="radreply")
 
     validate_triple("Session-Timeout", ":=", "4294967295", table="radreply")
+
+
+# --- Zwoelfte Runde -------------------------------------------------------
+
+
+async def test_failed_import_row_does_not_commit_the_password(session, admin_principal) -> None:
+    """Scheitert ein spaeterer Teilschritt, darf das Passwort nicht stehenbleiben."""
+    from app.services.importexport import ImportExportService
+
+    users = UserService(session)
+    # Attributlose Gruppe mit genau einem Mitglied: das Leeren der Gruppenspalte
+    # scheitert an ``error.group_last_member``.
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.groups.add_membership("anna", "nur-mitglieder", 1)
+    await session.commit()
+
+    before = await session.scalar(
+        select(RadCheck.value).where(
+            RadCheck.username == "anna", RadCheck.attribute == "Cleartext-Password"
+        )
+    )
+
+    csv = "username,password,groups\nanna,neues-passwort,\n"
+    report = await ImportExportService(session).import_csv(
+        csv, kind="user", dry_run=False, actor=admin_principal
+    )
+    assert report.errors == 1
+
+    after = await session.scalar(
+        select(RadCheck.value).where(
+            RadCheck.username == "anna", RadCheck.attribute == "Cleartext-Password"
+        )
+    )
+    assert after == before
+
+
+async def test_lock_keys_follow_the_database_collation() -> None:
+    """``group:Staff`` und ``group:staff`` bezeichnen dieselben Zeilen."""
+    from app.core.locking import _lock_key
+
+    assert _lock_key("group:Staff") == _lock_key("group:staff")
+    assert _lock_key("group:staff") != _lock_key("group:students")
+
+
+async def test_import_detects_case_equivalent_duplicates(session, admin_principal) -> None:
+    """Sonst versprach die Vorschau zwei Neuanlagen und der Import ueberschrieb."""
+    from app.services.importexport import ImportExportService
+
+    csv = "username,password\nAlice,geheim123456\nalice,anderes123456\n"
+    report = await ImportExportService(session).import_csv(
+        csv, kind="user", dry_run=True, actor=admin_principal
+    )
+    assert report.errors == 1
+
+
+async def test_memberships_are_deduplicated_like_the_database(session, admin_principal) -> None:
+    """Zwei Zeilen verfaelschten die Mitgliederzahl und wendeten Attribute doppelt an."""
+    from app.repositories.radius.groups import GroupRepository
+
+    repo = GroupRepository(session)
+    await repo.set_memberships("anna", [("Staff", 1), ("staff", 2)])
+    await session.commit()
+    assert len(await repo.memberships("anna")) == 1
+
+
+async def test_non_octet_nas_networks_are_matched(session) -> None:
+    """Ein als /25 eingetragenes NAS lieferte in der Sessionliste gar keinen Treffer."""
+    from app.repositories.radius.acct import AccountingRepository, SessionFilter
+
+    session.add_all(
+        [
+            RadAcct(
+                acctsessionid="s1",
+                acctuniqueid="u1",
+                username="anna",
+                nasipaddress="192.0.2.130",
+            ),
+            RadAcct(
+                acctsessionid="s2",
+                acctuniqueid="u2",
+                username="anna",
+                nasipaddress="192.0.2.10",
+            ),
+        ]
+    )
+    await session.commit()
+
+    page = await AccountingRepository(session).search(
+        SessionFilter(nas_networks=["192.0.2.128/25"])
+    )
+    assert [row.acctuniqueid for row in page.items] == ["u1"]
+
+
+async def test_password_change_clears_the_failure_counter(session) -> None:
+    """Sonst traegt das Konto die Fehlversuche in die erzwungene Neuanmeldung mit."""
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, Role
+    from app.schemas.accounts import PasswordChange
+    from app.services.accounts import AccountService
+
+    account = MgrAccount(
+        username="operator",
+        role=Role.OPERATOR,
+        password_hash=hash_password("ein-sicheres-passwort"),
+        failed_logins=9,
+    )
+    session.add(account)
+    await session.commit()
+
+    service = AccountService(session)
+    principal = Principal(
+        account_id=account.id,
+        username=account.username,
+        role=Role.OPERATOR,
+        language="de",
+        session_id="test",
+        absolute_expiry=0,
+    )
+    await service.change_password(
+        account.id,
+        PasswordChange(
+            current_password="ein-sicheres-passwort", new_password="noch-ein-sicheres-passwort"
+        ),
+        actor=principal,
+    )
+    await session.refresh(account)
+    assert account.failed_logins == 0
+    assert account.locked_until is None
+
+
+async def test_totp_confirmation_is_serialised_against_resets() -> None:
+    """Ein Reset dazwischen liesse "TOTP aktiv, ohne Geheimnis" zurueck."""
+    import inspect
+
+    from app.services.accounts import AccountService
+
+    assert "account-totp:" in inspect.getsource(AccountService.confirm_totp)
+    assert "account-totp:" in inspect.getsource(AccountService.update)
+    assert "account-totp:" in inspect.getsource(AccountService.start_totp_enrollment)
+
+
+async def test_force_delete_records_the_members(session, admin_principal) -> None:
+    """Ohne die Namen liesse sich nicht feststellen, wer die Policy verloren hat."""
+    from sqlalchemy import select as sa_select
+
+    from app.models.mgr import MgrAudit
+    from app.schemas.groups import GroupCreate
+    from app.services.groups import GroupService
+
+    groups = GroupService(session)
+    await groups.create(GroupCreate(groupname="wlan", vlan="10"), actor=admin_principal)
+    users = UserService(session)
+    for name in ("anna", "bruno"):
+        await users.create(
+            UserCreate(
+                username=name,
+                password="geheim123",
+                groups=[MembershipIn(groupname="wlan")],
+            ),
+            actor=admin_principal,
+        )
+
+    await groups.delete("wlan", actor=admin_principal, force=True)
+    entry = await session.scalar(
+        sa_select(MgrAudit)
+        .where(MgrAudit.action == "group.delete")
+        .order_by(MgrAudit.id.desc())
+        .limit(1)
+    )
+    assert entry is not None
+    import json as _json
+
+    before = _json.loads(entry.before_json or "{}")
+    assert sorted(before["members"]) == ["anna", "bruno"]
+    assert before["members_truncated"] is False
+
+
+async def test_import_rejects_too_many_rows(session, admin_principal) -> None:
+    """Die Groessenbeschraenkung des Uploads begrenzt die Zeilenzahl nicht."""
+    from app.services.importexport import MAX_IMPORT_ROWS, ImportExportService
+
+    rows = "\n".join(f"user{index:06d},geheim123456" for index in range(MAX_IMPORT_ROWS + 1))
+    csv = f"username,password\n{rows}\n"
+    with pytest.raises(ValidationError) as excinfo:
+        await ImportExportService(session).import_csv(
+            csv, kind="user", dry_run=True, actor=admin_principal
+        )
+    assert excinfo.value.code == "error.import_too_many_rows"

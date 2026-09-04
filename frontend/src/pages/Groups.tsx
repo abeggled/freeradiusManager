@@ -201,7 +201,14 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
           <button type="button" onClick={onClose}>
             {t("common.cancel")}
           </button>
-          <button type="submit" form="group-form" className="primary" disabled={mutation.isPending}>
+          <button
+            type="submit"
+            form="group-form"
+            className="primary"
+            // Solange die Details noch laden, sind VLAN und Attribute leer –
+            // ein Speichern in diesem Moment löschte die vorhandene Policy.
+            disabled={mutation.isPending || existing.isLoading}
+          >
             {t("common.save")}
           </button>
         </>
@@ -209,6 +216,7 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
     >
       <form id="group-form" onSubmit={submit}>
         <ErrorBox error={mutation.error ?? existing.error} />
+        {existing.isLoading ? <Spinner /> : null}
         <WarningList warnings={mutation.data?.warnings} />
         <Field label={t("groups.name")} required>
           {(id) => (

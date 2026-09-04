@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from sqlalchemy import delete, func, select, union, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.identifiers import fold
 from app.models.radius import RadGroupCheck, RadGroupReply, RadUserGroup
 from app.repositories._result import rowcount
 
@@ -162,13 +163,16 @@ class GroupRepository:
 
         Doppelte Gruppennamen werden zusammengefasst: ``radusergroup`` kennt
         keine Eindeutigkeit, doppelte Zeilen wuerden die Mitgliederzahl
-        verfaelschen und die Attribute der Gruppe mehrfach anwenden.
+        verfaelschen und die Attribute der Gruppe mehrfach anwenden. Verglichen
+        wird in der Vergleichsform der Datenbank - ``Staff`` und ``staff``
+        bezeichnen dieselbe Gruppe, ein reiner Zeichenkettenvergleich liesse
+        beide Zeilen entstehen.
         """
         await self.session.execute(delete(RadUserGroup).where(RadUserGroup.username == username))
-        seen: dict[str, int] = {}
+        seen: dict[str, tuple[str, int]] = {}
         for groupname, priority in groups:
-            seen.setdefault(groupname, priority)
-        for groupname, priority in seen.items():
+            seen.setdefault(fold(groupname), (groupname, priority))
+        for groupname, priority in seen.values():
             self.session.add(
                 RadUserGroup(username=username, groupname=groupname, priority=priority)
             )
