@@ -7,6 +7,8 @@ betrieben wird. Der Manager liest und schreibt direkt im SQL-Schema des
 allein die Authentifizierungsentscheidungen.
 
 Grundlage der Umsetzung ist [docs/SPEZIFIKATION.md](docs/SPEZIFIKATION.md).
+Aufbau einer Umgebung von Grund auf – MariaDB, FreeRADIUS, VLAN-Zuweisung und
+UniFi als NAS – beschreibt [docs/INSTALLATION.md](docs/INSTALLATION.md).
 
 ## Funktionsumfang
 
