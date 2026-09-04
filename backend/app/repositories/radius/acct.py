@@ -1,0 +1,251 @@
+"""Accounting-Abfragen auf ``radacct`` (FR-5).
+
+Alle Listenabfragen laufen mit Keyset-Pagination ueber ``radacctid`` und nutzen
+die vorhandenen Indizes; ungefilterte Vollabfragen gibt es bewusst nicht (NFR-2).
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import ipaddress
+from dataclasses import dataclass
+from typing import Any
+
+from sqlalchemy import ColumnElement, false, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.pagination import KeysetPage, clamp_limit, cursor_position, encode_cursor
+from app.models.radius import RadAcct
+
+
+def _network_host(network: str) -> str | None:
+    """Einzeladresse eines ``/32``-Eintrags - dort ist Gleichheit richtig."""
+    try:
+        parsed = ipaddress.ip_network(network, strict=False)
+    except ValueError:
+        return None
+    if parsed.version == 4 and parsed.prefixlen == 32:
+        return str(parsed.network_address)
+    return None
+
+
+def _network_prefix(network: str) -> str | None:
+    """Gemeinsamer Anfang aller Adressen eines Netzes.
+
+    ``radacct.nasipaddress`` ist eine Zeichenkette; nur auf Oktettgrenzen laesst
+    sich daraus ein indexnutzbarer Praefix-Vergleich bilden. Andere Praefixlaengen
+    bleiben unberuecksichtigt statt falsche Treffer zu liefern.
+    """
+    try:
+        parsed = ipaddress.ip_network(network, strict=False)
+    except ValueError:
+        return None
+    if parsed.version != 4 or parsed.prefixlen % 8 != 0 or parsed.prefixlen == 0:
+        return None
+    octets = str(parsed.network_address).split(".")[: parsed.prefixlen // 8]
+    return ".".join(octets) + "."
+
+
+def _network_range(network: str) -> tuple[int, int] | None:
+    """Zahlenbereich eines Netzes fuer ``INET_ATON``.
+
+    Fuer Praefixe abseits der Oktettgrenzen (etwa ``/25`` oder ``/12``) gibt es
+    keinen gemeinsamen Zeichenanfang. Ohne diesen Zweig lieferte ein als solches
+    Netz eingetragenes NAS in der Sessionliste gar keinen Treffer, obwohl die
+    Anzeige und CoA es korrekt zuordnen (FR-4).
+    """
+    try:
+        parsed = ipaddress.ip_network(network, strict=False)
+    except ValueError:
+        return None
+    if parsed.version != 4:
+        return None
+    return int(parsed.network_address), int(parsed.broadcast_address)
+
+
+@dataclass(slots=True)
+class SessionFilter:
+    username: str | None = None
+    calling_station_id: str | None = None
+    nas_ip_address: str | None = None
+    nas_ip_addresses: list[str] | None = None
+    nas_networks: list[str] | None = None
+    """Als CIDR eingetragene NAS; ausgewertet als Praefix-Vergleich."""
+    called_station_id: str | None = None
+    framed_ip_address: str | None = None
+    terminate_cause: str | None = None
+    start_from: dt.datetime | None = None
+    start_to: dt.datetime | None = None
+    active_only: bool = False
+
+
+class AccountingRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    def _conditions(self, flt: SessionFilter) -> list[ColumnElement[bool]]:
+        conditions: list[ColumnElement[bool]] = []
+        if flt.username:
+            conditions.append(RadAcct.username == flt.username)
+        if flt.calling_station_id:
+            conditions.append(RadAcct.callingstationid == flt.calling_station_id)
+        if flt.nas_ip_address:
+            conditions.append(RadAcct.nasipaddress == flt.nas_ip_address)
+        if flt.nas_ip_addresses or flt.nas_networks:
+            matches: list[ColumnElement[bool]] = []
+            if flt.nas_ip_addresses:
+                matches.append(RadAcct.nasipaddress.in_(flt.nas_ip_addresses))
+            for network in flt.nas_networks or []:
+                exact = _network_host(network)
+                if exact is not None:
+                    matches.append(RadAcct.nasipaddress == exact)
+                    continue
+                prefix = _network_prefix(network)
+                if prefix is not None:
+                    matches.append(RadAcct.nasipaddress.like(f"{prefix}%"))
+                    continue
+                # Kein gemeinsamer Zeichenanfang: ueber den Zahlenwert. Das
+                # nutzt keinen Index, liefert aber die richtigen Zeilen - besser
+                # als eine Ansicht, die das NAS anzeigt und leer filtert.
+                bounds = _network_range(network)
+                if bounds is not None:
+                    matches.append(
+                        func.inet_aton(RadAcct.nasipaddress).between(bounds[0], bounds[1])
+                    )
+            # Auch wenn sich kein Netz uebersetzen liess, bleibt die Bedingung
+            # bestehen: eine nicht darstellbare Einschraenkung darf nicht zu
+            # einer Abfrage ohne jede Einschraenkung werden.
+            conditions.append(or_(*matches) if matches else false())
+        if flt.called_station_id:
+            # Exakter Vergleich wie bei ``calling_station_id``. Eine beidseitige
+            # Wildcard schloss jede Indexnutzung aus und lief ueber die ganze
+            # ``radacct`` (NFR-2); die SSID ist laut Spezifikation ein
+            # Anzeigewert, kein Filter.
+            conditions.append(RadAcct.calledstationid == flt.called_station_id)
+        if flt.framed_ip_address:
+            conditions.append(RadAcct.framedipaddress == flt.framed_ip_address)
+        if flt.terminate_cause:
+            conditions.append(RadAcct.acctterminatecause == flt.terminate_cause)
+        if flt.start_from:
+            conditions.append(RadAcct.acctstarttime >= flt.start_from)
+        if flt.start_to:
+            conditions.append(RadAcct.acctstarttime <= flt.start_to)
+        if flt.active_only:
+            conditions.append(RadAcct.acctstoptime.is_(None))
+        return conditions
+
+    async def search(
+        self, flt: SessionFilter, limit: int | None = None, cursor: str | None = None
+    ) -> KeysetPage[RadAcct]:
+        limit = clamp_limit(limit)
+        stmt = select(RadAcct).where(*self._conditions(flt))
+        position = cursor_position(cursor)
+        if position is not None:
+            stmt = stmt.where(RadAcct.radacctid < position)
+        stmt = stmt.order_by(RadAcct.radacctid.desc()).limit(limit + 1)
+        rows = list((await self.session.scalars(stmt)).all())
+        next_cursor = None
+        if len(rows) > limit:
+            rows = rows[:limit]
+            next_cursor = encode_cursor({"id": rows[-1].radacctid})
+        return KeysetPage(items=rows, next_cursor=next_cursor, limit=limit)
+
+    async def count(self, flt: SessionFilter, ceiling: int = 10_000) -> int:
+        """Gedeckelte Zaehlung – eine exakte Gesamtzahl ueber Millionen Zeilen
+        waere zu teuer (NFR-2)."""
+        inner = select(RadAcct.radacctid).where(*self._conditions(flt)).limit(ceiling).subquery()
+        return int(await self.session.scalar(select(func.count()).select_from(inner)) or 0)
+
+    async def get(self, radacctid: int) -> RadAcct | None:
+        return await self.session.get(RadAcct, radacctid)
+
+    async def get_by_unique_id(self, acctuniqueid: str) -> RadAcct | None:
+        stmt = select(RadAcct).where(RadAcct.acctuniqueid == acctuniqueid)
+        return await self.session.scalar(stmt)
+
+    async def count_active_for_user(self, username: str) -> int:
+        """Genaue Zahl laufender Sessions - ``active_for_user`` ist begrenzt."""
+        stmt = (
+            select(func.count())
+            .select_from(RadAcct)
+            .where(RadAcct.username == username, RadAcct.acctstoptime.is_(None))
+        )
+        return int(await self.session.scalar(stmt) or 0)
+
+    async def active_for_user(self, username: str) -> list[RadAcct]:
+        stmt = (
+            select(RadAcct)
+            .where(RadAcct.username == username, RadAcct.acctstoptime.is_(None))
+            .order_by(RadAcct.radacctid.desc())
+            .limit(50)
+        )
+        return list((await self.session.scalars(stmt)).all())
+
+    async def last_session(self, username: str) -> RadAcct | None:
+        stmt = (
+            select(RadAcct)
+            .where(RadAcct.username == username)
+            .order_by(RadAcct.radacctid.desc())
+            .limit(1)
+        )
+        return await self.session.scalar(stmt)
+
+    async def terminate_causes(self, since: dt.datetime | None = None) -> list[str]:
+        """Vorkommende Terminate-Causes eines begrenzten Zeitraums.
+
+        Ohne Zeitgrenze laeuft ein ``DISTINCT`` ueber die gesamte, unindizierte
+        Spalte - auf Millionen Zeilen ein voller Tabellenscan je Seitenaufruf
+        (NFR-2).
+        """
+        since = since or (dt.datetime.now(tz=dt.UTC).replace(tzinfo=None) - dt.timedelta(days=30))
+        stmt = (
+            select(RadAcct.acctterminatecause)
+            .where(RadAcct.acctterminatecause != "", RadAcct.acctstarttime >= since)
+            .distinct()
+            .limit(100)
+        )
+        return sorted(x for x in (await self.session.scalars(stmt)).all() if x)
+
+    # --- Aggregation fuer den Hintergrundjob (NFR-2) ---------------------
+
+    async def summary(self, since: dt.datetime) -> dict[str, Any]:
+        active = await self.session.scalar(
+            select(func.count()).select_from(RadAcct).where(RadAcct.acctstoptime.is_(None))
+        )
+        started = await self.session.scalar(
+            select(func.count()).select_from(RadAcct).where(RadAcct.acctstarttime >= since)
+        )
+        traffic = (
+            await self.session.execute(
+                select(
+                    func.coalesce(func.sum(RadAcct.acctinputoctets), 0),
+                    func.coalesce(func.sum(RadAcct.acctoutputoctets), 0),
+                ).where(RadAcct.acctstarttime >= since)
+            )
+        ).one()
+        top_users = (
+            await self.session.execute(
+                select(RadAcct.username, func.count().label("sessions"))
+                .where(RadAcct.acctstarttime >= since)
+                .group_by(RadAcct.username)
+                .order_by(func.count().desc())
+                .limit(10)
+            )
+        ).all()
+        top_nas = (
+            await self.session.execute(
+                select(RadAcct.nasipaddress, func.count().label("sessions"))
+                .where(RadAcct.acctstarttime >= since)
+                .group_by(RadAcct.nasipaddress)
+                .order_by(func.count().desc())
+                .limit(10)
+            )
+        ).all()
+        return {
+            "active_sessions": int(active or 0),
+            "sessions_started": int(started or 0),
+            "input_octets": int(traffic[0] or 0),
+            "output_octets": int(traffic[1] or 0),
+            "top_users": [{"username": u, "sessions": c} for u, c in top_users],
+            "top_nas": [{"nasipaddress": n, "sessions": c} for n, c in top_nas],
+        }

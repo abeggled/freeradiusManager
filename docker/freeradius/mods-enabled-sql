@@ -1,0 +1,43 @@
+# rlm_sql-Modulkonfiguration fuer die Evaluierungs- und Testumgebung.
+# Wird nach /etc/raddb/mods-enabled/sql gemountet (Spezifikation, Abschnitt 7).
+#
+# Die Zugangsdaten kommen aus der Umgebung, damit dieselben Werte gelten wie fuer
+# Datenbank und Manager in docker-compose.yml. Ohne gesetzte Variablen greifen
+# die Vorgaben der Evaluierungsumgebung.
+sql {
+	dialect = "mysql"
+	driver = "rlm_sql_${dialect}"
+	server = "$ENV{FRM_DB_HOST}"
+	port = $ENV{FRM_DB_PORT}
+	login = "$ENV{FRM_DB_USER}"
+	password = "$ENV{FRM_DB_PASSWORD}"
+	radius_db = "$ENV{FRM_DB_NAME}"
+
+	read_clients = yes
+	client_table = "nas"
+
+	acct_table1 = "radacct"
+	acct_table2 = "radacct"
+	postauth_table = "radpostauth"
+	authcheck_table = "radcheck"
+	authreply_table = "radreply"
+	groupcheck_table = "radgroupcheck"
+	groupreply_table = "radgroupreply"
+	usergroup_table = "radusergroup"
+	read_groups = yes
+	group_attribute = "SQL-Group"
+	delete_stale_sessions = yes
+
+	pool {
+		start = 1
+		min = 1
+		max = 4
+		spare = 1
+		uses = 0
+		retry_delay = 30
+		lifetime = 0
+		idle_timeout = 60
+	}
+
+	$INCLUDE ${modconfdir}/${.:name}/main/${dialect}/queries.conf
+}

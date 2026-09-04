@@ -1,0 +1,84 @@
+"""Schemas fuer Gruppen (FR-2)."""
+
+from __future__ import annotations
+
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.common import ApiWarning
+from app.schemas.users import (
+    MAX_ATTRIBUTES,
+    AttributeIn,
+    AttributeOut,
+    validate_groupname,
+)
+
+
+class GroupListItem(BaseModel):
+    groupname: str
+    members: int = 0
+    vlan: str | None = None
+
+
+class GroupDetail(GroupListItem):
+    check_attributes: list[AttributeOut] = Field(default_factory=list)
+    reply_attributes: list[AttributeOut] = Field(default_factory=list)
+    warnings: list[ApiWarning] = Field(default_factory=list)
+
+
+class GroupCreate(BaseModel):
+    groupname: str = Field(min_length=1, max_length=64)
+
+    @field_validator("groupname")
+    @classmethod
+    def _check(cls, value: str) -> str:
+        return validate_groupname(value)
+
+    vlan: str | None = Field(default=None, max_length=64)
+    clear_vlan: bool = False
+    check_attributes: list[AttributeIn] = Field(default_factory=list, max_length=MAX_ATTRIBUTES)
+    reply_attributes: list[AttributeIn] = Field(default_factory=list, max_length=MAX_ATTRIBUTES)
+
+
+class GroupUpdate(BaseModel):
+    groupname: str | None = Field(default=None, max_length=64)
+
+    @field_validator("groupname")
+    @classmethod
+    def _check(cls, value: str | None) -> str | None:
+        return None if value is None else validate_groupname(value)
+
+    vlan: str | None = Field(default=None, max_length=64)
+    clear_vlan: bool = False
+    check_attributes: list[AttributeIn] | None = Field(default=None, max_length=MAX_ATTRIBUTES)
+    reply_attributes: list[AttributeIn] | None = Field(default=None, max_length=MAX_ATTRIBUTES)
+
+
+class MembershipChange(BaseModel):
+    usernames: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(
+        default_factory=list, max_length=5000
+    )
+    """Namen wie in ``radusergroup.username``; auch die Laenge je Eintrag zaehlt,
+    weil der Vorgang ins Audit-Log geschrieben wird."""
+    action: Literal["add", "remove"] = "add"
+    priority: int = Field(default=1, ge=0, le=10_000)
+
+
+class DictionaryEntry(BaseModel):
+    name: str
+    kind: str
+    value_type: str
+    values: list[str] = Field(default_factory=list)
+    description: str | None = None
+
+
+class DictionaryResponse(BaseModel):
+    attributes: list[DictionaryEntry]
+    check_operators: list[str]
+    reply_operators: list[str]
+    reserved_check_attributes: list[str] = Field(default_factory=list)
+    """Nur ueber eigene Endpunkte aenderbar (Passwort, Sperre, Ablauf).
+
+    Die Oberflaeche blendet sie im Expertenmodus aus; zurueckgeschickt wuerden
+    sie als reserviert abgewiesen."""

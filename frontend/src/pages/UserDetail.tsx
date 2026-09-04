@@ -1,0 +1,405 @@
+import { useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+
+import {
+  useDeleteUser,
+  useDictionary,
+  useGroups,
+  useSetUserPassword,
+  useToggleUser,
+  useUpdateUser,
+  useUser,
+} from "@/api/hooks";
+import {
+  ConfirmDialog,
+  ErrorBox,
+  Field,
+  Modal,
+  Spinner,
+  StatusBadge,
+  WarningList,
+} from "@/components/ui";
+import { AttributeEditor } from "@/components/AttributeEditor";
+import { MembershipEditor } from "@/components/MembershipEditor";
+import type { AttributeInput, Membership } from "@/api/types";
+import { usePermissions } from "@/hooks/usePermissions";
+import { useI18n } from "@/i18n";
+import { formatDateTime, toIso, toLocalInput } from "@/lib/format";
+
+export function UserDetailPage() {
+  const { username = "" } = useParams();
+  const { t, language } = useI18n();
+  const navigate = useNavigate();
+  const { canWrite } = usePermissions();
+
+  const { data, isLoading, error } = useUser(username);
+  const update = useUpdateUser(username);
+  const toggle = useToggleUser();
+  const remove = useDeleteUser();
+  const setPassword = useSetUserPassword(username);
+  const groups = useGroups();
+  const dictionary = useDictionary();
+
+  const [showPassword, setShowPassword] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDisable, setConfirmDisable] = useState(false);
+  const [password, setPasswordValue] = useState("");
+  const [credentialType, setCredentialType] = useState<string | null>(null);
+  const [vlan, setVlan] = useState<string | null>(null);
+  const [expires, setExpires] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [owner, setOwner] = useState<string | null>(null);
+  const [memberships, setMemberships] = useState<Membership[] | null>(null);
+  const [expert, setExpert] = useState(false);
+  const [checks, setChecks] = useState<AttributeInput[] | null>(null);
+  const [replies, setReplies] = useState<AttributeInput[] | null>(null);
+
+  if (isLoading) return <Spinner />;
+  if (error) return <ErrorBox error={error} />;
+  if (!data) return null;
+
+  // Werte aus dem Server, solange nichts bearbeitet wurde. Passwort-, Auth-Type-
+  // und Expiration-Zeilen bleiben aussen vor: das Backend weist sie als
+  // reserviert ab, unverändert zurückgeschickt scheiterte jede Änderung.
+  const reserved = new Set(dictionary.data?.reserved_check_attributes ?? []);
+  const currentChecks =
+    checks ??
+    data.check_attributes
+      .filter((a) => !reserved.has(a.attribute.toLowerCase()))
+      .map((a) => ({ attribute: a.attribute, op: a.op, value: a.value }));
+  const currentReplies =
+    replies ??
+    data.reply_attributes.map((a) => ({ attribute: a.attribute, op: a.op, value: a.value }));
+
+  const save = () => {
+    update.mutate({
+      vlan: vlan ?? undefined,
+      clear_vlan: vlan === "",
+      expires_at: expires ? toIso(expires) : undefined,
+      clear_expiry: expires === "",
+      // Alle Mitgliedschaften werden gemeinsam gesendet: das Backend ersetzt die
+      // Sammlung vollständig, eine einzelne Auswahl würde die übrigen löschen.
+      groups: memberships ?? undefined,
+      // Nur im Expertenmodus mitsenden: das Backend ersetzt die Sammlungen
+      // vollständig, ein `undefined` lässt sie unverändert. Maskierte Werte
+      // behält es unverändert bei.
+      check_attributes: expert ? currentChecks : undefined,
+      reply_attributes: expert ? currentReplies : undefined,
+      meta: {
+        note: note ?? undefined,
+        owner: owner ?? undefined,
+      },
+    });
+  };
+
+  return (
+    <section>
+      <header className="page-header">
+        <div>
+          <Link to="/users" className="link">
+            ← {t("users.title")}
+          </Link>
+          <h1>
+            {data.username} <StatusBadge status={data.status} />
+          </h1>
+          {!data.has_metadata ? <p className="muted">{t("users.noMetadata")}</p> : null}
+        </div>
+        <div className="actions">
+          <Link className="button" to={`/diagnose?subject=${encodeURIComponent(data.username)}`}>
+            {t("users.diagnose")}
+          </Link>
+          {canWrite ? (
+            <>
+          <button type="button" onClick={() => setShowPassword(true)}>
+            {t("users.setPassword")}
+          </button>
+          <button
+            type="button"
+            // Massgeblich ist die eigene Sperre, nicht der wirksame Status:
+            // stammt der Reject aus einer Gruppe, weist das Backend jedes
+            // Entsperren hier ab – die Schaltfläche wäre funktionslos.
+            disabled={!data.disabled && data.status === "disabled"}
+            title={
+              !data.disabled && data.status === "disabled"
+                ? t("users.disabledByGroup")
+                : undefined
+            }
+            onClick={() => {
+              // Sperren trennt den Netzzugang und wird deshalb bestätigt;
+              // Entsperren wirkt sofort.
+              if (!data.disabled) {
+                setConfirmDisable(true);
+                return;
+              }
+              toggle.mutate({ username: data.username, disabled: false });
+            }}
+          >
+            {data.disabled ? t("users.enable") : t("users.disable")}
+          </button>
+          <button type="button" className="danger" onClick={() => setConfirmDelete(true)}>
+            {t("common.delete")}
+          </button>
+            </>
+          ) : null}
+        </div>
+      </header>
+
+      <ErrorBox error={update.error ?? toggle.error ?? remove.error} />
+      {/* Die Warnungen der Speicherung erscheinen nur in der Antwort der
+          Mutation; die anschliessend neu geladene Detailansicht enthält sie
+          nicht mehr. */}
+      <WarningList warnings={update.data?.warnings ?? data.warnings} />
+
+      <div className="columns">
+        <div className="card">
+          <h2>{t("common.details")}</h2>
+          <dl>
+            <dt>{t("users.credentialType")}</dt>
+            <dd>{data.credential_type ?? "–"}</dd>
+            <dt>{t("users.activeSessions")}</dt>
+            <dd>{data.active_sessions}</dd>
+            <dt>{t("users.lastAuth")}</dt>
+            <dd>
+              {formatDateTime(data.last_auth, language)}
+              {data.last_auth_reply ? ` (${data.last_auth_reply})` : ""}
+            </dd>
+          </dl>
+
+          <Field label={t("users.vlan")}>
+            {(id) => (
+              <input
+                id={id}
+                value={vlan ?? data.vlan ?? ""}
+                onChange={(event) => setVlan(event.target.value)}
+              />
+            )}
+          </Field>
+          <MembershipEditor
+            label={t("users.groups")}
+            hint={t("users.groupsHint")}
+            value={memberships ?? data.memberships}
+            available={(groups.data ?? []).map((entry) => entry.groupname)}
+            onChange={setMemberships}
+          />
+          <Field
+            label={t("users.expires")}
+            hint={
+              // Ein aus einer Gruppe geerbtes Datum lässt sich hier nicht
+              // überschreiben oder löschen; der Hinweis nennt es.
+              data.expires_at && data.expires_at !== data.own_expires_at
+                ? t("users.inheritedExpiry", {
+                    date: formatDateTime(data.expires_at, language),
+                  })
+                : undefined
+            }
+          >
+            {(id) => (
+              <input
+                id={id}
+                type="datetime-local"
+                value={expires ?? toLocalInput(data.own_expires_at)}
+                onChange={(event) => setExpires(event.target.value)}
+              />
+            )}
+          </Field>
+          <Field label={t("common.owner")}>
+            {(id) => (
+              <input
+                id={id}
+                value={owner ?? data.owner ?? ""}
+                onChange={(event) => setOwner(event.target.value)}
+              />
+            )}
+          </Field>
+          <Field label={t("common.note")}>
+            {(id) => (
+              <textarea
+                id={id}
+                value={note ?? data.note ?? ""}
+                onChange={(event) => setNote(event.target.value)}
+              />
+            )}
+          </Field>
+          {canWrite ? (
+            <button type="button" className="primary" onClick={save} disabled={update.isPending}>
+              {t("common.save")}
+            </button>
+          ) : null}
+        </div>
+
+        <div className="card">
+          {canWrite ? (
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={expert}
+                // Erst wenn die Liste der reservierten Attribute vorliegt:
+                // sonst enthielte die Sammlung die maskierten Passwort-,
+                // Auth-Type- und Expiration-Zeilen und jede Änderung würde
+                // als reserviert abgewiesen.
+                disabled={!dictionary.data}
+                onChange={(event) => setExpert(event.target.checked)}
+              />
+              {t("groups.expert")}
+            </label>
+          ) : null}
+          {expert && dictionary.data ? (
+            <>
+              <p className="hint">{t("users.expertHint")}</p>
+              <AttributeEditor
+                title={t("users.checkAttributes")}
+                rows={currentChecks}
+                operators={dictionary.data?.check_operators ?? []}
+                names={dictionary.data?.attributes.map((a) => a.name) ?? []}
+                onChange={setChecks}
+              />
+              <AttributeEditor
+                title={t("users.replyAttributes")}
+                rows={currentReplies}
+                operators={dictionary.data?.reply_operators ?? []}
+                names={dictionary.data?.attributes.map((a) => a.name) ?? []}
+                onChange={setReplies}
+              />
+              <button
+                type="button"
+                className="primary"
+                onClick={save}
+                disabled={update.isPending}
+              >
+                {t("common.save")}
+              </button>
+            </>
+          ) : (
+            <>
+              <h2>{t("users.checkAttributes")}</h2>
+              <AttributeTable rows={data.check_attributes} />
+              <h2>{t("users.replyAttributes")}</h2>
+              <AttributeTable rows={data.reply_attributes} />
+            </>
+          )}
+        </div>
+      </div>
+
+      {showPassword ? (
+        <Modal
+          title={t("users.setPassword")}
+          onClose={() => setShowPassword(false)}
+          footer={
+            <>
+              <button type="button" onClick={() => setShowPassword(false)}>
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={!password || setPassword.isPending}
+                onClick={() =>
+                  setPassword.mutate(
+                    {
+                      password,
+                      credential_type: credentialType ?? data.credential_type ?? null,
+                    },
+                    {
+                      onSuccess: () => {
+                        setShowPassword(false);
+                        setPasswordValue("");
+                        setCredentialType(null);
+                      },
+                    },
+                  )
+                }
+              >
+                {t("common.save")}
+              </button>
+            </>
+          }
+        >
+          <ErrorBox error={setPassword.error} />
+          <Field label={t("users.password")} required>
+            {(id) => (
+              <input
+                id={id}
+                type="password"
+                value={password}
+                onChange={(event) => setPasswordValue(event.target.value)}
+              />
+            )}
+          </Field>
+          <Field label={t("users.credentialType")} hint={t("users.credentialTypeHint")}>
+            {(id) => (
+              <select
+                id={id}
+                value={credentialType ?? data.credential_type ?? "both"}
+                onChange={(event) => setCredentialType(event.target.value)}
+              >
+                <option value="both">{t("users.credentialType.both")}</option>
+                <option value="cleartext">{t("users.credentialType.cleartext")}</option>
+                <option value="nt">{t("users.credentialType.nt")}</option>
+              </select>
+            )}
+          </Field>
+        </Modal>
+      ) : null}
+
+      {confirmDisable ? (
+        <ConfirmDialog
+          title={t("users.disable")}
+          message={t("users.disableConfirm", { name: data.username })}
+          onConfirm={() =>
+            toggle.mutate(
+              { username: data.username, disabled: true },
+              { onSuccess: () => setConfirmDisable(false) },
+            )
+          }
+          onCancel={() => setConfirmDisable(false)}
+          busy={toggle.isPending}
+        />
+      ) : null}
+
+      {confirmDelete ? (
+        <ConfirmDialog
+          title={t("common.delete")}
+          message={t("users.deleteConfirm", { name: data.username })}
+          onConfirm={() =>
+            remove.mutate(data.username, { onSuccess: () => navigate("/users") })
+          }
+          onCancel={() => setConfirmDelete(false)}
+          busy={remove.isPending}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function AttributeTable({
+  rows,
+}: {
+  rows: { id: number; attribute: string; op: string; value: string }[];
+}) {
+  const { t } = useI18n();
+  if (rows.length === 0) return <p className="muted">{t("common.empty")}</p>;
+  return (
+    <div className="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>{t("groups.attribute")}</th>
+            <th>{t("groups.operator")}</th>
+            <th>{t("groups.value")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              <td>{row.attribute}</td>
+              <td>
+                <code>{row.op}</code>
+              </td>
+              <td>{row.value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

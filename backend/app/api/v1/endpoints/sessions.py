@@ -1,0 +1,70 @@
+"""Session-Uebersicht (FR-5)."""
+
+from __future__ import annotations
+
+import datetime as dt
+
+from fastapi import APIRouter
+
+from app.api.deps import ReaderUser, SessionDep
+from app.core.dates import as_naive_utc
+from app.core.pagination import clamp_limit
+from app.repositories.radius.acct import SessionFilter
+from app.schemas.common import CursorMeta, CursorResponse
+from app.schemas.sessions import SessionItem
+from app.services.sessions import SessionService
+
+router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+
+@router.get("", response_model=CursorResponse[SessionItem])
+async def list_sessions(
+    session: SessionDep,
+    _: ReaderUser,
+    username: str | None = None,
+    calling_station_id: str | None = None,
+    nas_ip_address: str | None = None,
+    called_station_id: str | None = None,
+    framed_ip_address: str | None = None,
+    terminate_cause: str | None = None,
+    start_from: dt.datetime | None = None,
+    start_to: dt.datetime | None = None,
+    active_only: bool = False,
+    limit: int = 50,
+    cursor: str | None = None,
+) -> CursorResponse[SessionItem]:
+    flt = SessionFilter(
+        username=username,
+        calling_station_id=calling_station_id,
+        nas_ip_address=nas_ip_address,
+        called_station_id=called_station_id,
+        framed_ip_address=framed_ip_address,
+        terminate_cause=terminate_cause,
+        # Die Spalten sind zeitzonenlos in UTC; ein Wert mit Zeitzone
+        # verschoebe das Fenster sonst um dessen Versatz.
+        start_from=as_naive_utc(start_from) if start_from else None,
+        start_to=as_naive_utc(start_to) if start_to else None,
+        active_only=active_only,
+    )
+    # Der Dienst begrenzt die Seitengroesse; gemeldet wird der tatsaechliche
+    # Wert, sonst passte die Angabe nicht zur gelieferten Zeilenzahl.
+    limit = clamp_limit(limit)
+    items, next_cursor, approx = await SessionService(session).search(
+        flt, limit=limit, cursor=cursor
+    )
+    return CursorResponse(
+        items=items,
+        meta=CursorMeta(limit=limit, next_cursor=next_cursor, approximate_total=approx),
+    )
+
+
+@router.get("/terminate-causes", response_model=list[str])
+async def terminate_causes(session: SessionDep, _: ReaderUser) -> list[str]:
+    return await SessionService(session).terminate_causes()
+
+
+@router.get("/{radacctid}", response_model=SessionItem)
+async def get_session(radacctid: int, session: SessionDep, _: ReaderUser) -> SessionItem:
+    """Eine einzelne Session. Der Pfadwert ist eine ganze Zahl; ausgeliefert wird
+    sie als Zeichenkette (BIGINT, siehe ``SessionItem``)."""
+    return await SessionService(session).get(radacctid)

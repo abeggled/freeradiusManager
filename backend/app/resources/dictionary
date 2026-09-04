@@ -1,0 +1,48 @@
+#
+# Minimaldictionary fuer CoA/Disconnect nach RFC 5176 (FR-7).
+# Nur die Attribute, die der Manager selbst versendet oder auswertet.
+#
+ATTRIBUTE	User-Name				1	string
+ATTRIBUTE	NAS-IP-Address				4	ipaddr
+ATTRIBUTE	NAS-Port				5	integer
+ATTRIBUTE	Service-Type				6	integer
+ATTRIBUTE	Framed-IP-Address			8	ipaddr
+ATTRIBUTE	Reply-Message				18	string
+ATTRIBUTE	State					24	octets
+ATTRIBUTE	Class					25	octets
+ATTRIBUTE	Session-Timeout				27	integer
+ATTRIBUTE	Called-Station-Id			30	string
+ATTRIBUTE	Calling-Station-Id			31	string
+ATTRIBUTE	NAS-Identifier				32	string
+ATTRIBUTE	Acct-Session-Id				44	string
+ATTRIBUTE	Acct-Multi-Session-Id			50	string
+ATTRIBUTE	Event-Timestamp				55	date
+ATTRIBUTE	NAS-Port-Type				61	integer
+ATTRIBUTE	Tunnel-Type				64	integer has_tag
+ATTRIBUTE	Tunnel-Medium-Type			65	integer has_tag
+ATTRIBUTE	Tunnel-Private-Group-Id			81	string has_tag
+ATTRIBUTE	Message-Authenticator			80	octets
+ATTRIBUTE	Error-Cause				101	integer
+
+VALUE	Tunnel-Type			PPTP			1
+VALUE	Tunnel-Type			L2TP			3
+VALUE	Tunnel-Type			VLAN			13
+VALUE	Tunnel-Medium-Type		IP			1
+VALUE	Tunnel-Medium-Type		IEEE-802		6
+VALUE	Service-Type			Framed-User		2
+
+VALUE	Error-Cause			Residual-Context-Removed	201
+VALUE	Error-Cause			Invalid-EAP-Packet	202
+VALUE	Error-Cause			Unsupported-Attribute	401
+VALUE	Error-Cause			Missing-Attribute	402
+VALUE	Error-Cause			NAS-Identification-Mismatch	403
+VALUE	Error-Cause			Invalid-Request		404
+VALUE	Error-Cause			Unsupported-Service	405
+VALUE	Error-Cause			Unsupported-Extension	406
+VALUE	Error-Cause			Administratively-Prohibited	501
+VALUE	Error-Cause			Request-Not-Routable	502
+VALUE	Error-Cause			Session-Context-Not-Found	503
+VALUE	Error-Cause			Session-Context-Not-Removable	504
+VALUE	Error-Cause			Other-Proxy-Processing-Error	505
+VALUE	Error-Cause			Resources-Unavailable	506
+VALUE	Error-Cause			Request-Initiated	507
