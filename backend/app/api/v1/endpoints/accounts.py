@@ -76,6 +76,17 @@ async def delete_account(
     await AccountService(session).delete(account_id, actor=actor, actor_ip=actor_ip)
 
 
+@router.put("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_own_password(
+    payload: PasswordChange, session: SessionDep, actor: CurrentUser, actor_ip: ClientIp
+) -> None:
+    await AccountService(session).change_password(
+        actor.account_id, payload, actor=actor, actor_ip=actor_ip
+    )
+
+
+# Nach der literalen Route: sonst faengt der dynamische Pfad "/me/password" ab
+# und scheitert an der Umwandlung von "me" in eine Zahl.
 @router.put("/{account_id}/password", status_code=status.HTTP_204_NO_CONTENT)
 async def set_account_password(
     account_id: int,
@@ -92,13 +103,4 @@ async def set_account_password(
     """
     await AccountService(session).set_password(
         account_id, payload.new_password, actor=actor, actor_ip=actor_ip
-    )
-
-
-@router.put("/me/password", status_code=status.HTTP_204_NO_CONTENT)
-async def change_own_password(
-    payload: PasswordChange, session: SessionDep, actor: CurrentUser, actor_ip: ClientIp
-) -> None:
-    await AccountService(session).change_password(
-        actor.account_id, payload, actor=actor, actor_ip=actor_ip
     )

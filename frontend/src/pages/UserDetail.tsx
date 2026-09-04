@@ -115,17 +115,26 @@ export function UserDetailPage() {
           </button>
           <button
             type="button"
+            // Massgeblich ist die eigene Sperre, nicht der wirksame Status:
+            // stammt der Reject aus einer Gruppe, weist das Backend jedes
+            // Entsperren hier ab – die Schaltfläche wäre funktionslos.
+            disabled={!data.disabled && data.status === "disabled"}
+            title={
+              !data.disabled && data.status === "disabled"
+                ? t("users.disabledByGroup")
+                : undefined
+            }
             onClick={() => {
               // Sperren trennt den Netzzugang und wird deshalb bestätigt;
               // Entsperren wirkt sofort.
-              if (data.status !== "disabled") {
+              if (!data.disabled) {
                 setConfirmDisable(true);
                 return;
               }
               toggle.mutate({ username: data.username, disabled: false });
             }}
           >
-            {data.status === "disabled" ? t("users.enable") : t("users.disable")}
+            {data.disabled ? t("users.enable") : t("users.disable")}
           </button>
           <button type="button" className="danger" onClick={() => setConfirmDelete(true)}>
             {t("common.delete")}

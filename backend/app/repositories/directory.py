@@ -34,6 +34,7 @@ EXPIRATION_SQL_FORMATS = (
     "%d %b %Y %H:%i",
     "%d %b %Y",
     "%b %d %Y %H:%i:%s",
+    "%b %d %Y %H:%i",
     "%b %d %Y",
     "%Y-%m-%d %H:%i:%s",
     "%Y-%m-%d",

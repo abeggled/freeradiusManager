@@ -668,7 +668,12 @@ class AccountService:
         """
         if account_id == actor.account_id:
             raise ValidationError(code="error.validation", details={"field": "account_id"})
-        account = await self.get(account_id)
+        # Zeilensperre wie bei ``change_password``: sonst koennte eine Anmeldung
+        # mit dem alten Passwort zwischen dem Setzen von ``password_changed_at``
+        # und dem Commit den alten Hash lesen - ihre Sitzung waere neuer als der
+        # Zeitstempel und bliebe gueltig.
+        locked = await self.repo.get_for_update(account_id)
+        account = locked if locked is not None else await self.get(account_id)
         account.password_hash = await hash_password_async(new_password)
         account.password_changed_at = utcnow()
         # Bestehende Sitzungen des Kontos werden dadurch ungueltig.

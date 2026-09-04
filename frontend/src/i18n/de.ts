@@ -102,6 +102,7 @@ export const de = {
   "users.disable": "Sperren",
   "users.disableConfirm": "„{name}“ sperren? Der Netzzugang wird sofort unterbunden; laufende Sitzungen bleiben bis zur nächsten Anmeldung bestehen.",
   "users.enable": "Entsperren",
+  "users.disabledByGroup": "Die Sperre stammt aus einer Gruppe und muss dort aufgehoben werden.",
   "users.includeDevices": "Geräte einschliessen",
   "users.checkAttributes": "Prüfattribute (radcheck)",
   "users.replyAttributes": "Antwortattribute (radreply)",

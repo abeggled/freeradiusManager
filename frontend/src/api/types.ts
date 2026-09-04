@@ -84,6 +84,13 @@ export interface UserListItem {
   expires_at: string | null;
   /** Das eigene Datum; nur dieses lässt sich hier ändern. */
   own_expires_at: string | null;
+  /**
+   * Eigene `Auth-Type := Reject`-Zeile.
+   *
+   * Nicht dasselbe wie `status === "disabled"`: das kann aus einer Gruppe
+   * stammen und lässt sich beim Benutzer nicht aufheben.
+   */
+  disabled: boolean;
   credential_type: CredentialType | null;
   has_metadata: boolean;
 }

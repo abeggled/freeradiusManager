@@ -2677,3 +2677,77 @@ async def test_bulk_removal_rejects_a_missing_group(session, admin_principal) ->
     assert requested == 1
     assert succeeded == 0
     assert len(errors) == 1
+
+
+# --- Zweiunddreissigste Runde ---------------------------------------------
+
+
+async def test_own_password_change_still_routes(session, client) -> None:
+    """Die dynamische Route fing sonst "/accounts/me/password" ab."""
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, Role
+
+    session.add(
+        MgrAccount(
+            username="operator",
+            role=Role.OPERATOR,
+            password_hash=hash_password("ein-sicheres-passwort"),
+        )
+    )
+    await session.commit()
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+
+    response = await client.put(
+        "/api/v1/accounts/me/password",
+        json={
+            "current_password": "ein-sicheres-passwort",
+            "new_password": "noch-ein-sicheres-passwort",
+        },
+    )
+    assert response.status_code == 204, response.text
+
+
+async def test_admin_password_reset_locks_the_row() -> None:
+    """Sonst laese eine gleichzeitige Anmeldung noch den alten Hash."""
+    import inspect
+
+    from app.services.accounts import AccountService
+
+    assert "get_for_update(account_id)" in inspect.getsource(AccountService.set_password)
+
+
+async def test_bulk_removal_of_a_non_member_is_an_error(session, admin_principal) -> None:
+    """Als Erfolg gezaehlt behauptete der Bericht eine Aenderung, die nie stattfand."""
+    from app.repositories.directory import SubjectFilter
+    from app.schemas.users import BulkAction
+    from app.services.importexport import ImportExportService
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.groups.add_membership("bruno", "wlan", 1)
+    await session.commit()
+
+    requested, succeeded, errors = await ImportExportService(session).bulk(
+        BulkAction(action="remove_group", usernames=["anna"], groupname="wlan"),
+        SubjectFilter(),
+        actor=admin_principal,
+    )
+    assert (requested, succeeded) == (1, 0)
+    assert len(errors) == 1
+
+
+async def test_minute_only_month_first_expiration_filters(session, admin_principal) -> None:
+    """Python las das Format, der SQL-Filter nicht - beide Mengen gingen auseinander."""
+    from app.repositories.directory import SubjectFilter
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.attrs.add_check("anna", "Expiration", ":=", "Jan 01 2020 23:59")
+    await session.commit()
+
+    assert (await users.get("anna")).status == "expired"
+    expired, _ = await users.search(SubjectFilter(status="expired"))
+    assert [i.username for i in expired] == ["anna"]

@@ -1125,6 +1125,22 @@ Die fünfundzwanzigste Runde:
   meldete sonst für jeden ausgewählten Benutzer eine erfolgreiche Entfernung an
   einem Objekt, das es nie gab (FR-9).
 
+### Zweiunddreissigste Runde
+
+* **Die eigene Passwortänderung ist wieder erreichbar.** Die in der vorigen
+  Runde ergänzte Route `PUT /accounts/{id}/password` stand vor
+  `PUT /accounts/me/password` und fing `me` ab – der Selbstbedienungsweg
+  antwortete für jeden Benutzer mit 422.
+* **Das administrative Setzen sperrt die Kontozeile.** Sonst konnte eine
+  gleichzeitige Anmeldung noch den alten Hash lesen; ihre Sitzung wäre neuer als
+  der Zeitstempel und bliebe gültig.
+* **Eine Sammel-Entfernung ohne bestehende Mitgliedschaft ist ein Fehler.** Als
+  Erfolg gezählt behauptete der Bericht eine Änderung, die nie stattfand (FR-9).
+* **Der SQL-Filter kennt auch `Dec 31 2025 23:59`.** Python las das Format, die
+  Datenbank nicht – Statusanzeige und Filtermenge gingen auseinander.
+* Die Schaltfläche zum Entsperren richtet sich nach der eigenen Sperre: stammt
+  der Reject aus einer Gruppe, ist sie deaktiviert und nennt den Grund.
+
 ## Prüfschritte
 
 ```bash

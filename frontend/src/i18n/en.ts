@@ -104,6 +104,7 @@ export const en: Record<TranslationKey, string> = {
   "users.disable": "Disable",
   "users.disableConfirm": "Disable “{name}”? Network access is blocked immediately; running sessions persist until the next authentication.",
   "users.enable": "Enable",
+  "users.disabledByGroup": "The block comes from a group and has to be removed there.",
   "users.includeDevices": "Include devices",
   "users.checkAttributes": "Check attributes (radcheck)",
   "users.replyAttributes": "Reply attributes (radreply)",

@@ -919,7 +919,15 @@ class ImportExportService:
                             code="error.not_found", details={"groupname": groupname}
                         )
                     await self.users.guard_last_membership(groupname, username)
-                    await self.users.groups.remove_membership(username, groupname)
+                    removed = await self.users.groups.remove_membership(username, groupname)
+                    if not removed:
+                        # Kein Mitglied - oder ein Tippfehler im Namen. Als
+                        # Erfolg gezaehlt behauptete der Bericht eine Aenderung,
+                        # die nie stattfand (FR-9).
+                        raise NotFoundError(
+                            code="error.not_found",
+                            details={"username": username, "groupname": groupname},
+                        )
                     await self._log_membership(payload.action, username, groupname, actor, actor_ip)
                     await self.session.commit()
         elif payload.action == "set_expiry":
