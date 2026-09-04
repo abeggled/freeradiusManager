@@ -2584,3 +2584,96 @@ async def test_cleartext_warning_ignores_case(session, admin_principal) -> None:
 
     detail = await users.get("anna")
     assert any(w.code == "warn.cleartext_stored" for w in detail.warnings)
+
+
+# --- Einunddreissigste Runde ----------------------------------------------
+
+
+async def test_administrator_can_seed_a_password(session, client) -> None:
+    """Ohne diesen Weg liesse sich ein OIDC-Konto nie entkoppeln."""
+    import pyotp
+
+    from app.core.config import settings as app_settings
+    from app.core.crypto import SecretBox, hash_password
+    from app.models.mgr import MgrAccount, Role
+
+    secret = pyotp.random_base32()
+    session.add_all(
+        [
+            MgrAccount(
+                username="admin",
+                role=Role.ADMINISTRATOR,
+                password_hash=hash_password("ein-sicheres-passwort"),
+                totp_enabled=True,
+                totp_secret_enc=SecretBox(
+                    app_settings.coa_secret_key or app_settings.secret_key
+                ).encrypt(secret),
+            ),
+            MgrAccount(
+                username="idp-user",
+                role=Role.OPERATOR,
+                oidc_subject="subject-1",
+                password_hash=None,
+            ),
+        ]
+    )
+    await session.commit()
+    target = await session.scalar(select(MgrAccount.id).where(MgrAccount.username == "idp-user"))
+
+    first = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "ein-sicheres-passwort"},
+    )
+    await client.post(
+        "/api/v1/auth/login/totp",
+        json={"challenge": first.json()["challenge"], "totp_code": pyotp.TOTP(secret).now()},
+    )
+
+    response = await client.put(
+        f"/api/v1/accounts/{target}/password",
+        json={"new_password": "ein-neues-sicheres-passwort"},
+    )
+    assert response.status_code == 204, response.text
+
+    # Danach laesst sich die Verknuepfung loesen.
+    unlink = await client.put(f"/api/v1/accounts/{target}/oidc", json={"oidc_subject": None})
+    assert unlink.status_code in (200, 204), unlink.text
+
+
+async def test_group_summary_merges_case_variant_replies(session, admin_principal) -> None:
+    """Ginge eine Sammlung verloren, fehlte in der Uebersicht das VLAN."""
+    from app.models.radius import RadGroupReply
+    from app.services.groups import GroupService
+
+    session.add_all(
+        [
+            RadGroupReply(groupname="Staff", attribute="Filter-Id", op=":=", value="std"),
+            RadGroupReply(
+                groupname="staff", attribute="Tunnel-Private-Group-Id", op=":=", value="42"
+            ),
+        ]
+    )
+    await session.commit()
+
+    items = await GroupService(session).search()
+    assert all(item.vlan == "42" for item in items if fold(item.groupname) == "staff")
+
+
+async def test_bulk_removal_rejects_a_missing_group(session, admin_principal) -> None:
+    """Sonst galt jede Entfernung an einem nicht vorhandenen Objekt als Erfolg."""
+    from app.repositories.directory import SubjectFilter
+    from app.schemas.users import BulkAction
+    from app.services.importexport import ImportExportService
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await session.commit()
+
+    requested, succeeded, errors = await ImportExportService(session).bulk(
+        BulkAction(action="remove_group", usernames=["anna"], groupname="gibtsnicht"),
+        SubjectFilter(),
+        actor=admin_principal,
+    )
+    assert requested == 1
+    assert succeeded == 0
+    assert len(errors) == 1

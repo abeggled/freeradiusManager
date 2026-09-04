@@ -224,6 +224,8 @@ export const de = {
   "accounts.deactivateConfirm": "Konto „{name}“ deaktivieren? Laufende Sitzungen enden sofort.",
   "accounts.totp": "TOTP",
   "accounts.resetTotp": "TOTP zurücksetzen",
+  "accounts.setPassword": "Passwort setzen",
+  "accounts.setPasswordHint": "Setzt das Passwort ohne Kenntnis des bisherigen. Bestehende Sitzungen des Kontos werden beendet; der Vorgang steht im Audit-Log.",
   "accounts.resetTotpConfirm": "TOTP von „{name}“ zurücksetzen? Der zweite Faktor muss danach neu eingerichtet werden, und laufende Sitzungen dieses Kontos enden.",
   "accounts.oidc": "OIDC",
   "accounts.oidcLink": "verknüpfen",

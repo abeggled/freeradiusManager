@@ -5,6 +5,7 @@ import {
   useCreateAccount,
   useDeleteAccount,
   useLinkOidc,
+  useSetAccountPassword,
   useUpdateAccount,
 } from "@/api/hooks";
 import type { Account, Role } from "@/api/types";
@@ -21,6 +22,7 @@ export function AccountsPage() {
   const [creating, setCreating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<Account | null>(null);
   const [confirmTotpReset, setConfirmTotpReset] = useState<Account | null>(null);
+  const [settingPassword, setSettingPassword] = useState<Account | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState<Account | null>(null);
   const [confirmRole, setConfirmRole] = useState<{ account: Account; role: Role } | null>(null);
   const [linking, setLinking] = useState<Account | null>(null);
@@ -107,6 +109,9 @@ export function AccountsPage() {
                     </td>
                     <td>{formatDateTime(account.last_login_at, language)}</td>
                     <td className="row-actions">
+                      <button type="button" onClick={() => setSettingPassword(account)}>
+                        {t("accounts.setPassword")}
+                      </button>
                       <button type="button" onClick={() => setConfirmTotpReset(account)}>
                         {t("accounts.resetTotp")}
                       </button>
@@ -134,6 +139,12 @@ export function AccountsPage() {
 
       {creating ? <CreateAccountDialog onClose={() => setCreating(false)} /> : null}
       {linking ? <OidcLinkDialog account={linking} onClose={() => setLinking(null)} /> : null}
+      {settingPassword ? (
+        <SetPasswordDialog
+          account={settingPassword}
+          onClose={() => setSettingPassword(null)}
+        />
+      ) : null}
 
       {confirmRole ? (
         <ConfirmDialog
@@ -342,6 +353,64 @@ function CreateAccountDialog({ onClose }: { onClose: () => void }) {
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
+            />
+          )}
+        </Field>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * Passwort eines fremden Kontos setzen.
+ *
+ * Für Konten, die über OIDC angelegt wurden: sie haben kein lokales Passwort,
+ * und ohne eines lässt sich die Verknüpfung nicht lösen.
+ */
+function SetPasswordDialog({ account, onClose }: { account: Account; onClose: () => void }) {
+  const { t } = useI18n();
+  const setPassword = useSetAccountPassword();
+  const [password, setPasswordValue] = useState("");
+
+  return (
+    <Modal
+      title={`${t("accounts.setPassword")}: ${account.username}`}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button
+            type="submit"
+            form="set-account-password"
+            className="primary"
+            disabled={!password || setPassword.isPending}
+          >
+            {t("common.save")}
+          </button>
+        </>
+      }
+    >
+      <form
+        id="set-account-password"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setPassword.mutate({ id: account.id, password }, { onSuccess: onClose });
+        }}
+      >
+        <ErrorBox error={setPassword.error} />
+        <p className="hint">{t("accounts.setPasswordHint")}</p>
+        <Field label={t("profile.newPassword")} required>
+          {(id) => (
+            <input
+              id={id}
+              type="password"
+              minLength={12}
+              autoComplete="new-password"
+              value={password}
+              onChange={(event) => setPasswordValue(event.target.value)}
+              required
             />
           )}
         </Field>

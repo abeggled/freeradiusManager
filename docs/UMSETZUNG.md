@@ -1111,6 +1111,20 @@ Die fünfundzwanzigste Runde:
   Schreibweise** – sie fehlte gerade bei einem Konto mit umkehrbarem Passwort.
 * Eine SSID aus einem einzelnen Zeichen bleibt erhalten.
 
+### Einunddreissigste Runde
+
+* **Administratoren können das Passwort eines fremden Kontos setzen**
+  (`PUT /accounts/{id}/password`, mit Bedienelement in der Kontenverwaltung).
+  Ohne diesen Weg liess sich ein über OIDC angelegtes Konto nie entkoppeln: es
+  hat kein lokales Passwort, und der Selbstbedienungsweg verlangt genau dieses.
+  Das eigene Konto ist ausgenommen – dort bleibt der Nachweis Pflicht.
+* **Die Gruppenübersicht führt auch Antwortattribute über Schreibweisen hinweg
+  zusammen.** Ging eine Sammlung verloren, fehlte dort das VLAN, obwohl die
+  Detailansicht es zeigte.
+* **Die Sammelaktion prüft die Gruppe auch beim Entfernen.** Ein Tippfehler
+  meldete sonst für jeden ausgewählten Benutzer eine erfolgreiche Entfernung an
+  einem Objekt, das es nie gab (FR-9).
+
 ## Prüfschritte
 
 ```bash

@@ -911,6 +911,13 @@ class ImportExportService:
                 # loeschten anschliessend beide - die attributlose Gruppe
                 # verschwaende trotz der Schutzpruefung.
                 async with named_lock(self.session, f"group:{groupname}", f"user:{username}"):
+                    # Auch hier: ein Tippfehler meldete sonst fuer jeden
+                    # ausgewaehlten Benutzer eine erfolgreiche Entfernung an
+                    # einem Objekt, das es nie gab (FR-9).
+                    if not await self.users.groups.exists(groupname):
+                        raise NotFoundError(
+                            code="error.not_found", details={"groupname": groupname}
+                        )
                     await self.users.guard_last_membership(groupname, username)
                     await self.users.groups.remove_membership(username, groupname)
                     await self._log_membership(payload.action, username, groupname, actor, actor_ip)

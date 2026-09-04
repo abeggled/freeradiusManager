@@ -12,6 +12,7 @@ from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.identifiers import fold, is_case_variant
 from app.core.locking import named_lock
 from app.core.security import Principal
+from app.models.radius import RadGroupReply
 from app.repositories.mgr.subjects import SubjectRepository
 from app.repositories.radius.groups import GroupRepository
 from app.repositories.radius.users import UserAttributeRepository
@@ -52,10 +53,12 @@ class GroupService:
         # abweichen ("Staff" gegen "staff"); die Datenbank meint dieselbe Gruppe.
         # Ein exakter Zeichenvergleich meldete hier null Mitglieder.
         counts = {fold(name): value for name, value in (await self.repo.member_counts()).items()}
-        replies_by_group = {
-            fold(name): value
-            for name, value in (await self.repo.reply_attributes_for(names)).items()
-        }
+        # Zusammenfuehren statt ueberschreiben: Bestandsdaten koennen dieselbe
+        # Gruppe unter mehreren Schreibweisen fuehren; ginge eine Sammlung
+        # verloren, fehlte in der Uebersicht etwa das VLAN.
+        replies_by_group: dict[str, list[RadGroupReply]] = {}
+        for name, value in (await self.repo.reply_attributes_for(names)).items():
+            replies_by_group.setdefault(fold(name), []).extend(value)
         items: list[GroupListItem] = []
         for name in names:
             key = fold(name)

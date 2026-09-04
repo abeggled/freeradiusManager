@@ -653,6 +653,37 @@ class AccountService:
         account.locked_until = None
         await self.session.commit()
 
+    async def set_password(
+        self,
+        account_id: int,
+        new_password: str,
+        *,
+        actor: Principal,
+        actor_ip: str | None = None,
+    ) -> None:
+        """Setzt das Passwort eines fremden Kontos ohne das bisherige.
+
+        Das eigene Konto ist ausgenommen: dort gilt der Weg mit Nachweis des
+        aktuellen Passworts, sonst genuegte eine gestohlene Sitzung.
+        """
+        if account_id == actor.account_id:
+            raise ValidationError(code="error.validation", details={"field": "account_id"})
+        account = await self.get(account_id)
+        account.password_hash = await hash_password_async(new_password)
+        account.password_changed_at = utcnow()
+        # Bestehende Sitzungen des Kontos werden dadurch ungueltig.
+        account.failed_logins = 0
+        account.locked_until = None
+        await self.audit.log(
+            action="account.set_password",
+            object_type="account",
+            object_id=account.username,
+            actor=actor,
+            actor_ip=actor_ip,
+            after={"password": new_password},
+        )
+        await self.session.commit()
+
     async def change_password(
         self,
         account_id: int,

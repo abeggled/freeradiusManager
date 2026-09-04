@@ -12,6 +12,7 @@ from app.schemas.accounts import (
     AccountUpdate,
     OidcLink,
     PasswordChange,
+    PasswordSetByAdmin,
 )
 from app.schemas.common import PagedResponse, PageMeta
 from app.services.accounts import AccountService
@@ -73,6 +74,25 @@ async def delete_account(
     account_id: int, session: SessionDep, actor: AdminUser, actor_ip: ClientIp
 ) -> None:
     await AccountService(session).delete(account_id, actor=actor, actor_ip=actor_ip)
+
+
+@router.put("/{account_id}/password", status_code=status.HTTP_204_NO_CONTENT)
+async def set_account_password(
+    account_id: int,
+    payload: PasswordSetByAdmin,
+    session: SessionDep,
+    actor: AdminUser,
+    actor_ip: ClientIp,
+) -> None:
+    """Setzt das Passwort eines fremden Kontos (nur Administratoren).
+
+    Ohne diesen Weg liesse sich ein ueber OIDC angelegtes Konto nie entkoppeln:
+    es hat kein lokales Passwort, und der Selbstbedienungsweg verlangt genau
+    dieses (FR-10).
+    """
+    await AccountService(session).set_password(
+        account_id, payload.new_password, actor=actor, actor_ip=actor_ip
+    )
 
 
 @router.put("/me/password", status_code=status.HTTP_204_NO_CONTENT)

@@ -226,6 +226,8 @@ export const en: Record<TranslationKey, string> = {
   "accounts.deactivateConfirm": "Deactivate account “{name}”? Active sessions end immediately.",
   "accounts.totp": "TOTP",
   "accounts.resetTotp": "Reset TOTP",
+  "accounts.setPassword": "Set password",
+  "accounts.setPasswordHint": "Sets the password without knowing the previous one. The account's sessions end and the action is audited.",
   "accounts.resetTotpConfirm": "Reset TOTP for “{name}”? The second factor must be enrolled again and the account's active sessions end.",
   "accounts.oidc": "OIDC",
   "accounts.oidcLink": "link",

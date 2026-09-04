@@ -111,6 +111,18 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
 
 
+class PasswordSetByAdmin(BaseModel):
+    """Passwort eines fremden Kontos setzen.
+
+    Noetig fuer Konten ohne lokales Passwort - etwa ueber OIDC angelegte, deren
+    Verknuepfung geloest werden soll. Das bisherige Passwort ist dabei nicht
+    bekannt und wird nicht verlangt; der Vorgang steht im Audit-Log und beendet
+    die Sitzungen des Kontos.
+    """
+
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
+
+
 class TotpSetupResponse(BaseModel):
     secret: str
     provisioning_uri: str

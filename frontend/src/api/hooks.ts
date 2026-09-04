@@ -448,6 +448,20 @@ export function useLinkOidc() {
   });
 }
 
+export function useSetAccountPassword() {
+  const client = useQueryClient();
+  return useMutation({
+    // Ohne diesen Weg liesse sich ein über OIDC angelegtes Konto nie
+    // entkoppeln: es hat kein lokales Passwort.
+    mutationFn: ({ id, password }: { id: number; password: string }) =>
+      request<void>(`/accounts/${id}/password`, {
+        method: "PUT",
+        body: { new_password: password },
+      }),
+    onSuccess: invalidator(client, ["accounts"]),
+  });
+}
+
 export function useChangeOwnPassword() {
   return useMutation({
     mutationFn: (body: { current_password: string; new_password: string }) =>
