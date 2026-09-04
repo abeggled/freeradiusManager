@@ -50,6 +50,25 @@ def _expected(request: Request) -> set[str]:
     return allowed
 
 
+async def add_security_headers(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Verhindert das Einbetten der Oberflaeche in fremde Seiten.
+
+    Ohne diesen Kopf koennte eine Seite derselben registrierbaren Domain den
+    Manager in einen Rahmen laden; das Sitzungscookie ginge mit (``SameSite=Lax``)
+    und ein Klick darin stammte aus Sicht der Herkunftspruefung vom Manager
+    selbst - Loeschungen liessen sich so unterschieben (Clickjacking).
+    """
+    response = await call_next(request)
+    response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
+    # Fuer Browser ohne CSP-Unterstuetzung.
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    return response
+
+
 async def enforce_same_origin(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:

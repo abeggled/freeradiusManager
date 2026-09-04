@@ -17,6 +17,7 @@ from app.schemas.groups import (
     MembershipChange,
 )
 from app.services.groups import GroupService
+from app.services.users import RESERVED_CHECK_ATTRIBUTES
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
@@ -47,6 +48,7 @@ async def dictionary(
         attributes=entries,
         check_operators=list(radius_dict.CHECK_OPERATORS),
         reply_operators=list(radius_dict.REPLY_OPERATORS),
+        reserved_check_attributes=sorted(RESERVED_CHECK_ATTRIBUTES),
     )
 
 

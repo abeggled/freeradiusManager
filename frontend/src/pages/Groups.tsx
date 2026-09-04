@@ -8,7 +8,7 @@ import {
   useGroups,
   useUpdateGroup,
 } from "@/api/hooks";
-import type { AttributeInput, GroupDetail } from "@/api/types";
+import type { ApiWarning, AttributeInput, GroupDetail } from "@/api/types";
 import { AttributeEditor } from "@/components/AttributeEditor";
 import { ConfirmDialog, ErrorBox, Field, Modal, Spinner, WarningList } from "@/components/ui";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -127,6 +127,9 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
   // dann in den Bearbeitungsmodus, damit die Korrektur nicht erneut als POST
   // läuft und an "group_exists" scheitert.
   const [created, setCreated] = useState<string | null>(null);
+  // Mit dem Wechsel in den Bearbeitungsmodus wird `update` zur aktiven Mutation;
+  // deren `data` ist noch leer und die Warnung der Anlage verschwände sofort.
+  const [createdWarnings, setCreatedWarnings] = useState<ApiWarning[] | null>(null);
   const editing = groupname ?? created;
   const existing = useGroup(editing ?? "", Boolean(editing));
   const create = useCreateGroup();
@@ -183,6 +186,7 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
               onClose();
               return;
             }
+            setCreatedWarnings(result.warnings);
             setCreated(result.groupname);
           },
         },
@@ -217,7 +221,7 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
       <form id="group-form" onSubmit={submit}>
         <ErrorBox error={mutation.error ?? existing.error} />
         {existing.isLoading ? <Spinner /> : null}
-        <WarningList warnings={mutation.data?.warnings} />
+        <WarningList warnings={mutation.data?.warnings ?? createdWarnings ?? undefined} />
         <Field label={t("groups.name")} required>
           {(id) => (
             <input

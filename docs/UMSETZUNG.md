@@ -768,6 +768,39 @@ Die fünfundzwanzigste Runde:
 * Der Schutz des letzten Administrators greift beim Deaktivieren nur noch für
   Administratorkonten – vorher prüfte er auch beim Deaktivieren eines Operators.
 
+### Sechzehnte Runde
+
+* **Authentifizierungs-Cookies gelten nur unter dem Basispfad.** Läuft der
+  Manager hinter `FRM_ROOT_PATH=/manager`, ging das Sitzungscookie mit `/` an
+  jede andere Anwendung desselben Hosts – deren Upstream sah das JWT im
+  Cookie-Header. Gleiches galt für das OIDC-State-Cookie.
+* **Die Oberfläche lässt sich nicht mehr einbetten.** `Content-Security-Policy:
+  frame-ancestors 'none'` und `X-Frame-Options: DENY` (dazu `nosniff` und
+  `Referrer-Policy`). Ohne sie hätte ein Nachbarhost derselben Domain den
+  Manager in einen Rahmen laden können – das Cookie ging mit `SameSite=Lax`
+  weiterhin mit und ein Klick darin stammte für die Herkunftsprüfung vom
+  Manager selbst.
+* **Das Lösen einer OIDC-Verknüpfung entzieht Sitzungen sofort.** Bisher blieben
+  die über diese Identität ausgestellten Sitzungen bis zum Ablauf gültig.
+* **Auch die TOTP-Challenge trägt die Sitzungsgeneration.** Eine vor einer
+  Deaktivierung angeforderte Challenge liess sich sonst nach der Reaktivierung
+  innerhalb ihrer fünf Minuten noch einlösen.
+* **Die Benutzerliste verbindet Mitgliedschaften über die Vergleichsform.**
+  Anmeldedaten als `Alice` und Mitgliedschaft als `alice` gehören zum selben
+  Benutzer; die Liste und der CSV-Export liessen die Mitgliedschaft sonst weg –
+  und ein Reimport dieser Datei entfernte sie dann tatsächlich.
+* **Die Diagnose wertet die Check-Attribute der Gruppen mit aus.** Ein
+  `Auth-Type := Reject` oder abgelaufenes `Expiration` auf Gruppenebene ist der
+  tatsächliche Grund für einen Access-Reject; die Diagnose meldete den Benutzer
+  bisher als aktiv (FR-6).
+* **Der Expertenmodus der Benutzerdetailansicht blendet reservierte Zeilen aus.**
+  Passwort-, `Auth-Type`- und `Expiration`-Zeilen weist das Backend als
+  reserviert ab; unverändert zurückgeschickt scheiterte jede andere Änderung.
+  Die Liste kommt aus dem Wörterbuch-Endpunkt, damit beide Seiten dieselbe
+  Menge verwenden.
+* Die Warnung einer Gruppenanlage bleibt beim Wechsel in den Bearbeitungsmodus
+  sichtbar.
+
 ## Prüfschritte
 
 ```bash

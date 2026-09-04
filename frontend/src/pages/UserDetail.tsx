@@ -58,10 +58,15 @@ export function UserDetailPage() {
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
 
-  // Werte aus dem Server, solange nichts bearbeitet wurde.
+  // Werte aus dem Server, solange nichts bearbeitet wurde. Passwort-, Auth-Type-
+  // und Expiration-Zeilen bleiben aussen vor: das Backend weist sie als
+  // reserviert ab, unverändert zurückgeschickt scheiterte jede Änderung.
+  const reserved = new Set(dictionary.data?.reserved_check_attributes ?? []);
   const currentChecks =
     checks ??
-    data.check_attributes.map((a) => ({ attribute: a.attribute, op: a.op, value: a.value }));
+    data.check_attributes
+      .filter((a) => !reserved.has(a.attribute.toLowerCase()))
+      .map((a) => ({ attribute: a.attribute, op: a.op, value: a.value }));
   const currentReplies =
     replies ??
     data.reply_attributes.map((a) => ({ attribute: a.attribute, op: a.op, value: a.value }));

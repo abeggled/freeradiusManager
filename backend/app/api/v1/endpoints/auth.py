@@ -12,6 +12,7 @@ from app.api.deps import (
     CurrentUser,
     SessionDep,
     clear_session_cookie,
+    cookie_path,
     login_ip_limiter,
     login_limiter,
     set_session_cookie,
@@ -201,7 +202,7 @@ async def oidc_login() -> RedirectResponse:
         secure=settings.cookie_secure,
         samesite="lax",
         max_age=600,
-        path="/",
+        path=cookie_path(),
     )
     return redirect
 
@@ -298,7 +299,7 @@ async def oidc_callback(
     # Der Identity-Provider hat die Anmeldung vollstaendig durchgefuehrt; die
     # lokale TOTP-Pflicht gilt fuer diese Sitzung nicht.
     _issue_session(redirect, account, mfa=True, oidc=True)
-    redirect.delete_cookie(OIDC_STATE_COOKIE, path="/")
+    redirect.delete_cookie(OIDC_STATE_COOKIE, path=cookie_path())
     return redirect
 
 

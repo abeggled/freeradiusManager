@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
-from app.api.csrf import enforce_same_origin
+from app.api.csrf import add_security_headers, enforce_same_origin
 from app.api.deps import apply_session_refresh
 from app.api.errors import register_error_handlers
 from app.api.v1.router import api_router
@@ -105,6 +105,8 @@ def create_app() -> FastAPI:
         )
 
     # Vor den Routern: schreibende Anfragen fremder Herkunft werden abgewiesen.
+    # Ganz aussen: die Kopfzeilen gelten auch fuer abgewiesene Anfragen.
+    app.middleware("http")(add_security_headers)
     app.middleware("http")(enforce_same_origin)
     # Nach der Herkunftspruefung registriert und damit weiter innen: sie sieht
     # die Antwort des Endpunkts und kann das Sitzungscookie auch dann setzen,

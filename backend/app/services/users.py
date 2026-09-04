@@ -75,6 +75,19 @@ def _locked_groups(names: list[str]) -> set[str]:
     return {name.removeprefix("group:") for name in names if name.startswith("group:")}
 
 
+RESERVED_CHECK_ATTRIBUTES = frozenset(radius_dict.PASSWORD_ATTRIBUTES) | {
+    AUTH_TYPE.lower(),
+    EXPIRATION.lower(),
+}
+"""Check-Attribute, die nur ueber ihre eigenen Endpunkte geaendert werden.
+
+Aus dem gemeinsamen Woerterbuch: eine feste Zweierliste haette bei
+Bestandsbenutzern mit Crypt-, MD5- oder SHA2-Password deren Anmeldedaten
+geloescht. Die Oberflaeche blendet sie im Expertenmodus aus - sonst schickte
+sie die vom Server gelieferten Zeilen unveraendert zurueck und jede Aenderung
+scheiterte an dieser Pruefung."""
+
+
 class UserService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -97,22 +110,28 @@ class UserService:
         rows, total = await self.directory.search(flt, limit=limit, offset=offset)
         usernames = [row.username for row in rows]
 
+        # Ueber die Vergleichsform verbunden: Anmeldedaten koennen als "Alice"
+        # und die Mitgliedschaft als "alice" gespeichert sein - die Datenbank
+        # meint denselben Benutzer. Ein exakter Vergleich liesse die
+        # Mitgliedschaft in Liste und Export fehlen, und ein Reimport dieser
+        # Datei entfernte sie dann tatsaechlich.
         memberships = await self.groups.memberships_for(usernames)
         by_user: dict[str, list[MembershipOut]] = {}
         for m in memberships:
-            by_user.setdefault(m.username, []).append(
+            by_user.setdefault(fold(m.username), []).append(
                 MembershipOut(groupname=m.groupname, priority=m.priority)
             )
 
         checks = await self.attrs.check_attributes_for(usernames)
         checks_by_user: dict[str, list[RadCheck]] = {}
         for check in checks:
-            checks_by_user.setdefault(check.username, []).append(check)
+            checks_by_user.setdefault(fold(check.username), []).append(check)
 
         items: list[UserListItem] = []
         for row in rows:
             subject = row.subject
-            user_checks = checks_by_user.get(row.username, [])
+            key = fold(row.username)
+            user_checks = checks_by_user.get(key, [])
             items.append(
                 UserListItem(
                     username=row.username,
@@ -123,9 +142,9 @@ class UserService:
                     location=subject.location if subject else None,
                     device_type=subject.device_type if subject else None,
                     inventory_no=subject.inventory_no if subject else None,
-                    groups=sorted(m.groupname for m in by_user.get(row.username, [])),
+                    groups=sorted(m.groupname for m in by_user.get(key, [])),
                     memberships=sorted(
-                        by_user.get(row.username, []), key=lambda m: (m.priority, m.groupname)
+                        by_user.get(key, []), key=lambda m: (m.priority, m.groupname)
                     ),
                     status=self._status(user_checks),
                     expires_at=self._expiry(user_checks, subject),
@@ -801,10 +820,7 @@ class UserService:
         # Aus dem gemeinsamen Woerterbuch: eine feste Zweierliste haette bei
         # Bestandsbenutzern mit Crypt-, MD5- oder SHA2-Password deren
         # Anmeldedaten geloescht.
-        reserved = set(radius_dict.PASSWORD_ATTRIBUTES) | {
-            AUTH_TYPE.lower(),
-            EXPIRATION.lower(),
-        }
+        reserved = RESERVED_CHECK_ATTRIBUTES
         if replace:
             for row in await self.attrs.check_attributes(username):
                 if row.attribute.lower() not in reserved:

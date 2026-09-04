@@ -204,11 +204,15 @@ class AccountService:
 
     def challenge_for(self, account: MgrAccount) -> str:
         """Challenge fuer den zweiten Faktor eines bereits eingerichteten Kontos."""
-        return create_totp_challenge_token(account.id, scope=TOTP_SCOPE)
+        return create_totp_challenge_token(
+            account.id, scope=TOTP_SCOPE, epoch=account.session_epoch
+        )
 
     def enrollment_challenge_for(self, account: MgrAccount) -> str:
         """Challenge fuer die Ersteinrichtung - nur ohne aktives TOTP."""
-        return create_totp_challenge_token(account.id, scope=TOTP_ENROLL_SCOPE)
+        return create_totp_challenge_token(
+            account.id, scope=TOTP_ENROLL_SCOPE, epoch=account.session_epoch
+        )
 
     async def account_from_challenge(
         self, challenge: str, *, scope: str = TOTP_SCOPE
@@ -225,6 +229,11 @@ class AccountService:
             account.password_changed_at is not None
             and issued_at < account.password_changed_at.replace(tzinfo=dt.UTC).timestamp()
         ):
+            raise AuthenticationError(code="error.reauthentication_required")
+        # Eine Deaktivierung oder Rollenaenderung entwertet auch die bereits
+        # ausgestellte Challenge: sonst liesse sich eine vor der Sperrung
+        # angeforderte Challenge nach einer Reaktivierung noch einloesen.
+        if int(payload.get("gen", 0)) != account.session_epoch:
             raise AuthenticationError(code="error.reauthentication_required")
         # Die Sperre muss auch hier greifen: sonst liesse sich der zweite Faktor
         # mit derselben Challenge unbegrenzt weiterraten, und ein spaeter
@@ -514,6 +523,11 @@ class AccountService:
                     details={"oidc_subject": subject, "username": existing.username},
                 )
         account.oidc_subject = subject or None
+        if account.oidc_subject != previous:
+            # Das Loesen der Verknuepfung soll sofort wirken; sonst blieben die
+            # ueber diese Identitaet ausgestellten Sitzungen bis zum Ablauf
+            # gueltig. Dasselbe gilt beim Umhaengen auf ein anderes Subject.
+            account.session_epoch += 1
         await self.audit.log(
             action="account.link_oidc" if subject else "account.unlink_oidc",
             object_type="account",

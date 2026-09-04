@@ -122,6 +122,8 @@ export interface DictionaryResponse {
   attributes: DictionaryEntry[];
   check_operators: string[];
   reply_operators: string[];
+  /** Nur über eigene Endpunkte änderbar (Passwort, Sperre, Ablauf), kleingeschrieben. */
+  reserved_check_attributes: string[];
 }
 
 export interface NasItem {

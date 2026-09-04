@@ -77,3 +77,8 @@ class DictionaryResponse(BaseModel):
     attributes: list[DictionaryEntry]
     check_operators: list[str]
     reply_operators: list[str]
+    reserved_check_attributes: list[str] = Field(default_factory=list)
+    """Nur ueber eigene Endpunkte aenderbar (Passwort, Sperre, Ablauf).
+
+    Die Oberflaeche blendet sie im Expertenmodus aus; zurueckgeschickt wuerden
+    sie als reserviert abgewiesen."""

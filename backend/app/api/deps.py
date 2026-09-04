@@ -91,6 +91,17 @@ def language(request: Request) -> str:
 Language = Annotated[str, Depends(language)]
 
 
+def cookie_path() -> str:
+    """Pfad der Authentifizierungs-Cookies.
+
+    Laeuft der Manager hinter einem Praefix (``FRM_ROOT_PATH``), ginge das
+    Sitzungscookie mit ``/`` an jede andere Anwendung desselben Hosts - deren
+    Upstream saehe das JWT im Cookie-Header und koennte es weiterverwenden.
+    """
+    root = settings.root_path.rstrip("/")
+    return f"{root}/" if root else "/"
+
+
 def set_session_cookie(response: Response, token: str, max_age: int | None = None) -> None:
     response.set_cookie(
         settings.cookie_name,
@@ -100,12 +111,14 @@ def set_session_cookie(response: Response, token: str, max_age: int | None = Non
         samesite="lax",
         domain=settings.cookie_domain,
         max_age=max_age or settings.session_idle_minutes * 60,
-        path="/",
+        path=cookie_path(),
     )
 
 
 def clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(settings.cookie_name, domain=settings.cookie_domain, path="/")
+    response.delete_cookie(
+        settings.cookie_name, domain=settings.cookie_domain, path=cookie_path()
+    )
 
 
 async def current_principal(request: Request, response: Response, session: SessionDep) -> Principal:

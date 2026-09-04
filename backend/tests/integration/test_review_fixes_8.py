@@ -850,3 +850,149 @@ async def test_download_refreshes_the_session_cookie(session, client) -> None:
     response = await client.get("/api/v1/users/export")
     assert response.status_code == 200
     assert "frm_session" in response.headers.get("set-cookie", "")
+
+
+# --- Sechzehnte Runde -----------------------------------------------------
+
+
+async def test_dictionary_names_the_reserved_check_attributes(session, client) -> None:
+    """Die Oberflaeche blendet sie im Expertenmodus aus."""
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, Role
+    from app.services.users import RESERVED_CHECK_ATTRIBUTES
+
+    session.add(
+        MgrAccount(
+            username="operator",
+            role=Role.OPERATOR,
+            password_hash=hash_password("ein-sicheres-passwort"),
+        )
+    )
+    await session.commit()
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+
+    response = await client.get("/api/v1/groups/dictionary")
+    assert response.status_code == 200
+    names = set(response.json()["reserved_check_attributes"])
+    assert names == set(RESERVED_CHECK_ATTRIBUTES)
+    assert "cleartext-password" in names
+    assert "auth-type" in names
+
+
+async def test_unlinking_oidc_revokes_the_session(session) -> None:
+    """Sonst blieben die ueber diese Identitaet ausgestellten Sitzungen gueltig."""
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, Role
+    from app.services.accounts import AccountService
+
+    account = MgrAccount(
+        username="oidc-user",
+        role=Role.OPERATOR,
+        password_hash=hash_password("ein-sicheres-passwort"),
+        oidc_subject="subject-1",
+    )
+    session.add(account)
+    await session.commit()
+    before = account.session_epoch
+
+    principal = Principal(
+        account_id=account.id,
+        username="admin",
+        role=Role.ADMINISTRATOR,
+        language="de",
+        session_id="test",
+        absolute_expiry=0,
+    )
+    await AccountService(session).set_oidc_subject(account.id, None, actor=principal)
+    await session.refresh(account)
+    assert account.session_epoch == before + 1
+
+
+async def test_challenge_is_bound_to_the_session_epoch(session) -> None:
+    """Eine vor der Sperrung angeforderte Challenge darf danach nicht gelten."""
+    from app.core.crypto import hash_password
+    from app.core.errors import AuthenticationError
+    from app.models.mgr import MgrAccount, Role
+    from app.services.accounts import AccountService
+
+    account = MgrAccount(
+        username="admin",
+        role=Role.ADMINISTRATOR,
+        password_hash=hash_password("ein-sicheres-passwort"),
+    )
+    session.add(account)
+    await session.commit()
+
+    service = AccountService(session)
+    challenge = service.challenge_for(account)
+    account.session_epoch += 1
+    await session.commit()
+
+    with pytest.raises(AuthenticationError) as excinfo:
+        await service.account_from_challenge(challenge)
+    assert excinfo.value.code == "error.reauthentication_required"
+
+
+async def test_user_list_joins_memberships_with_the_collation(session, admin_principal) -> None:
+    """Sonst fehlte die Mitgliedschaft in Liste und Export - und ein Reimport entfernte sie."""
+    from app.repositories.directory import SubjectFilter
+
+    users = UserService(session)
+    await users.create(UserCreate(username="Alice", password="geheim123"), actor=admin_principal)
+    await users.groups.add_membership("alice", "wlan", 1)
+    await session.commit()
+
+    items, _ = await users.search(SubjectFilter())
+    entry = next(i for i in items if fold(i.username) == "alice")
+    assert entry.groups == ["wlan"]
+
+
+async def test_diagnosis_reports_a_group_level_reject(session, admin_principal) -> None:
+    """FreeRADIUS wendet die Check-Attribute der Gruppe an; die Diagnose muss das nennen."""
+    from app.schemas.groups import AttributeIn, GroupCreate
+    from app.services.groups import GroupService
+
+    await GroupService(session).create(
+        GroupCreate(
+            groupname="gesperrt",
+            check_attributes=[AttributeIn(attribute="Auth-Type", op=":=", value="Reject")],
+        ),
+        actor=admin_principal,
+    )
+    users = UserService(session)
+    await users.create(
+        UserCreate(
+            username="anna",
+            password="geheim123",
+            groups=[MembershipIn(groupname="gesperrt")],
+        ),
+        actor=admin_principal,
+    )
+
+    result = await AuthLogService(session).diagnose("anna")
+    assert result.status == "disabled"
+    assert any(h.code == "diag.auth_type_reject" for h in result.hints)
+
+
+async def test_responses_forbid_framing(client) -> None:
+    """Ohne diesen Kopf liesse sich die Oberflaeche fuer Clickjacking einbetten."""
+    response = await client.get("/healthz")
+    assert response.headers["content-security-policy"] == "frame-ancestors 'none'"
+    assert response.headers["x-frame-options"] == "DENY"
+
+
+async def test_session_cookie_is_scoped_to_the_root_path(session, client) -> None:
+    """Unter einem Praefix ginge das Cookie sonst an jede andere Anwendung des Hosts."""
+    from app.api import deps
+    from app.core.config import settings as app_settings
+
+    original = app_settings.root_path
+    try:
+        app_settings.root_path = "/manager"
+        assert deps.cookie_path() == "/manager/"
+    finally:
+        app_settings.root_path = original
+    assert deps.cookie_path() == "/"

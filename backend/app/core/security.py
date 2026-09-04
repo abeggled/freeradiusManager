@@ -110,6 +110,7 @@ def create_totp_challenge_token(
     scope: str = TOTP_SCOPE,
     config: Settings | None = None,
     minutes: int = 5,
+    epoch: int = 0,
 ) -> str:
     """Kurzlebiges Token zwischen Passwort- und TOTP-Schritt.
 
@@ -128,6 +129,9 @@ def create_totp_challenge_token(
         # ``password_changed_at`` (DATETIME(6)) braucht es die Bruchteile, sonst
         # gilt eine Challenge aus derselben Sekunde weiterhin als aktuell.
         "auth_at": now.timestamp(),
+        # Wie beim Sitzungstoken: eine Deaktivierung soll auch die schon
+        # ausgestellte Challenge entwerten, nicht nur die fertige Sitzung.
+        "gen": epoch,
         "exp": int((now + dt.timedelta(minutes=minutes)).timestamp()),
     }
     return jwt.encode(payload, config.secret_key, algorithm=config.jwt_algorithm)

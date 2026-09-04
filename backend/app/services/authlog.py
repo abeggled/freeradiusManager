@@ -47,9 +47,19 @@ class AuthLogService:
 
     async def diagnose(self, subject: str, language: str = "de", attempts: int = 20) -> Diagnosis:
         """Erzeugt Klartext-Hinweise zu einem Benutzer oder einer MAC."""
-        checks = list(await self.attrs.check_attributes(subject))
+        own_checks = list(await self.attrs.check_attributes(subject))
         replies = list(await self.attrs.reply_attributes(subject))
         memberships = list(await self.groups.memberships(subject))
+        # FreeRADIUS wendet auch die Check-Attribute der Gruppen an: ein
+        # ``Auth-Type := Reject`` oder ein abgelaufenes ``Expiration`` dort ist
+        # der tatsaechliche Grund fuer den Access-Reject. Ohne sie meldete die
+        # Diagnose den Benutzer als aktiv und nannte den Grund nicht (FR-6).
+        group_checks = [
+            row
+            for membership in memberships
+            for row in await self.groups.check_attributes(membership.groupname)
+        ]
+        checks = own_checks + group_checks
         recent = await self.repo.recent_for(subject, limit=attempts)
         meta = await self.subjects.get(subject)
 
@@ -72,7 +82,7 @@ class AuthLogService:
         # Eine reine Gruppenzuordnung zaehlt ebenfalls: solche Bestandsnamen
         # sind sichtbar und aufrufbar, die Diagnose darf sie nicht als
         # unbekannt melden.
-        exists = bool(checks or replies or meta or memberships)
+        exists = bool(own_checks or replies or meta or memberships)
         status = "unknown"
 
         if not exists:
@@ -85,7 +95,10 @@ class AuthLogService:
             )
             status = "missing"
         else:
-            has_password = any(radius_dict.is_password_attribute(row.attribute) for row in checks)
+            # Anmeldedaten stehen beim Benutzer selbst; Gruppen fuehren keine.
+            has_password = any(
+                radius_dict.is_password_attribute(row.attribute) for row in own_checks
+            )
             if rejected:
                 status = "disabled"
                 hints.append(
