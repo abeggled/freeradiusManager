@@ -730,7 +730,12 @@ class ImportExportService:
                     # Der eigene Sperrzustand, nicht der aus einer Gruppe: sonst
                     # schriebe ein Reimport die Gruppenpolicy beim Benutzer fest.
                     "disabled": "true" if item.disabled else "false",
-                    "expires_at": item.expires_at.isoformat() if item.expires_at else "",
+                    # Das eigene Datum, nicht das wirksame: ein Reimport machte
+                    # aus einer Gruppenfrist sonst eine eigene, die sich mit der
+                    # Gruppe nicht mehr aendern liesse.
+                    "expires_at": (
+                        item.own_expires_at.isoformat() if item.own_expires_at else ""
+                    ),
                     "credential_type": item.credential_type.value if item.credential_type else "",
                 }
             )

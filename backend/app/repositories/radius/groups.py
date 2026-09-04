@@ -230,8 +230,19 @@ class GroupRepository:
         stmt = select(RadUserGroup).where(
             RadUserGroup.username == username, RadUserGroup.groupname == groupname
         )
-        if await self.session.scalar(stmt) is not None:
-            return False
+        existing = list((await self.session.scalars(stmt)).all())
+        if existing:
+            # Vorhandene Zuordnung: die Prioritaet nachziehen. Ohne das bliebe
+            # die Auswertungsreihenfolge unveraendert, obwohl der Aufruf sie
+            # ausdruecklich gesetzt hat - und als Erfolg gezaehlt wird.
+            changed = False
+            for row in existing:
+                if row.priority != priority:
+                    row.priority = priority
+                    changed = True
+            if changed:
+                await self.session.flush()
+            return changed
         self.session.add(RadUserGroup(username=username, groupname=groupname, priority=priority))
         await self.session.flush()
         return True

@@ -86,8 +86,10 @@ class PostAuthRepository:
         ).all()
         result = {str(reply): int(count) for reply, count in rows}
         result["accepts"] = sum(v for k, v in result.items() if is_accept(k))
+        # Dieselbe Vergleichsform wie oben: sonst zaehlte ``access-accept``
+        # zugleich als Annahme und als Ablehnung.
         result["rejects"] = sum(
-            v for k, v in result.items() if k not in ACCEPT_VALUES and k != "accepts"
+            v for k, v in result.items() if not is_accept(k) and k != "accepts"
         )
         return result
 

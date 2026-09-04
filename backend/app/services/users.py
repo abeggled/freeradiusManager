@@ -157,7 +157,13 @@ class UserService:
         group_checks = await self.groups.check_attributes_for(
             [m.groupname for rows in by_user.values() for m in rows]
         )
-        folded_group_checks = {fold(name): rows for name, rows in group_checks.items()}
+        # Zusammenfuehren statt ueberschreiben: Bestandsdaten koennen dieselbe
+        # Gruppe unter mehreren Schreibweisen fuehren. Ginge eine Sammlung
+        # verloren, meldete die Liste einen anderen Status als Detailansicht
+        # und SQL-Filter.
+        folded_group_checks: dict[str, list[Any]] = {}
+        for group_name, group_rows in group_checks.items():
+            folded_group_checks.setdefault(fold(group_name), []).extend(group_rows)
 
         items: list[UserListItem] = []
         for row in rows:
@@ -236,7 +242,7 @@ class UserService:
                     message=translate("warn.mab_not_authentication", language),
                 )
             )
-        if any(r.attribute == "Cleartext-Password" for r in checks):
+        if any(r.attribute.lower() == "cleartext-password" for r in checks):
             warnings.append(
                 ApiWarning(
                     code="warn.cleartext_stored",

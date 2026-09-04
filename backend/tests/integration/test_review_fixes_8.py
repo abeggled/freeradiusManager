@@ -2473,3 +2473,114 @@ async def test_ssid_keeps_its_colons(value: str, expected: str | None) -> None:
     from app.services.sessions import extract_ssid
 
     assert extract_ssid(value) == expected
+
+
+# --- Dreissigste Runde ----------------------------------------------------
+
+
+async def test_reject_total_excludes_normalised_accepts(session) -> None:
+    """``access-accept`` zaehlte zugleich als Annahme und als Ablehnung."""
+    from app.models.radius import RadPostAuth
+    from app.repositories.radius.postauth import PostAuthRepository
+
+    now = dt.datetime.now(tz=dt.UTC).replace(tzinfo=None)
+    session.add_all(
+        [
+            RadPostAuth(username="anna", pass_="x", reply="access-accept", authdate=now),
+            RadPostAuth(username="anna", pass_="x", reply="Access-Reject", authdate=now),
+        ]
+    )
+    await session.commit()
+
+    totals = await PostAuthRepository(session).summary(now - dt.timedelta(hours=1))
+    assert totals["accepts"] == 1
+    assert totals["rejects"] == 1
+
+
+async def test_export_writes_the_own_expiry(session, admin_principal) -> None:
+    """Ein Reimport machte aus einer Gruppenfrist sonst eine eigene."""
+    from app.repositories.directory import SubjectFilter
+    from app.schemas.groups import AttributeIn, GroupCreate
+    from app.services.groups import GroupService
+    from app.services.importexport import ImportExportService
+
+    await GroupService(session).create(
+        GroupCreate(
+            groupname="befristet",
+            check_attributes=[
+                AttributeIn(attribute="Expiration", op=":=", value="01 Jan 2020 00:00:00")
+            ],
+        ),
+        actor=admin_principal,
+    )
+    await UserService(session).create(
+        UserCreate(
+            username="anna",
+            password="geheim123",
+            groups=[MembershipIn(groupname="befristet")],
+        ),
+        actor=admin_principal,
+    )
+
+    csv = await ImportExportService(session).export(SubjectFilter())
+    assert "2020" not in csv
+
+
+async def test_single_character_ssid_is_kept() -> None:
+    """Das BSSID-Praefix ist abgetrennt; ein Zeichen genuegt als SSID."""
+    from app.services.sessions import extract_ssid
+
+    assert extract_ssid("00:11:22:33:44:55:X") == "X"
+
+
+async def test_case_variant_group_checks_are_merged(session, admin_principal) -> None:
+    """Ginge eine Sammlung verloren, meldete die Liste einen anderen Status."""
+    from app.models.radius import RadGroupCheck
+    from app.repositories.directory import SubjectFilter
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.groups.add_membership("anna", "Staff", 1)
+    await users.groups.add_membership("anna", "staff", 2)
+    session.add_all(
+        [
+            RadGroupCheck(groupname="Staff", attribute="Simultaneous-Use", op=":=", value="1"),
+            RadGroupCheck(groupname="staff", attribute="Auth-Type", op=":=", value="Reject"),
+        ]
+    )
+    await session.commit()
+
+    items, _ = await users.search(SubjectFilter())
+    assert next(i for i in items if i.username == "anna").status == "disabled"
+
+
+async def test_bulk_assignment_updates_the_priority(session, admin_principal) -> None:
+    """Der Prioritaetsregler blieb fuer bestehende Mitglieder wirkungslos."""
+    from app.repositories.directory import SubjectFilter
+    from app.schemas.users import BulkAction
+    from app.services.importexport import ImportExportService
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.groups.add_membership("anna", "wlan", 1)
+    await session.commit()
+
+    await ImportExportService(session).bulk(
+        BulkAction(action="assign_group", usernames=["anna"], groupname="wlan", priority=7),
+        SubjectFilter(),
+        actor=admin_principal,
+    )
+    memberships = await users.groups.memberships("anna")
+    assert [m.priority for m in memberships] == [7]
+
+
+async def test_cleartext_warning_ignores_case(session, admin_principal) -> None:
+    """Die Warnung fehlte gerade bei einem Konto mit umkehrbarem Passwort."""
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.attrs.delete_check("anna", "Cleartext-Password")
+    await users.attrs.add_check("anna", "cleartext-password", ":=", "geheim123")
+    await session.commit()
+
+    detail = await users.get("anna")
+    assert any(w.code == "warn.cleartext_stored" for w in detail.warnings)

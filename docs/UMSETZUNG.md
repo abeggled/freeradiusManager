@@ -1095,6 +1095,22 @@ Die fünfundzwanzigste Runde:
   einer Gruppe geerbtes Datum liess sich beim Benutzer weder überschreiben noch
   löschen, der Vorgang meldete aber Erfolg.
 
+### Dreissigste Runde
+
+* **Die Ablehnungssumme verwendet dieselbe Vergleichsform wie die Annahmen.**
+  `access-accept` zählte sonst zugleich als Annahme und als Ablehnung.
+* **Der Export schreibt das eigene Ablaufdatum**, nicht das wirksame; ein
+  Reimport machte aus einer Gruppenfrist sonst eine eigene, die sich mit der
+  Gruppe nicht mehr ändern liess.
+* **Gruppen-Check-Attribute werden über Schreibweisen hinweg zusammengeführt.**
+  Ging eine Sammlung verloren, meldete die Liste einen anderen Status als
+  Detailansicht und SQL-Filter.
+* **Die Sammelzuordnung zieht die Priorität nach.** Für bestehende Mitglieder
+  blieb der Regler wirkungslos, der Vorgang zählte sie aber als erfolgreich.
+* **Die Warnung zu gespeichertem Klartext greift unabhängig von der
+  Schreibweise** – sie fehlte gerade bei einem Konto mit umkehrbarem Passwort.
+* Eine SSID aus einem einzelnen Zeichen bleibt erhalten.
+
 ## Prüfschritte
 
 ```bash

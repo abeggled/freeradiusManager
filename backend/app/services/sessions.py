@@ -39,7 +39,9 @@ def extract_ssid(called_station_id: str | None) -> str | None:
     if match is None:
         return None
     candidate = value[match.end() :].strip()
-    if candidate and not is_mac(candidate) and len(candidate) > 1:
+    # Auch ein einzelnes Zeichen ist eine gueltige SSID; das BSSID-Praefix ist
+    # bereits sicher abgetrennt.
+    if candidate and not is_mac(candidate):
         return candidate
     return None
 
