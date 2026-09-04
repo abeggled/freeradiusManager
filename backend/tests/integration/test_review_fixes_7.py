@@ -1774,3 +1774,133 @@ async def test_pool_must_allow_two_connections() -> None:
     with pytest.raises(PydanticValidationError):
         Settings(db_pool_size=1)
     assert Settings(db_pool_size=2).db_pool_size == 2
+
+
+# --- Zweiundzwanzigste Runde ----------------------------------------------
+
+
+async def test_cross_origin_writes_are_rejected(session, client) -> None:
+    """SameSite=Lax schützt nicht vor einem Geschwister-Host derselben Domain."""
+    await _account(session, "operator", Role.OPERATOR)
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+
+    blocked = await client.post(
+        "/api/v1/users",
+        json={"username": "anna", "password": "geheim123"},
+        headers={"Origin": "https://boese.example"},
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["code"] == "error.cross_origin"
+
+    allowed = await client.post(
+        "/api/v1/users",
+        json={"username": "anna", "password": "geheim123"},
+        headers={"Origin": "http://testserver"},
+    )
+    assert allowed.status_code == 201
+
+    # Lesen bleibt unberührt.
+    assert (
+        await client.get("/api/v1/users", headers={"Origin": "https://boese.example"})
+    ).status_code == 200
+
+
+async def test_lock_keys_stay_distinct_for_long_names(session, admin_principal) -> None:
+    """Zwei lange Namen mit gleichem Anfang dürfen nicht denselben Schlüssel haben."""
+    from app.core.locking import _lock_key
+    from app.schemas.groups import GroupCreate, GroupUpdate
+    from app.services.groups import GroupService
+
+    first = "g" * 60 + "-eins"
+    second = "g" * 60 + "-zwei"
+    assert _lock_key(first) != _lock_key(second)
+    assert len(_lock_key(first)) <= 64
+
+    service = GroupService(session)
+    await service.create(GroupCreate(groupname=first[:64], vlan="10"), actor=admin_principal)
+    renamed = await service.update(
+        first[:64], GroupUpdate(groupname=second[:64]), actor=admin_principal
+    )
+    assert renamed.groupname == second[:64]
+
+
+async def test_disable_restores_every_auth_type_row(session, admin_principal) -> None:
+    """Ein Sperr-/Entsperrzyklus darf keine Vorgabe verlieren."""
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.attrs.add_check("anna", "Auth-Type", ":=", "PAP")
+    await users.attrs.add_check("anna", "Auth-Type", ":=", "CHAP")
+    await session.commit()
+
+    await users.set_disabled("anna", True, actor=admin_principal)
+    await users.set_disabled("anna", False, actor=admin_principal)
+
+    rows = [
+        r for r in await users.attrs.check_attributes("anna") if r.attribute.lower() == "auth-type"
+    ]
+    assert sorted(r.value for r in rows) == ["CHAP", "PAP"]
+
+
+async def test_timestamp_filters_are_normalised(session, client) -> None:
+    """Ein Wert mit Zeitzone darf das Fenster nicht verschieben."""
+    await _account(session, "auditor", Role.AUDITOR)
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "auditor", "password": "ein-sicheres-passwort"},
+    )
+    session.add(
+        RadAcct(
+            acctsessionid="s1",
+            acctuniqueid="u1",
+            username="anna",
+            nasipaddress="10.0.0.1",
+            # 10:00 UTC
+            acctstarttime=dt.datetime(2026, 9, 1, 10, 0),
+            callingstationid="AA-BB-CC-DD-EE-FF",
+        )
+    )
+    await session.commit()
+
+    # 08:00-04:00 entspricht 12:00 UTC - die Session liegt davor.
+    late = await client.get(
+        "/api/v1/sessions?active_only=false&start_from=2026-09-01T08:00:00-04:00"
+    )
+    assert late.json()["items"] == []
+
+    early = await client.get(
+        "/api/v1/sessions?active_only=false&start_from=2026-09-01T04:00:00-04:00"
+    )
+    assert len(early.json()["items"]) == 1
+
+
+async def test_duplicate_rows_in_one_file_are_rejected(session, admin_principal) -> None:
+    report = await ImportExportService(session).import_csv(
+        "username,password\nanna,geheim123\nanna,anderes123\n",
+        kind="user",
+        dry_run=True,
+        actor=admin_principal,
+    )
+    assert report.errors == 1
+    assert report.to_create == 1
+
+
+async def test_schema_check_detects_wrong_column_types(engine) -> None:
+    """Ein völlig anderer Typ fällt sonst erst zur Laufzeit auf."""
+    from sqlalchemy import text
+
+    from app.repositories.radius.schema import inspect_schema
+
+    async with engine.begin() as connection:
+        await connection.execute(text("ALTER TABLE radacct MODIFY acctstarttime VARCHAR(32)"))
+    try:
+        async with engine.connect() as connection:
+            database = str(await connection.scalar(text("SELECT DATABASE()")))
+            report = await inspect_schema(connection, database)
+        assert not report.ok
+        assert "acctstarttime" in " ".join(report.wrong_types["radacct"])
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(text("ALTER TABLE radacct MODIFY acctstarttime DATETIME"))

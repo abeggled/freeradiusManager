@@ -7,6 +7,7 @@ import datetime as dt
 from fastapi import APIRouter
 
 from app.api.deps import ReaderUser, SessionDep
+from app.core.dates import as_naive_utc
 from app.core.pagination import clamp_limit
 from app.repositories.radius.acct import SessionFilter
 from app.schemas.common import CursorMeta, CursorResponse
@@ -39,8 +40,10 @@ async def list_sessions(
         called_station_id=called_station_id,
         framed_ip_address=framed_ip_address,
         terminate_cause=terminate_cause,
-        start_from=start_from,
-        start_to=start_to,
+        # Die Spalten sind zeitzonenlos in UTC; ein Wert mit Zeitzone
+        # verschoebe das Fenster sonst um dessen Versatz.
+        start_from=as_naive_utc(start_from) if start_from else None,
+        start_to=as_naive_utc(start_to) if start_to else None,
         active_only=active_only,
     )
     # Der Dienst begrenzt die Seitengroesse; gemeldet wird der tatsaechliche

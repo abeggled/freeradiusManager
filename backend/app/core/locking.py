@@ -8,6 +8,7 @@ atomar sein muessen, dient eine anwendungseigene Sperre als Ersatz.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 from collections.abc import AsyncIterator
 
 from sqlalchemy import text
@@ -21,6 +22,17 @@ LOCK_PREFIX = "frm"
 LOCK_TIMEOUT_SECONDS = 5
 
 log = get_logger("locking")
+
+
+def _lock_key(name: str) -> str:
+    """Eindeutiger Schluessel innerhalb der 64 Zeichen von ``GET_LOCK``.
+
+    Ein blosses Abschneiden liesse zwei lange Namen auf denselben Schluessel
+    fallen - eine Umbenennung zwischen ihnen wartete dann auf sich selbst.
+    """
+    digest = hashlib.sha256(name.encode("utf-8")).hexdigest()[:16]
+    readable = name[:40]
+    return f"{LOCK_PREFIX}:{readable}:{digest}"
 
 
 @contextlib.asynccontextmanager
@@ -37,7 +49,7 @@ async def named_lock(session: AsyncSession, name: str) -> AsyncIterator[None]:
     betreten waere schlimmer als ein Fehler: genau dann laeuft eine zweite, noch
     nicht festgeschriebene Aenderung - und beide wuerden schreiben.
     """
-    key = f"{LOCK_PREFIX}:{name}"[:64]
+    key = _lock_key(name)
     # Dieselbe Engine wie die Sitzung des Aufrufers, aber eine eigene Verbindung.
     engine = session.bind if isinstance(session.bind, AsyncEngine) else get_engine()
     async with engine.connect() as connection:

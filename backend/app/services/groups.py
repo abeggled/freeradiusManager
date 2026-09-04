@@ -29,6 +29,9 @@ from app.services.masking import is_masked, mask_attributes
 
 VLAN_ATTRIBUTE = "tunnel-private-group-id"
 
+AUDIT_NAME_LIMIT = 200
+"""Hoechstzahl protokollierter Namen je Eintrag."""
+
 
 class GroupService:
     def __init__(self, session: AsyncSession) -> None:
@@ -276,7 +279,14 @@ class GroupService:
             object_id=groupname,
             actor=actor,
             actor_ip=actor_ip,
-            after={"usernames": payload.usernames, "changed": changed},
+            after={
+                # Begrenzt wie bei den Sammelaktionen: mgr_audit.after_json ist
+                # eine TEXT-Spalte und fasst rund 64 KiB.
+                "usernames": sorted(set(payload.usernames))[:AUDIT_NAME_LIMIT],
+                "usernames_truncated": len(set(payload.usernames)) > AUDIT_NAME_LIMIT,
+                "count": len(payload.usernames),
+                "changed": changed,
+            },
         )
         await self.session.commit()
         return changed

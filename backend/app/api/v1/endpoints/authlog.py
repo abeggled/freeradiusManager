@@ -7,6 +7,7 @@ import datetime as dt
 from fastapi import APIRouter
 
 from app.api.deps import Language, ReaderUser, SessionDep
+from app.core.dates import as_naive_utc
 from app.core.pagination import clamp_limit
 from app.repositories.radius.postauth import AuthLogFilter
 from app.schemas.common import CursorMeta, CursorResponse
@@ -32,8 +33,8 @@ async def list_authlog(
         username=username,
         reply=reply,
         only_rejects=only_rejects,
-        date_from=date_from,
-        date_to=date_to,
+        date_from=as_naive_utc(date_from) if date_from else None,
+        date_to=as_naive_utc(date_to) if date_to else None,
     )
     limit = clamp_limit(limit)
     items, next_cursor = await AuthLogService(session).search(flt, limit=limit, cursor=cursor)

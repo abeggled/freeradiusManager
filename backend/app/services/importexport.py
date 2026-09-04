@@ -324,6 +324,10 @@ class ImportExportService:
             )
 
         report = ImportReport(dry_run=dry_run)
+        # Ein Name darf in derselben Datei nur einmal vorkommen: sonst meldete
+        # die Vorschau mehrere Neuanlagen, waehrend der Import ab der zweiten
+        # Zeile ueberschriebe - Vorschau und Ergebnis gingen auseinander.
+        seen_usernames: set[str] = set()
 
         for index, raw in enumerate(reader, start=2):
             report.total += 1
@@ -349,6 +353,12 @@ class ImportExportService:
                         raise ValidationError(
                             code="error.validation", details={"field": "username"}
                         )
+
+                if username in seen_usernames:
+                    raise ValidationError(
+                        code="error.import_duplicate_row", details={"username": username}
+                    )
+                seen_usernames.add(username)
 
                 subject = await self.users.subjects.get(username)
                 expected_type = SubjectType.DEVICE if kind == "device" else SubjectType.USER

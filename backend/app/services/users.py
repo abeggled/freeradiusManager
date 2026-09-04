@@ -364,13 +364,17 @@ class UserService:
             for row in await self.attrs.check_attributes(username)
             if row.attribute.lower() == AUTH_TYPE.lower()
         ]
-        existing = next((row for row in rows if row.value != REJECT), None)
+        others = [row for row in rows if row.value != REJECT]
         if disabled:
             # Eine vorhandene Auth-Type-Vorgabe (etwa "PAP") wird gemerkt und
             # beim Entsperren zurueckgeschrieben; sonst waere die Sperre eine
             # dauerhafte Aenderung der Authentifizierungskonfiguration.
-            if existing is not None:
-                subject.disabled_state = json.dumps({"op": existing.op, "value": existing.value})
+            if others:
+                # Die vollstaendige Sammlung wird gemerkt: eine Sperre darf die
+                # Authentifizierungskonfiguration nicht dauerhaft beschneiden.
+                subject.disabled_state = json.dumps(
+                    [{"op": row.op, "value": row.value} for row in others]
+                )
             # set_check ersetzt alle Zeilen des Attributs.
             await self.attrs.set_check(username, AUTH_TYPE, ":=", REJECT)
             subject.disabled_at = utcnow()
@@ -382,10 +386,9 @@ class UserService:
             for row in rows:
                 if row.value == REJECT:
                     await self.attrs.delete_check_row(row.id)
-            if existing is None:
-                previous = self._previous_auth_type(subject.disabled_state)
-                if previous is not None:
-                    await self.attrs.set_check(
+            if not others:
+                for previous in self._previous_auth_types(subject.disabled_state):
+                    await self.attrs.add_check(
                         username, AUTH_TYPE, previous["op"], previous["value"]
                     )
             subject.disabled_state = None
@@ -628,16 +631,24 @@ class UserService:
         return warnings
 
     @staticmethod
-    def _previous_auth_type(raw: str | None) -> dict[str, str] | None:
+    def _previous_auth_types(raw: str | None) -> list[dict[str, str]]:
+        """Liest den gemerkten Zustand.
+
+        Aeltere Eintraege enthalten ein einzelnes Objekt; beide Formen werden
+        unterstuetzt.
+        """
         if not raw:
-            return None
+            return []
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
-            return None
-        if isinstance(data, dict) and "op" in data and "value" in data:
-            return {"op": str(data["op"]), "value": str(data["value"])}
-        return None
+            return []
+        entries = data if isinstance(data, list) else [data]
+        return [
+            {"op": str(item["op"]), "value": str(item["value"])}
+            for item in entries
+            if isinstance(item, dict) and "op" in item and "value" in item
+        ]
 
     @staticmethod
     def _status(checks: Sequence[RadCheck]) -> UserStatus:

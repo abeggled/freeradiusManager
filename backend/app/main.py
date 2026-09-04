@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
+from app.api.csrf import enforce_same_origin
 from app.api.errors import register_error_handlers
 from app.api.v1.router import api_router
 from app.core.config import settings
@@ -101,6 +102,9 @@ def create_app() -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+
+    # Vor den Routern: schreibende Anfragen fremder Herkunft werden abgewiesen.
+    app.middleware("http")(enforce_same_origin)
 
     register_error_handlers(app)
     app.include_router(api_router)

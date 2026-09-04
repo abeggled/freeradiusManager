@@ -37,18 +37,47 @@ RECOMMENDED_INDEX_COLUMNS: dict[str, set[str]] = {
 }
 
 
+# Erwartete Datentypfamilien je Spalte. Verglichen wird die Familie, nicht die
+# genaue Deklaration: Laengen und Vorzeichen unterscheiden sich zwischen
+# FreeRADIUS-Versionen, ein voellig anderer Typ (etwa TEXT statt DATETIME) ist
+# dagegen ein echtes Problem und faellt sonst erst zur Laufzeit auf.
+EXPECTED_TYPES: dict[str, dict[str, tuple[str, ...]]] = {
+    "radacct": {
+        "radacctid": ("bigint", "int"),
+        "acctstarttime": ("datetime", "timestamp"),
+        "acctstoptime": ("datetime", "timestamp"),
+        "acctupdatetime": ("datetime", "timestamp"),
+        "acctinputoctets": ("bigint", "int"),
+        "acctoutputoctets": ("bigint", "int"),
+        "username": ("varchar", "char"),
+        "nasipaddress": ("varchar", "char"),
+    },
+    "radpostauth": {
+        "id": ("bigint", "int"),
+        "authdate": ("datetime", "timestamp"),
+        "username": ("varchar", "char"),
+    },
+    "radcheck": {"username": ("varchar", "char"), "value": ("varchar", "char", "text")},
+    "radreply": {"username": ("varchar", "char"), "value": ("varchar", "char", "text")},
+    "radusergroup": {"username": ("varchar", "char"), "priority": ("int", "smallint", "bigint")},
+    "nas": {"nasname": ("varchar", "char"), "secret": ("varchar", "char")},
+}
+
+
 @dataclass
 class SchemaReport:
     ok: bool = True
     missing_tables: list[str] = field(default_factory=list)
     missing_columns: dict[str, list[str]] = field(default_factory=dict)
     missing_indexes: dict[str, list[str]] = field(default_factory=dict)
+    wrong_types: dict[str, list[str]] = field(default_factory=dict)
 
     def as_details(self) -> dict[str, object]:
         return {
             "missing_tables": self.missing_tables,
             "missing_columns": self.missing_columns,
             "missing_indexes": self.missing_indexes,
+            "wrong_types": self.wrong_types,
         }
 
     def summary(self) -> str:
@@ -60,6 +89,11 @@ class SchemaReport:
                 "fehlende Spalten: "
                 + ", ".join(f"{t}({', '.join(c)})" for t, c in sorted(self.missing_columns.items()))
             )
+        if self.wrong_types:
+            parts.append(
+                "unerwartete Spaltentypen: "
+                + ", ".join(f"{t}({', '.join(c)})" for t, c in sorted(self.wrong_types.items()))
+            )
         return "; ".join(parts) or "Schema in Ordnung"
 
 
@@ -69,15 +103,18 @@ async def inspect_schema(connection: AsyncConnection, database: str) -> SchemaRe
     rows = (
         await connection.execute(
             text(
-                "SELECT table_name, column_name FROM information_schema.columns "
+                "SELECT table_name, column_name, data_type FROM information_schema.columns "
                 "WHERE table_schema = :db"
             ),
             {"db": database},
         )
     ).all()
     present: dict[str, set[str]] = {}
-    for table, column in rows:
-        present.setdefault(str(table).lower(), set()).add(str(column).lower())
+    types: dict[str, dict[str, str]] = {}
+    for table, column, data_type in rows:
+        name = str(table).lower()
+        present.setdefault(name, set()).add(str(column).lower())
+        types.setdefault(name, {})[str(column).lower()] = str(data_type).lower()
 
     for table, columns in REQUIRED_COLUMNS.items():
         if table not in present:
@@ -86,6 +123,18 @@ async def inspect_schema(connection: AsyncConnection, database: str) -> SchemaRe
         missing = sorted(columns - present[table])
         if missing:
             report.missing_columns[table] = missing
+
+    for table, expected in EXPECTED_TYPES.items():
+        if table in report.missing_tables:
+            continue
+        actual = types.get(table, {})
+        wrong = sorted(
+            f"{column} ist {actual[column]}, erwartet {'/'.join(families)}"
+            for column, families in expected.items()
+            if column in actual and not actual[column].startswith(families)
+        )
+        if wrong:
+            report.wrong_types[table] = wrong
 
     if not report.missing_tables and not report.missing_columns:
         index_rows = (
@@ -105,5 +154,5 @@ async def inspect_schema(connection: AsyncConnection, database: str) -> SchemaRe
             if missing:
                 report.missing_indexes[table] = missing
 
-    report.ok = not report.missing_tables and not report.missing_columns
+    report.ok = not report.missing_tables and not report.missing_columns and not report.wrong_types
     return report

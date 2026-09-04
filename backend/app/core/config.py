@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     session_idle_minutes: int = Field(default=30, ge=1)
     session_absolute_hours: int = Field(default=12, ge=1)
     cookie_name: str = "frm_session"
+    allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    """Zusaetzlich erlaubte Herkuenfte fuer schreibende Anfragen.
+
+    Ohne Eintrag gilt nur die eigene Adresse des Requests. Die Pruefung ergaenzt
+    ``SameSite=Lax``: ein Geschwister-Host derselben registrierbaren Domain gilt
+    fuer den Browser als "same-site" und duerfte das Cookie sonst mitsenden.
+    """
     cookie_secure: bool = True
     cookie_domain: str | None = None
     require_totp_for_admin: bool = True
@@ -179,7 +186,7 @@ class Settings(BaseSettings):
             )
         return value
 
-    @field_validator("cors_origins", "trusted_proxies", mode="before")
+    @field_validator("cors_origins", "trusted_proxies", "allowed_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
         """Kommagetrennte Liste aus der Umgebung.

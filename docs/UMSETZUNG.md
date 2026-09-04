@@ -75,8 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Einundzwanzig Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10,
-11, 12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11, 8, 10, 8 und 7 Befunde;
+Zweiundzwanzig Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10,
+11, 12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11, 8, 10, 8, 7 und 7 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
@@ -527,6 +527,22 @@ Die einundzwanzigste Runde (keine P1-Befunde):
 * Ein falsches aktuelles Passwort oder ein falscher TOTP-Code führt nicht mehr
   zur Anmeldemaske – das sind behebbare Formularfehler, keine beendete Sitzung.
 * Das Sperren eines Benutzers oder Geräts verlangt eine Bestätigung.
+
+Die zweiundzwanzigste Runde (keine P1-Befunde):
+
+* **Schreibende Anfragen fremder Herkunft werden abgewiesen.** `SameSite=Lax`
+  schützt nicht vor einem Geschwister-Host derselben registrierbaren Domain;
+  eine Herkunftsprüfung ergänzt das Cookie (`FRM_ALLOWED_ORIGINS` für weitere
+  erlaubte Adressen).
+* Ein Sperr-/Entsperrzyklus erhält alle `Auth-Type`-Zeilen, nicht nur die erste.
+* Sperrschlüssel werden gehasht statt abgeschnitten – zwei lange Namen mit
+  gleichem Anfang hätten sonst denselben Schlüssel und eine Umbenennung zwischen
+  ihnen wartete auf sich selbst.
+* Zeitgrenzen der Filter werden nach UTC normalisiert; ein Wert mit Zeitzone
+  verschob das Fenster.
+* Ein Name darf in einer Importdatei nur einmal vorkommen.
+* Die Startprüfung vergleicht auch die Spaltentypen des RADIUS-Schemas.
+* Die Namensliste im Audit-Eintrag einer Mitgliedschaftsänderung ist begrenzt.
 
 ## Prüfschritte
 

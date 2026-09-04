@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 
 from app.api.deps import ReaderUser, SessionDep
+from app.core.dates import as_naive_utc
 from app.core.pagination import MAX_PAGE_SIZE, clamp_limit
 from app.repositories.mgr.audit import AuditRepository
 from app.schemas.accounts import AuditItem
@@ -45,8 +46,8 @@ async def list_audit(
         action=action,
         object_type=object_type,
         object_id=object_id,
-        date_from=date_from,
-        date_to=date_to,
+        date_from=as_naive_utc(date_from) if date_from else None,
+        date_to=as_naive_utc(date_to) if date_to else None,
         limit=limit,
         offset=offset,
     )
