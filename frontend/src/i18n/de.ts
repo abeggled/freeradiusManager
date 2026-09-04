@@ -58,6 +58,7 @@ export const de = {
   "login.submit": "Anmelden",
   "login.totpTitle": "Zweiter Faktor",
   "login.totpCode": "Einmalcode",
+  "login.restart": "Von vorn beginnen",
   "login.totpHint": "Code aus der Authenticator-App eingeben.",
   "login.totpSetupTitle": "Zwei-Faktor-Authentisierung einrichten",
   "login.totpSetupHint":

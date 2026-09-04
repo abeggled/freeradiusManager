@@ -298,7 +298,13 @@ class AccountService:
 
     # --- TOTP ------------------------------------------------------------
 
-    async def start_totp_enrollment(self, account: MgrAccount) -> TotpSetupResponse:
+    async def start_totp_enrollment(
+        self,
+        account: MgrAccount,
+        *,
+        actor: Principal | None = None,
+        actor_ip: str | None = None,
+    ) -> TotpSetupResponse:
         """Legt ein neues TOTP-Geheimnis an.
 
         Fuer ein Konto mit bereits aktivem TOTP ist das verboten: sonst koennte
@@ -307,9 +313,13 @@ class AccountService:
         """
         async with named_lock(self.session, f"account-totp:{account.id}"):
             await self.session.refresh(account)
-            return await self._start_totp_enrollment_locked(account)
+            return await self._start_totp_enrollment_locked(
+                account, actor=actor, actor_ip=actor_ip
+            )
 
-    async def _start_totp_enrollment_locked(self, account: MgrAccount) -> TotpSetupResponse:
+    async def _start_totp_enrollment_locked(
+        self, account: MgrAccount, *, actor: Principal | None, actor_ip: str | None
+    ) -> TotpSetupResponse:
         if account.totp_enabled:
             raise ConflictError(code="error.totp_already_enrolled")
         # ``totp_changed_at`` wird erst bei der Bestaetigung gesetzt: waehrend
@@ -329,6 +339,10 @@ class AccountService:
             action="account.totp_enrollment_started",
             object_type="account",
             object_id=account.username,
+            # Im Anmeldeweg gibt es noch keine Sitzung; aus der Selbstbedienung
+            # heraus ist der Handelnde bekannt und gehoert in den Eintrag.
+            actor=actor,
+            actor_ip=actor_ip,
         )
         await self.session.commit()
         return TotpSetupResponse(

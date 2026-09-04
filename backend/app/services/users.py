@@ -656,8 +656,8 @@ class UserService:
                 raise ConflictError(code="error.busy", details={"groupname": name})
             if await self.groups.check_attributes(name) or await self.groups.reply_attributes(name):
                 continue
-            members = await self.groups.members(name, limit=2, offset=0)
-            if len(members) == 1 and fold(members[0]) == fold(username):
+            members = {fold(m) for m in await self.groups.members(name, limit=20, offset=0)}
+            if members == {fold(username)}:
                 vanishing.append(name)
         return vanishing
 
@@ -741,9 +741,10 @@ class UserService:
             groupname
         ):
             return
-        # Wie in ``GroupService``: der Vergleich folgt der Kollation.
-        members = await self.groups.members(groupname, limit=2, offset=0)
-        if len(members) == 1 and fold(members[0]) == fold(username):
+        # Wie in ``GroupService``: der Vergleich folgt der Kollation und zaehlt
+        # verschiedene Benutzer, nicht Zeilen.
+        members = {fold(name) for name in await self.groups.members(groupname, limit=20, offset=0)}
+        if members == {fold(username)}:
             raise ValidationError(code="error.group_last_member", details={"groupname": groupname})
 
     async def _rename(self, old: str, new: str) -> None:

@@ -42,6 +42,7 @@
   "error.totp_setup_required": "Für Administratoren ist die Einrichtung von TOTP verpflichtend.",
   "error.totp_already_enrolled": "Für dieses Konto ist bereits ein zweiter Faktor eingerichtet. Das Zurücksetzen erfolgt durch einen Administrator.",
   "error.import_invalid": "Die Importdatei konnte nicht verarbeitet werden.",
+  "error.payload_too_large": "Die Anfrage ist grösser als {max_bytes} Bytes.",
   "error.import_unknown_columns": "Unbekannte Spalten in der Importdatei: {columns}.",
   "error.import_duplicate_columns": "Die Importdatei enthält doppelte Spalten: {columns}.",
   "error.import_duplicate_row": "Der Name „{username}“ kommt in der Importdatei mehrfach vor.",

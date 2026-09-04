@@ -20,6 +20,7 @@ from app.api.deps import (
 from app.core.config import settings
 from app.core.crypto import hash_password
 from app.core.errors import AuthenticationError, ValidationError
+from app.core.identifiers import fold
 from app.core.security import TOTP_ENROLL_SCOPE, create_session_token
 from app.models.mgr import MgrAccount, Role
 from app.schemas.accounts import (
@@ -71,7 +72,10 @@ async def login(
     # Zwei Grenzen: je Konto und - unabhaengig vom genannten Namen - je Absender.
     # Sonst genuegte ein neuer Benutzername je Versuch, um das Limit zu umgehen.
     login_ip_limiter.check(str(actor_ip))
-    login_limiter.check(f"{actor_ip}:{payload.username}")
+    # In der Vergleichsform: die Datenbank findet ``Admin`` und ``admin`` als
+    # dasselbe Konto, zwei verschiedene Schluessel liessen den Zaehler
+    # auseinanderlaufen.
+    login_limiter.check(f"{actor_ip}:{fold(payload.username)}")
     service = AccountService(session)
     mfa_completed = False
     account = await service.authenticate(
@@ -98,7 +102,7 @@ async def login(
     # Nur das Kontingent des eigenen Kontos wird freigegeben. Das IP-weite
     # Kontingent bleibt bestehen: sonst genuegte eine eigene gueltige Kennung,
     # um nach jedem Erfolg wieder beliebig viele fremde Namen zu probieren.
-    login_limiter.reset(f"{actor_ip}:{payload.username}")
+    login_limiter.reset(f"{actor_ip}:{fold(payload.username)}")
     _issue_session(response, account, mfa=mfa_completed)
     return LoginResponse(status="authenticated", account=AccountOut.model_validate(account))
 
@@ -124,7 +128,7 @@ async def login_totp(
     # Auch den Treffer der Passwortstufe: sonst bliebe je vollstaendig
     # erfolgreicher Anmeldung einer stehen und die elfte korrekte Anmeldung
     # innerhalb des Fensters waere abgewiesen.
-    login_limiter.reset(f"{actor_ip}:{account.username}")
+    login_limiter.reset(f"{actor_ip}:{fold(account.username)}")
     await service.clear_failures(account)
     await service.mark_login(account, actor_ip)
     _issue_session(response, account, mfa=True)
@@ -178,10 +182,12 @@ async def me(principal: CurrentUser, session: SessionDep) -> AccountOut:
 
 
 @router.post("/me/totp/enroll", response_model=TotpSetupResponse)
-async def enroll_own_totp(principal: CurrentUser, session: SessionDep) -> TotpSetupResponse:
+async def enroll_own_totp(
+    principal: CurrentUser, session: SessionDep, actor_ip: ClientIp
+) -> TotpSetupResponse:
     service = AccountService(session)
     account = await service.get(principal.account_id)
-    return await service.start_totp_enrollment(account)
+    return await service.start_totp_enrollment(account, actor=principal, actor_ip=actor_ip)
 
 
 @router.post("/me/totp/confirm", status_code=status.HTTP_204_NO_CONTENT)

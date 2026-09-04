@@ -331,8 +331,13 @@ class GroupService:
         # Verglichen wird in der Vergleichsform der Datenbank: das anschliessende
         # DELETE trifft ``Alice`` auch bei der Eingabe ``alice``; ein exakter
         # Zeichenvergleich erkennte diese Zeile nicht als letzte.
-        members = await self.repo.members(groupname, limit=2, offset=0)
-        if len(members) == 1 and fold(members[0]) == fold(username):
+        #
+        # Gezaehlt werden verschiedene Benutzer, nicht Zeilen: ``radusergroup``
+        # kennt keine Eindeutigkeit, zwei Zeilen desselben Benutzers gaelten
+        # sonst als zwei Mitglieder - die Gruppe verschwaende beim Entfernen
+        # trotz der Schutzpruefung.
+        members = {fold(name) for name in await self.repo.members(groupname, limit=20, offset=0)}
+        if members == {fold(username)}:
             raise ValidationError(code="error.group_last_member", details={"groupname": groupname})
 
     async def _write_attributes(

@@ -60,6 +60,7 @@ export const en: Record<TranslationKey, string> = {
   "login.submit": "Sign in",
   "login.totpTitle": "Second factor",
   "login.totpCode": "One-time code",
+  "login.restart": "Start over",
   "login.totpHint": "Enter the code from your authenticator app.",
   "login.totpSetupTitle": "Set up two-factor authentication",
   "login.totpSetupHint":

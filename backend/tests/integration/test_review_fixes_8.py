@@ -1528,3 +1528,130 @@ async def test_bulk_audit_records_the_device_type(session, admin_principal) -> N
     )
     assert entry is not None
     assert entry.object_type == "device"
+
+
+# --- Zweiundzwanzigste Runde ----------------------------------------------
+
+
+async def test_duplicate_header_check_is_linear() -> None:
+    """``count()`` je Spalte war quadratisch und blockierte den Worker."""
+    import inspect
+
+    from app.services.importexport import ImportExportService
+
+    source = inspect.getsource(ImportExportService.import_csv)
+    assert "collections.Counter" in source
+    assert "headers.count(" not in source
+
+
+async def test_self_service_enrollment_names_the_actor(session, client) -> None:
+    """Der Eintrag war der einzige Beleg fuer den Geheimniswechsel - ohne Urheber."""
+    from sqlalchemy import select as sa_select
+
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, MgrAudit, Role
+
+    session.add(
+        MgrAccount(
+            username="operator",
+            role=Role.OPERATOR,
+            password_hash=hash_password("ein-sicheres-passwort"),
+        )
+    )
+    await session.commit()
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+    response = await client.post("/api/v1/auth/me/totp/enroll")
+    assert response.status_code == 200
+
+    entry = await session.scalar(
+        sa_select(MgrAudit).where(MgrAudit.action == "account.totp_enrollment_started").limit(1)
+    )
+    assert entry is not None
+    assert entry.actor_name == "operator"
+
+
+async def test_login_limiter_key_follows_the_collation(session, client) -> None:
+    """ "Admin" und "admin" sind dasselbe Konto; zwei Schluessel liefen auseinander."""
+    import pyotp
+
+    from app.api.deps import login_limiter
+    from app.core.config import settings as app_settings
+    from app.core.crypto import SecretBox, hash_password
+    from app.models.mgr import MgrAccount, Role
+
+    secret = pyotp.random_base32()
+    session.add(
+        MgrAccount(
+            username="admin",
+            role=Role.ADMINISTRATOR,
+            password_hash=hash_password("ein-sicheres-passwort"),
+            totp_enabled=True,
+            totp_secret_enc=SecretBox(
+                app_settings.coa_secret_key or app_settings.secret_key
+            ).encrypt(secret),
+        )
+    )
+    await session.commit()
+
+    first = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "Admin", "password": "ein-sicheres-passwort"},
+    )
+    assert first.json()["status"] == "totp_required"
+    done = await client.post(
+        "/api/v1/auth/login/totp",
+        json={"challenge": first.json()["challenge"], "totp_code": pyotp.TOTP(secret).now()},
+    )
+    assert done.status_code == 200, done.text
+    assert login_limiter.tracked_keys() == 0
+
+
+async def test_duplicate_membership_rows_still_protect_the_group(session, admin_principal) -> None:
+    """Zwei Zeilen desselben Benutzers galten sonst als zwei Mitglieder."""
+    from sqlalchemy import insert
+
+    from app.models.radius import RadUserGroup
+    from app.schemas.groups import MembershipChange
+    from app.services.groups import GroupService
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    # Bewusst am ORM vorbei: die Identity Map fasste zwei Zeilen mit gleichem
+    # (username, groupname) zusammen - genau der Zustand, den ``radusergroup``
+    # ohne Eindeutigkeit zulaesst, entstuende dabei nicht.
+    await session.execute(
+        insert(RadUserGroup),
+        [
+            {"username": "anna", "groupname": "nur-mitglieder", "priority": 1},
+            {"username": "anna", "groupname": "nur-mitglieder", "priority": 2},
+        ],
+    )
+    await session.commit()
+    assert len(await users.groups.members("nur-mitglieder", limit=10, offset=0)) == 2
+
+    with pytest.raises(ValidationError) as excinfo:
+        await GroupService(session).change_membership(
+            "nur-mitglieder",
+            MembershipChange(action="remove", usernames=["anna"]),
+            actor=admin_principal,
+        )
+    assert excinfo.value.code == "error.group_last_member"
+
+
+async def test_oversized_body_is_rejected_before_parsing(client) -> None:
+    """Starlette laege die Datei sonst vollstaendig ab, bevor der Endpunkt laeuft."""
+    from app.api.upload_limit import MAX_BODY_BYTES
+
+    response = await client.post(
+        "/api/v1/imports/user",
+        content=b"x",
+        headers={
+            "content-type": "text/csv",
+            "content-length": str(MAX_BODY_BYTES + 1),
+        },
+    )
+    assert response.status_code == 413
+    assert response.json()["code"] == "error.payload_too_large"

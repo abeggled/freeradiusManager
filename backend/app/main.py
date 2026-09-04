@@ -21,6 +21,7 @@ from sqlalchemy import text
 from app.api.csrf import add_security_headers, enforce_same_origin
 from app.api.deps import apply_session_refresh
 from app.api.errors import register_error_handlers
+from app.api.upload_limit import limit_body_size
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.db import dispose, get_engine, get_sessionmaker
@@ -107,6 +108,9 @@ def create_app() -> FastAPI:
     # Vor den Routern: schreibende Anfragen fremder Herkunft werden abgewiesen.
     # Ganz aussen: die Kopfzeilen gelten auch fuer abgewiesene Anfragen.
     app.middleware("http")(add_security_headers)
+    # Vor dem Multipart-Parser: sonst laege die Datei bereits vollstaendig im
+    # Speicher oder in einer temporaeren Datei, bevor der Endpunkt sie prueft.
+    app.middleware("http")(limit_body_size)
     app.middleware("http")(enforce_same_origin)
     # Nach der Herkunftspruefung registriert und damit weiter innen: sie sieht
     # die Antwort des Endpunkts und kann das Sitzungscookie auch dann setzen,

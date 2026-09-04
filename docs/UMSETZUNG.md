@@ -917,6 +917,29 @@ Die fünfundzwanzigste Runde:
   fest auf `user` verdrahtet, auch für Geräte – die Filterung des Audit-Logs
   ordnete den Vorgang damit falsch ein (FR-9).
 
+### Zweiundzwanzigste Runde
+
+* **Die Grössenbeschränkung greift vor dem Multipart-Parser.** Starlette hatte
+  die Datei bisher schon vollständig eingelesen – grosse Dateien landen dabei in
+  einer temporären Datei –, bevor der Endpunkt sie prüfen konnte. Eine
+  Middleware weist zu grosse Körper jetzt anhand von `Content-Length` ab und
+  zählt bei `chunked` mit. Im Produktivbetrieb gehört dieselbe Schranke
+  zusätzlich in den Reverse-Proxy.
+* **Der Schutz der letzten Mitgliedschaft zählt verschiedene Benutzer.**
+  `radusergroup` kennt keine Eindeutigkeit; zwei Zeilen desselben Benutzers
+  galten als zwei Mitglieder und die Gruppe verschwand beim Entfernen trotz der
+  Prüfung.
+* **Die Prüfung doppelter CSV-Spalten läuft in linearer Zeit.** Ein `count()` je
+  Spalte war quadratisch und konnte den Worker beschäftigen.
+* **Die Selbstbedienungs-Einrichtung wird dem Aufrufer zugeordnet.** Der Eintrag
+  ist der einzige Beleg für den Geheimniswechsel und stand bisher ohne Urheber
+  und ohne Adresse im Protokoll (FR-9).
+* **Die Limiter-Schlüssel folgen der Vergleichsform.** Eine Anmeldung als
+  `Admin` zählte auf einen anderen Schlüssel als die Freigabe für `admin`; nach
+  zehn erfolgreichen Anmeldungen kam ein 429.
+* Die Anmeldemaske bietet einen Weg zurück, wenn die Challenge abgelaufen ist –
+  sonst wiederholte jeder Versuch dieselbe abgelaufene Challenge.
+
 ## Prüfschritte
 
 ```bash

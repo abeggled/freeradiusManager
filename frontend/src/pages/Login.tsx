@@ -25,6 +25,22 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
 
   const error = login.error ?? loginTotp.error ?? enroll.error ?? confirm.error;
 
+  const restart = () => {
+    // Eine abgelaufene Challenge lässt sich nicht mehr einlösen; ohne diesen
+    // Weg zurück wiederholte jeder Versuch dieselbe abgelaufene Challenge und
+    // die Anmeldung bliebe bis zum Neuladen der Seite stecken.
+    setStage("credentials");
+    setChallenge("");
+    setCode("");
+    setSecret("");
+    setUri("");
+    setPassword("");
+    login.reset();
+    loginTotp.reset();
+    enroll.reset();
+    confirm.reset();
+  };
+
   const submitCredentials = (event: React.FormEvent) => {
     event.preventDefault();
     login.mutate(
@@ -135,6 +151,9 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
               disabled={loginTotp.isPending || confirm.isPending}
             >
               {t("login.submit")}
+            </button>
+            <button type="button" onClick={restart}>
+              {t("login.restart")}
             </button>
           </form>
         )}

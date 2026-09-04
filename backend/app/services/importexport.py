@@ -7,6 +7,7 @@ betroffenen Objekte zurueck (NFR-4).
 
 from __future__ import annotations
 
+import collections
 import csv
 import datetime as dt
 import io
@@ -352,7 +353,8 @@ class ImportExportService:
         # letzte; Namen, die sich nur in Gross-/Kleinschreibung oder Leerzeichen
         # unterscheiden, fallen spaeter ebenso zusammen. Eine unbeabsichtigt
         # angewandte Passwortspalte taucht dabei in keiner Meldung auf.
-        duplicates = sorted({name for name in headers if name and headers.count(name) > 1})
+        counts = collections.Counter(name for name in headers if name)
+        duplicates = sorted(name for name, count in counts.items() if count > 1)
         if duplicates:
             raise ValidationError(
                 code="error.import_duplicate_columns", details={"columns": duplicates}

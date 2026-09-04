@@ -42,6 +42,7 @@
   "error.totp_setup_required": "Administrators must set up TOTP.",
   "error.totp_already_enrolled": "A second factor is already set up for this account. Resetting it is done by an administrator.",
   "error.import_invalid": "The import file could not be processed.",
+  "error.payload_too_large": "The request is larger than {max_bytes} bytes.",
   "error.import_unknown_columns": "Unknown columns in the import file: {columns}.",
   "error.import_duplicate_columns": "The import file contains duplicate columns: {columns}.",
   "error.import_duplicate_row": "The name “{username}” appears more than once in the import file.",
