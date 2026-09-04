@@ -103,6 +103,7 @@ export const de = {
   "users.includeDevices": "Geräte einschliessen",
   "users.checkAttributes": "Prüfattribute (radcheck)",
   "users.replyAttributes": "Antwortattribute (radreply)",
+  "users.expertHint": "Direkte Bearbeitung der radcheck-/radreply-Zeilen dieses Benutzers. Die Auswahl ersetzt die jeweilige Sammlung vollständig.",
   "users.activeSessions": "Laufende Sessions",
   "users.lastAuth": "Letzte Anmeldung",
   "users.groupsHint": "Mehrfachauswahl mit Strg bzw. Cmd; die Auswahl ersetzt alle bisherigen Gruppen.",

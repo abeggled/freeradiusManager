@@ -105,6 +105,7 @@ export const en: Record<TranslationKey, string> = {
   "users.includeDevices": "Include devices",
   "users.checkAttributes": "Check attributes (radcheck)",
   "users.replyAttributes": "Reply attributes (radreply)",
+  "users.expertHint": "Direct editing of this user's radcheck/radreply rows. The selection replaces the respective collection entirely.",
   "users.activeSessions": "Active sessions",
   "users.lastAuth": "Last authentication",
   "users.groupsHint": "Multi-select with Ctrl or Cmd; the selection replaces all previous groups.",

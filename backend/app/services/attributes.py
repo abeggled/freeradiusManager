@@ -95,6 +95,29 @@ def validate_triple(
                     "value": value,
                 },
             )
+    elif info.value_type == "enum" and value:
+        # Die Wertelisten im Woerterbuch sind bewusst eine kuratierte Auswahl:
+        # ``Auth-Type`` nimmt zum Beispiel jeden konfigurierten Modulnamen an,
+        # ``Service-Type`` kennt weit mehr Werte als hier gefuehrt. Ein harter
+        # Fehler wiese darum gueltige Konfigurationen ab - stattdessen eine
+        # Warnung, wie bei unbekannten Attributen.
+        known_value = value in info.values or (
+            value.isdigit() and 0 <= int(value) <= MAX_RADIUS_INTEGER
+        )
+        if not known_value:
+            warnings.append(
+                AttributeWarning(
+                    code="warn.unknown_enum_value",
+                    message=translate(
+                        "warn.unknown_enum_value",
+                        language,
+                        attribute=attribute,
+                        value=value,
+                        allowed=", ".join(info.values),
+                    ),
+                    attribute=attribute,
+                )
+            )
     elif info.value_type == "ipaddr" and value:
         try:
             # Ausdruecklich IPv4: ``ipaddr`` ist im RADIUS-Woerterbuch der

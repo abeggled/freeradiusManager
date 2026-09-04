@@ -142,6 +142,9 @@ class AccountService:
             raise ValidationError(code="error.last_administrator")
         previous = account.role
         account.role = role
+        # Wie bei der Aenderung durch einen Administrator: bestehende Token
+        # dieses Kontos werden dauerhaft ungueltig.
+        account.session_epoch += 1
         # Auch eine vom Identity-Provider ausgeloeste Aenderung ist eine
         # schreibende Aktion und gehoert ins Protokoll (FR-9).
         await self.audit.log(
@@ -425,7 +428,7 @@ class AccountService:
             payload.role is not None
             and payload.role is not Role.ADMINISTRATOR
             and account.role is Role.ADMINISTRATOR
-        ) or payload.is_active is False
+        ) or (payload.is_active is False and account.role is Role.ADMINISTRATOR)
         if (
             demoting
             and await self.repo.count_active_administrators(exclude_id=account.id, lock=True) == 0
@@ -441,6 +444,11 @@ class AccountService:
         for field in ("role", "is_active", "language"):
             value = getattr(payload, field)
             if value is not None:
+                # Rolle und Status beenden laufende Sitzungen dauerhaft: ein
+                # blosser Vergleich mit dem aktuellen Wert liesse alte Token
+                # nach "weg und zurueck" wieder aufleben.
+                if field in ("role", "is_active") and value != getattr(account, field):
+                    account.session_epoch += 1
                 setattr(account, field, value)
         if payload.reset_totp:
             account.totp_enabled = False

@@ -32,6 +32,8 @@ class Principal:
     """Ob diese Sitzung mit zweitem Faktor begonnen wurde."""
     oidc: bool = False
     """Ob die Anmeldung ueber den Identity-Provider lief."""
+    epoch: int = 0
+    """Sitzungsgeneration des Kontos zum Zeitpunkt der Anmeldung."""
     auth_at: float = 0.0
     """Zeitpunkt der Anmeldung; bleibt ueber die gleitende Verlaengerung stabil.
 
@@ -66,6 +68,7 @@ def create_session_token(
     mfa: bool = False,
     oidc: bool = False,
     auth_at: float | None = None,
+    epoch: int = 0,
 ) -> tuple[str, int]:
     """Erzeugt das Session-JWT. Rueckgabe: (Token, Ablauf als Unix-Zeit)."""
     config = config or settings
@@ -87,6 +90,7 @@ def create_session_token(
         # Bleibt ueber alle Verlaengerungen erhalten: nur so laesst sich eine
         # Sitzung nach einer Passwortaenderung zuverlaessig verwerfen.
         "auth_at": auth_at if auth_at is not None else now.timestamp(),
+        "gen": epoch,
         "abs": absolute,
         "scope": "session",
         "iat": int(now.timestamp()),
@@ -162,6 +166,7 @@ def principal_from_token(token: str, *, config: Settings | None = None) -> Princ
         oidc=bool(payload.get("oidc", False)),
         # Aeltere Token fuehren hier eine ganze Sekunde.
         auth_at=float(payload.get("auth_at", 0)),
+        epoch=int(payload.get("gen", 0)),
     )
 
 

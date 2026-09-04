@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC
 from functools import lru_cache
 from typing import Annotated
@@ -133,6 +133,13 @@ async def current_principal(request: Request, response: Response, session: Sessi
         raise AuthenticationError(
             code="error.reauthentication_required", details={"reason": "role_changed"}
         )
+    # Der Vergleich der Rolle allein genuegt nicht: eine Rolle weg und zurueck
+    # zu setzen - oder ein Konto zu deaktivieren und wieder freizuschalten -
+    # liesse die alten Token sonst wieder aufleben.
+    if claims.epoch != account.session_epoch:
+        raise AuthenticationError(
+            code="error.reauthentication_required", details={"reason": "session_revoked"}
+        )
     # Bei OIDC verantwortet der Identity-Provider den zweiten Faktor; die
     # lokale TOTP-Pflicht gilt fuer lokale Anmeldungen.
     if (
@@ -164,6 +171,7 @@ async def current_principal(request: Request, response: Response, session: Sessi
                 )
 
     principal = Principal(
+        epoch=account.session_epoch,
         account_id=account.id,
         username=account.username,
         role=account.role,
@@ -190,9 +198,25 @@ async def current_principal(request: Request, response: Response, session: Sessi
             mfa=principal.mfa,
             oidc=principal.oidc,
             auth_at=principal.auth_at,
+            epoch=principal.epoch,
         )
-        set_session_cookie(response, refreshed)
+        # Nicht direkt auf die eingespeiste ``Response``: gibt der Endpunkt ein
+        # eigenes Response-Objekt zurueck - etwa den CSV-Download -, verwirft
+        # FastAPI deren Header und der Download zaehlte nicht als Aktivitaet.
+        # Das Cookie setzt darum ``apply_session_refresh`` am Ende der Kette.
+        request.state.session_refresh = refreshed
     return principal
+
+
+async def apply_session_refresh(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Setzt das aufgefrischte Sitzungscookie auf die tatsaechliche Antwort."""
+    response = await call_next(request)
+    token = getattr(request.state, "session_refresh", None)
+    if token:
+        set_session_cookie(response, token)
+    return response
 
 
 CurrentUser = Annotated[Principal, Depends(current_principal)]

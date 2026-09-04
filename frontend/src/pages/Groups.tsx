@@ -8,8 +8,8 @@ import {
   useGroups,
   useUpdateGroup,
 } from "@/api/hooks";
-import { MASKED } from "@/api/types";
 import type { AttributeInput, GroupDetail } from "@/api/types";
+import { AttributeEditor } from "@/components/AttributeEditor";
 import { ConfirmDialog, ErrorBox, Field, Modal, Spinner, WarningList } from "@/components/ui";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n";
@@ -273,74 +273,5 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
         ) : null}
       </form>
     </Modal>
-  );
-}
-
-function AttributeEditor({
-  title,
-  rows,
-  operators,
-  names,
-  onChange,
-}: {
-  title: string;
-  rows: AttributeInput[];
-  operators: string[];
-  names: string[];
-  onChange: (rows: AttributeInput[]) => void;
-}) {
-  const { t } = useI18n();
-  const update = (index: number, patch: Partial<AttributeInput>) =>
-    onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-
-  return (
-    <fieldset>
-      <legend>{title}</legend>
-      <datalist id={`attrs-${title}`}>
-        {names.map((name) => (
-          <option key={name} value={name} />
-        ))}
-      </datalist>
-      {rows.map((row, index) => (
-        <div className="attribute-row" key={index}>
-          <input
-            list={`attrs-${title}`}
-            aria-label={t("groups.attribute")}
-            value={row.attribute}
-            onChange={(event) => update(index, { attribute: event.target.value })}
-          />
-          <select
-            aria-label={t("groups.operator")}
-            value={row.op}
-            onChange={(event) => update(index, { op: event.target.value })}
-          >
-            {operators.map((op) => (
-              <option key={op} value={op}>
-                {op}
-              </option>
-            ))}
-          </select>
-          <input
-            aria-label={t("groups.value")}
-            value={row.value}
-            placeholder={row.value === MASKED ? t("groups.maskedValue") : undefined}
-            onChange={(event) => update(index, { value: event.target.value })}
-          />
-          <button
-            type="button"
-            className="danger"
-            onClick={() => onChange(rows.filter((_, i) => i !== index))}
-          >
-            ×
-          </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={() => onChange([...rows, { attribute: "", op: operators[0] ?? ":=", value: "" }])}
-      >
-        {t("groups.addAttribute")}
-      </button>
-    </fieldset>
   );
 }

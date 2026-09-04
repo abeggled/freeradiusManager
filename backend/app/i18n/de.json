@@ -59,6 +59,7 @@
   "diag.mac_format_mismatch": "Der Benutzername entspricht nicht dem eingestellten MAC-Format ({expected}) – die Normalisierung des Servers könnte abweichen.",
   "warn.op_equals_in_check": "In radcheck sollte \":=\" statt \"=\" verwendet werden, sonst wird der Wert nur als Vorgabe behandelt.",
   "warn.unknown_attribute": "Das Attribut \"{attribute}\" ist im hinterlegten Wörterbuch nicht bekannt.",
+  "warn.unknown_enum_value": "Der Wert \"{value}\" für \"{attribute}\" steht nicht im hinterlegten Wörterbuch (bekannt: {allowed}). FreeRADIUS muss ihn auflösen können.",
   "warn.cleartext_stored": "Das Passwort wird im Klartext gespeichert – dies ist für EAP-TTLS/PAP erforderlich.",
   "warn.mab_not_authentication": "MAC Authentication Bypass ist keine echte Authentifizierung; MAC-Adressen sind fälschbar.",
   "warn.nas_reload": "Änderungen an NAS-Clients werden erst nach einem Neustart bzw. clients-Reload von radiusd wirksam."

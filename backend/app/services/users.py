@@ -565,7 +565,13 @@ class UserService:
         # Unter derselben Sperre wie die schreibenden Pfade: sonst koennte ein
         # gleichzeitiger Passwortwechsel die alten Zeilen noch sehen und nach dem
         # Loeschen neue schreiben - der Benutzer waere ohne Metadaten zurueck.
-        async with named_lock(self.session, f"user:{username}"):
+        # Auch die Gruppen des Benutzers: verschwindet eine attributlose Gruppe
+        # dadurch, wird das protokolliert (siehe ``_delete_locked``).
+        names = [
+            f"user:{username}",
+            *(f"group:{m.groupname}" for m in await self.groups.memberships(username)),
+        ]
+        async with named_lock(self.session, *names):
             await self._delete_locked(username, actor=actor, actor_ip=actor_ip)
 
     async def _delete_locked(
@@ -580,8 +586,23 @@ class UserService:
         # liesse er sich nicht mehr rekonstruieren (FR-9). Passwortwerte sind in
         # der Detailansicht bereits maskiert und werden zusaetzlich redigiert.
         before = (await self.get(username)).model_dump(mode="json")
+        # Eine Gruppe, die nur ueber diese eine Mitgliedschaft bestand,
+        # verschwindet mit dem Benutzer. Das Loeschen des Benutzers deswegen zu
+        # verweigern waere eine Sackgasse - stattdessen wird der Wegfall wie ein
+        # ``group.delete`` protokolliert (FR-9).
+        vanishing = await self._groups_vanishing_with(username)
         await self.attrs.delete_user(username)
         await self.subjects.delete(username)
+        for groupname in vanishing:
+            await self.audit.log(
+                action="group.delete",
+                object_type="group",
+                object_id=groupname,
+                actor=actor,
+                actor_ip=actor_ip,
+                before={"groupname": groupname, "members": [username]},
+                message="letzte Mitgliedschaft mit dem Benutzer entfallen",
+            )
         await self.audit.log(
             action="user.delete",
             object_type=object_type,
@@ -591,6 +612,18 @@ class UserService:
             before=before,
         )
         await self.session.commit()
+
+    async def _groups_vanishing_with(self, username: str) -> list[str]:
+        """Attributlose Gruppen, deren letzte Mitgliedschaft dieser Benutzer ist."""
+        vanishing: list[str] = []
+        for membership in await self.groups.memberships(username):
+            name = membership.groupname
+            if await self.groups.check_attributes(name) or await self.groups.reply_attributes(name):
+                continue
+            members = await self.groups.members(name, limit=2, offset=0)
+            if len(members) == 1 and fold(members[0]) == fold(username):
+                vanishing.append(name)
+        return vanishing
 
     # ------------------------------------------------------------------
     # Hilfsfunktionen

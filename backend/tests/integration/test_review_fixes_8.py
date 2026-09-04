@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
+import pytest_asyncio
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import select
 
@@ -25,6 +26,23 @@ from app.services.settings_service import (
 from app.services.users import UserService
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest_asyncio.fixture
+async def client(engine):
+    """HTTP-Client gegen die vollstaendige Anwendung (inkl. Middleware)."""
+    from httpx import ASGITransport, AsyncClient
+
+    from app.api.deps import login_ip_limiter, login_limiter
+    from app.core.config import settings as app_settings
+    from app.main import create_app
+
+    app_settings.cookie_secure = False
+    login_limiter.clear()
+    login_ip_limiter.clear()
+    transport = ASGITransport(app=create_app())
+    async with AsyncClient(transport=transport, base_url="http://testserver") as http:
+        yield http
 
 
 async def test_device_membership_list_is_bounded() -> None:
@@ -724,3 +742,111 @@ async def test_exact_nas_address_does_not_match_neighbours(session, admin_princi
     # Ueber den Kurznamen bleibt die Teiltextsuche erhalten.
     addresses, _ = await SessionService(session).resolve_nas_filter("ap-1")
     assert sorted(addresses) == ["10.0.0.1", "10.0.0.10"]
+
+
+# --- Fuenfzehnte Runde ----------------------------------------------------
+
+
+async def test_reactivating_an_account_does_not_revive_old_tokens(session, client) -> None:
+    """Ohne Generationszaehler galten dieselben Token nach der Reaktivierung wieder."""
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, Role
+    from app.schemas.accounts import AccountUpdate
+    from app.services.accounts import AccountService
+
+    account = MgrAccount(
+        username="operator",
+        role=Role.OPERATOR,
+        password_hash=hash_password("ein-sicheres-passwort"),
+    )
+    session.add(account)
+    await session.commit()
+
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+    assert login.status_code == 200
+    assert (await client.get("/api/v1/auth/me")).status_code == 200
+
+    principal = Principal(
+        account_id=account.id,
+        username="admin",
+        role=Role.ADMINISTRATOR,
+        language="de",
+        session_id="test",
+        absolute_expiry=0,
+    )
+    service = AccountService(session)
+    await service.update(account.id, AccountUpdate(is_active=False), actor=principal)
+    await service.update(account.id, AccountUpdate(is_active=True), actor=principal)
+
+    blocked = await client.get("/api/v1/auth/me")
+    assert blocked.status_code == 401
+    assert blocked.json()["code"] == "error.reauthentication_required"
+
+
+async def test_unknown_enum_value_warns_instead_of_failing() -> None:
+    """Die Wertelisten sind eine Auswahl; ein harter Fehler wiese Gueltiges ab."""
+    from app.services.attributes import validate_triple
+
+    warnings = validate_triple("Tunnel-Type", ":=", "garbage", table="radgroupreply")
+    assert [w.code for w in warnings] == ["warn.unknown_enum_value"]
+
+    assert validate_triple("Tunnel-Type", ":=", "VLAN", table="radgroupreply") == []
+    assert validate_triple("Tunnel-Type", ":=", "13", table="radgroupreply") == []
+
+
+async def test_deleting_a_user_records_vanishing_groups(session, admin_principal) -> None:
+    """Eine nur ueber diese Mitgliedschaft bestehende Gruppe verschwindet mit."""
+    from sqlalchemy import select as sa_select
+
+    from app.models.mgr import MgrAudit
+
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.groups.add_membership("anna", "nur-mitglieder", 1)
+    await session.commit()
+
+    await users.delete("anna", actor=admin_principal)
+
+    entry = await session.scalar(
+        sa_select(MgrAudit)
+        .where(MgrAudit.action == "group.delete", MgrAudit.object_id == "nur-mitglieder")
+        .limit(1)
+    )
+    assert entry is not None
+
+
+async def test_bulk_expiry_runs_under_the_user_lock() -> None:
+    """Ein gleichzeitiges Loeschen liesse sonst einen Benutzer ohne Anmeldedaten entstehen."""
+    import inspect
+
+    from app.services.importexport import ImportExportService
+
+    source = inspect.getsource(ImportExportService._bulk_one)
+    assert "_set_expiry_locked" in source
+    assert 'named_lock(self.session, f"user:{username}")' in source
+
+
+async def test_download_refreshes_the_session_cookie(session, client) -> None:
+    """Der Endpunkt gibt ein eigenes Response-Objekt zurueck; FastAPI verwirft dessen Header."""
+    from app.core.crypto import hash_password
+    from app.models.mgr import MgrAccount, Role
+
+    session.add(
+        MgrAccount(
+            username="operator",
+            role=Role.OPERATOR,
+            password_hash=hash_password("ein-sicheres-passwort"),
+        )
+    )
+    await session.commit()
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+
+    response = await client.get("/api/v1/users/export")
+    assert response.status_code == 200
+    assert "frm_session" in response.headers.get("set-cookie", "")

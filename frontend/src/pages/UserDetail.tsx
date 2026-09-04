@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   useDeleteUser,
+  useDictionary,
   useGroups,
   useSetUserPassword,
   useToggleUser,
@@ -18,8 +19,9 @@ import {
   StatusBadge,
   WarningList,
 } from "@/components/ui";
+import { AttributeEditor } from "@/components/AttributeEditor";
 import { MembershipEditor } from "@/components/MembershipEditor";
-import type { Membership } from "@/api/types";
+import type { AttributeInput, Membership } from "@/api/types";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useI18n } from "@/i18n";
 import { formatDateTime, toIso, toLocalInput } from "@/lib/format";
@@ -36,6 +38,7 @@ export function UserDetailPage() {
   const remove = useDeleteUser();
   const setPassword = useSetUserPassword(username);
   const groups = useGroups();
+  const dictionary = useDictionary();
 
   const [showPassword, setShowPassword] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -47,10 +50,21 @@ export function UserDetailPage() {
   const [note, setNote] = useState<string | null>(null);
   const [owner, setOwner] = useState<string | null>(null);
   const [memberships, setMemberships] = useState<Membership[] | null>(null);
+  const [expert, setExpert] = useState(false);
+  const [checks, setChecks] = useState<AttributeInput[] | null>(null);
+  const [replies, setReplies] = useState<AttributeInput[] | null>(null);
 
   if (isLoading) return <Spinner />;
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
+
+  // Werte aus dem Server, solange nichts bearbeitet wurde.
+  const currentChecks =
+    checks ??
+    data.check_attributes.map((a) => ({ attribute: a.attribute, op: a.op, value: a.value }));
+  const currentReplies =
+    replies ??
+    data.reply_attributes.map((a) => ({ attribute: a.attribute, op: a.op, value: a.value }));
 
   const save = () => {
     update.mutate({
@@ -61,6 +75,11 @@ export function UserDetailPage() {
       // Alle Mitgliedschaften werden gemeinsam gesendet: das Backend ersetzt die
       // Sammlung vollständig, eine einzelne Auswahl würde die übrigen löschen.
       groups: memberships ?? undefined,
+      // Nur im Expertenmodus mitsenden: das Backend ersetzt die Sammlungen
+      // vollständig, ein `undefined` lässt sie unverändert. Maskierte Werte
+      // behält es unverändert bei.
+      check_attributes: expert ? currentChecks : undefined,
+      reply_attributes: expert ? currentReplies : undefined,
       meta: {
         note: note ?? undefined,
         owner: owner ?? undefined,
@@ -181,10 +200,50 @@ export function UserDetailPage() {
         </div>
 
         <div className="card">
-          <h2>{t("users.checkAttributes")}</h2>
-          <AttributeTable rows={data.check_attributes} />
-          <h2>{t("users.replyAttributes")}</h2>
-          <AttributeTable rows={data.reply_attributes} />
+          {canWrite ? (
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={expert}
+                onChange={(event) => setExpert(event.target.checked)}
+              />
+              {t("groups.expert")}
+            </label>
+          ) : null}
+          {expert ? (
+            <>
+              <p className="hint">{t("users.expertHint")}</p>
+              <AttributeEditor
+                title={t("users.checkAttributes")}
+                rows={currentChecks}
+                operators={dictionary.data?.check_operators ?? []}
+                names={dictionary.data?.attributes.map((a) => a.name) ?? []}
+                onChange={setChecks}
+              />
+              <AttributeEditor
+                title={t("users.replyAttributes")}
+                rows={currentReplies}
+                operators={dictionary.data?.reply_operators ?? []}
+                names={dictionary.data?.attributes.map((a) => a.name) ?? []}
+                onChange={setReplies}
+              />
+              <button
+                type="button"
+                className="primary"
+                onClick={save}
+                disabled={update.isPending}
+              >
+                {t("common.save")}
+              </button>
+            </>
+          ) : (
+            <>
+              <h2>{t("users.checkAttributes")}</h2>
+              <AttributeTable rows={data.check_attributes} />
+              <h2>{t("users.replyAttributes")}</h2>
+              <AttributeTable rows={data.reply_attributes} />
+            </>
+          )}
         </div>
       </div>
 

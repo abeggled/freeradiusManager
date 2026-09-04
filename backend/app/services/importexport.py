@@ -760,6 +760,32 @@ class ImportExportService:
         await self.session.commit()
         return len(usernames), len(succeeded), errors
 
+    async def _set_expiry_locked(
+        self,
+        username: str,
+        expires: dt.datetime,
+        actor: Principal,
+        actor_ip: str | None,
+    ) -> None:
+        # Wie bei den uebrigen Sammelaktionen: ein Tippfehler darf keinen
+        # Datensatz ohne Anmeldedaten erzeugen.
+        if not await self.users.attrs.exists_anywhere(
+            username
+        ) and not await self.users.subjects.get(username):
+            raise NotFoundError(code="error.not_found", details={"username": username})
+        subject = await self.users.subjects.ensure(username)
+        subject.expires_at = expires
+        await self.users.attrs.set_check(username, "Expiration", ":=", to_expiration(expires))
+        await self.audit.log(
+            action="user.set_expiry",
+            object_type="user",
+            object_id=username,
+            actor=actor,
+            actor_ip=actor_ip,
+            after={"expires_at": expires},
+        )
+        await self.session.commit()
+
     async def _log_membership(
         self,
         action: str,
@@ -828,21 +854,8 @@ class ImportExportService:
             expires = payload.expires_at
             if expires is None:
                 raise ValidationError(code="error.validation", details={"field": "expires_at"})
-            # Wie bei den uebrigen Sammelaktionen: ein Tippfehler darf keinen
-            # Datensatz ohne Anmeldedaten erzeugen.
-            if not await self.users.attrs.exists_anywhere(
-                username
-            ) and not await self.users.subjects.get(username):
-                raise NotFoundError(code="error.not_found", details={"username": username})
-            subject = await self.users.subjects.ensure(username)
-            subject.expires_at = expires
-            await self.users.attrs.set_check(username, "Expiration", ":=", to_expiration(expires))
-            await self.audit.log(
-                action="user.set_expiry",
-                object_type="user",
-                object_id=username,
-                actor=actor,
-                actor_ip=actor_ip,
-                after={"expires_at": expires},
-            )
-            await self.session.commit()
+            # Unter der Lebenszyklus-Sperre: ein gleichzeitiges Loeschen
+            # zwischen Pruefung und Schreiben liesse hier sonst einen Benutzer
+            # aus Metadaten und Expiration-Zeile ohne Anmeldedaten entstehen.
+            async with named_lock(self.session, f"user:{username}"):
+                await self._set_expiry_locked(username, expires, actor, actor_ip)

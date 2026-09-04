@@ -49,7 +49,13 @@ def _issue_session(
     response: Response, account: MgrAccount, *, mfa: bool = False, oidc: bool = False
 ) -> None:
     token, _ = create_session_token(
-        account.id, account.username, account.role, account.language, mfa=mfa, oidc=oidc
+        account.id,
+        account.username,
+        account.role,
+        account.language,
+        mfa=mfa,
+        oidc=oidc,
+        epoch=account.session_epoch,
     )
     set_session_cookie(response, token)
 

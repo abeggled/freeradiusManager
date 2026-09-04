@@ -740,6 +740,34 @@ Die fünfundzwanzigste Runde:
   lieferte über die Teiltextsuche auch die Sitzungen von `10.0.0.10`. Die Suche
   über Kurz- und Anzeigenamen bleibt unverändert.
 
+### Fünfzehnte Runde
+
+* **Rollen- und Statusänderungen entziehen Sitzungen dauerhaft.**
+  `mgr_account.session_epoch` (Migration 0008) wird bei einer Rollen- oder
+  Statusänderung erhöht und im Token mitgeführt. Bisher lebten die Token eines
+  deaktivierten Kontos nach der Reaktivierung wieder auf – und eine
+  Administratorsitzung nach einer Rollenänderung hin und zurück.
+  Migration 0008 wurde gegen eine echte MariaDB in beide Richtungen geprüft.
+* **Der CSV-Download frischt das Sitzungscookie wieder auf.** Der Endpunkt gibt
+  ein eigenes Response-Objekt zurück; FastAPI verwarf damit den `Set-Cookie` der
+  Abhängigkeit. Das Cookie setzt jetzt eine Middleware am Ende der Kette.
+* **Enum-Werte werden gegen das Wörterbuch geprüft.** Bewusst als Warnung, nicht
+  als Fehler: die Wertelisten sind eine kuratierte Auswahl (`Auth-Type` nimmt
+  jeden konfigurierten Modulnamen an), ein harter Fehler wiese gültige
+  Konfigurationen ab.
+* **Das Löschen eines Benutzers protokolliert verschwindende Gruppen.** Bestand
+  eine Gruppe nur über diese eine Mitgliedschaft, verschwand sie bisher ohne
+  jeden Eintrag; das Löschen deswegen zu verweigern wäre eine Sackgasse, deshalb
+  wird der Wegfall als `group.delete` festgehalten (FR-9).
+* **Die Sammelaktion `set_expiry` läuft unter der Lebenszyklus-Sperre.** Ein
+  gleichzeitiges Löschen liess sonst einen Benutzer aus Metadaten und
+  `Expiration`-Zeile ohne Anmeldedaten entstehen.
+* **Die Benutzerdetailansicht hat einen Expertenmodus** für `radcheck`- und
+  `radreply`-Zeilen. Regeln wie `Simultaneous-Use` oder `Filter-Id` liessen sich
+  bisher nur ausserhalb der Anwendung setzen, obwohl die API sie unterstützt.
+* Der Schutz des letzten Administrators greift beim Deaktivieren nur noch für
+  Administratorkonten – vorher prüfte er auch beim Deaktivieren eines Operators.
+
 ## Prüfschritte
 
 ```bash

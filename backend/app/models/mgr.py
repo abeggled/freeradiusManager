@@ -93,6 +93,14 @@ class MgrAccount(TimestampMixin, Base):
 
     Aeltere Sitzungen werden dadurch auch dann ungueltig, wenn nach einem
     Zuruecksetzen sofort ein neuer Faktor eingerichtet wird."""
+    session_epoch: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default="0"
+    )
+    """Generation der gueltigen Sitzungen.
+
+    Wird bei einer Rollen- oder Statusaenderung erhoeht. Ohne sie lebten Token
+    eines deaktivierten Kontos nach der Reaktivierung wieder auf, ebenso eine
+    Administratorsitzung nach einer Rollenaenderung hin und zurueck."""
     totp_last_counter: Mapped[int | None] = mapped_column(BigInteger)
     """Zuletzt angenommenes TOTP-Zeitfenster.
 
