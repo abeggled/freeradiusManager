@@ -75,8 +75,8 @@ für unbekannte Geräte sind datenseitig vorbereitet
 
 ## Nachträge aus dem Code-Review
 
-Vierundzwanzig Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10,
-11, 12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11, 8, 10, 8, 7, 7, 9 und 7 Befunde;
+Fünfundzwanzig Runden eines automatisierten Reviews meldeten 19, 14, 13, 13, 10,
+11, 12, 11, 10, 10, 9, 9, 11, 12, 10, 8, 11, 8, 10, 8, 7, 7, 9, 7 und 9 Befunde;
 alle sind behoben und mit Regressionstests abgesichert (`test_security_fixes.py`
 sowie `test_review_fixes.py` bis `test_review_fixes_7.py` unter
 `backend/tests/integration/`). Die Zahl der als P1 eingestuften Befunde ging
@@ -570,6 +570,24 @@ Die vierundzwanzigste Runde (keine P1-Befunde):
 * `show_mab_warning` verlangt einen echten Wahrheitswert.
 * Das Einschränken einer Rolle verlangt eine Bestätigung, weil es die Sitzung
   des Kontos beendet.
+
+Die fünfundzwanzigste Runde:
+
+* **Gruppendefinitionen sind Administratoren vorbehalten.** Ein Operator konnte
+  bisher `radgroupcheck`/`radgroupreply` beliebig ändern – also die Policy aller
+  Mitglieder. Mitgliedschaften darf er weiterhin pflegen (Abschnitt 2).
+* **Der Compose-Stapel trennt die Datenbankkonten.** FreeRADIUS bekommt ein
+  eigenes Konto mit Rechten nur auf die RADIUS-Tabellen; die `mgr_`-Tabellen
+  sieht es nicht mehr (`docker/radius-grants.sql`, gegen den laufenden Stapel
+  geprüft).
+* Benannte Sperren laufen über einen eigenen Verbindungspool, damit sie die
+  Abfragen der Anfragen nicht aushungern.
+* Das Löschen einer Gruppe hält dieselbe Sperre wie Anlegen und Ändern.
+* CoA lässt sich nicht ohne Secret einschalten; ein entferntes Secret schaltet
+  CoA ab.
+* Mitgliedschaftslisten sind begrenzt.
+* Die Oberfläche bietet alle vier Statusfilter, eine Bedienoberfläche für die
+  OIDC-Verknüpfung und verwirft ein angezeigtes NAS-Secret beim Löschen.
 
 ## Prüfschritte
 

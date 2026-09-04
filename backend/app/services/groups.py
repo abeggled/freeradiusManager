@@ -211,6 +211,15 @@ class GroupService:
     async def delete(
         self, groupname: str, *, actor: Principal, actor_ip: str | None = None, force: bool = False
     ) -> int:
+        # Unter derselben Sperre wie Anlegen, Aendern und Mitgliedschaften: sonst
+        # koennte eine parallele Zuordnung die Gruppe nach dem Loeschen als
+        # reine Mitgliedschaftsgruppe wiederauferstehen lassen.
+        async with named_lock(self.session, f"group:{groupname}"):
+            return await self._delete_locked(groupname, actor=actor, actor_ip=actor_ip, force=force)
+
+    async def _delete_locked(
+        self, groupname: str, *, actor: Principal, actor_ip: str | None, force: bool
+    ) -> int:
         if not await self.repo.exists(groupname):
             # Sonst meldete ein veralteter Aufruf Erfolg und schriebe einen
             # Audit-Eintrag fuer ein Objekt, das es nie gab.

@@ -216,6 +216,8 @@ export function UsersPage() {
           <option value="">{t("users.status")}: {t("common.all")}</option>
           <option value="active">{t("status.active")}</option>
           <option value="disabled">{t("status.disabled")}</option>
+          <option value="expired">{t("status.expired")}</option>
+          <option value="no_credentials">{t("status.no_credentials")}</option>
         </select>
         <label className="checkbox">
           <input

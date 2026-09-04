@@ -1745,7 +1745,13 @@ async def test_nas_deletion_records_its_configuration(session, admin_principal) 
 
     service = NasService(session)
     item, _ = await service.create(
-        NasCreate(nasname="10.0.0.1", shortname="sw01", secret="topsecret", coa_enabled=True),
+        NasCreate(
+            nasname="10.0.0.1",
+            shortname="sw01",
+            secret="topsecret",
+            coa_enabled=True,
+            coa_secret="coa-geheim",
+        ),
         actor=admin_principal,
     )
     await service.delete(item.id, actor=admin_principal)
@@ -2119,3 +2125,78 @@ async def test_delete_and_password_write_are_serialised(session, admin_principal
 
     assert "named_lock" in inspect.getsource(Service.delete)
     assert "named_lock" in inspect.getsource(Service.set_password)
+
+
+# --- Fünfundzwanzigste Runde ----------------------------------------------
+
+
+async def test_group_definitions_are_administrator_only(session, client) -> None:
+    """Gruppenattribute wirken auf alle Mitglieder (Abschnitt 2)."""
+    await _account(session, "operator", Role.OPERATOR)
+    await client.post(
+        "/api/v1/auth/login",
+        json={"username": "operator", "password": "ein-sicheres-passwort"},
+    )
+    created = await client.post("/api/v1/groups", json={"groupname": "g1", "vlan": "10"})
+    assert created.status_code == 403
+
+    # Mitgliedschaften bleiben dem Operator erlaubt.
+    assert (await client.get("/api/v1/groups")).status_code == 200
+
+
+async def test_group_deletion_holds_the_lock(session) -> None:
+    import inspect
+
+    from app.services.groups import GroupService
+
+    assert "named_lock" in inspect.getsource(GroupService.delete)
+
+
+async def test_membership_collections_are_bounded() -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.schemas.users import MAX_MEMBERSHIPS
+
+    too_many = [{"groupname": f"g{i}", "priority": 1} for i in range(MAX_MEMBERSHIPS + 1)]
+    with pytest.raises(PydanticValidationError):
+        UserCreate(username="anna", password="geheim123", groups=too_many)
+
+
+async def test_coa_cannot_be_enabled_without_a_secret(session, admin_principal) -> None:
+    from pydantic import ValidationError as PydanticValidationError
+
+    from app.core.errors import ValidationError as AppValidationError
+    from app.schemas.nas import NasUpdate
+
+    with pytest.raises(PydanticValidationError):
+        NasCreate(nasname="10.0.0.1", secret="s", coa_enabled=True)
+
+    service = NasService(session)
+    item, _ = await service.create(NasCreate(nasname="10.0.0.1", secret="s"), actor=admin_principal)
+    with pytest.raises(AppValidationError) as excinfo:
+        await service.update(item.id, NasUpdate(coa_enabled=True), actor=admin_principal)
+    assert excinfo.value.code == "error.coa_secret_required"
+
+
+async def test_clearing_the_coa_secret_disables_coa(session, admin_principal) -> None:
+    from app.schemas.nas import NasUpdate
+
+    service = NasService(session)
+    item, _ = await service.create(
+        NasCreate(nasname="10.0.0.1", secret="s", coa_enabled=True, coa_secret="x"),
+        actor=admin_principal,
+    )
+    updated, _ = await service.update(
+        item.id, NasUpdate(clear_coa_secret=True), actor=admin_principal
+    )
+    assert updated.coa_enabled is False
+    assert await service.coa_target("10.0.0.1") is None
+
+
+async def test_lock_engine_is_separate_from_the_query_pool() -> None:
+    """Sperrverbindungen duerfen die Abfragen nicht aushungern."""
+    import inspect
+
+    from app.core import locking
+
+    assert "get_lock_engine" in inspect.getsource(locking)

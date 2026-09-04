@@ -14,6 +14,7 @@
   "error.radius_schema": "Das FreeRADIUS-Schema entspricht nicht den Erwartungen.",
   "error.coa_failed": "Die CoA-/Disconnect-Anfrage ist fehlgeschlagen.",
   "error.coa_not_configured": "Für dieses NAS ist kein CoA-Secret hinterlegt.",
+  "error.coa_secret_required": "CoA lässt sich nur mit hinterlegtem CoA-Secret aktivieren.",
   "error.coa_timeout": "Das NAS hat nicht innerhalb der Zeitgrenze geantwortet.",
   "error.coa_nak": "Das NAS hat die Anfrage abgelehnt (NAK).",
   "error.invalid_credentials": "Benutzername oder Passwort ist falsch.",

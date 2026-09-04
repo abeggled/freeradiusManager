@@ -217,6 +217,8 @@ export interface Account {
   language: string;
   last_login_at: string | null;
   created_at: string | null;
+  /** Verknüpfte OIDC-Identität, sofern gesetzt. */
+  oidc_subject: string | null;
 }
 
 export interface AuditItem {

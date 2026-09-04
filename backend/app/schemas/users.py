@@ -12,6 +12,12 @@ from app.schemas.common import ApiWarning
 
 MASKED = "********"
 
+MAX_MEMBERSHIPS = 50
+"""Obergrenze der Mitgliedschaften je Anfrage.
+
+Der vollstaendige Vorgang wird ins Audit-Log geschrieben; ohne Grenze koennte
+eine gueltige Anfrage die TEXT-Spalte sprengen."""
+
 MAX_ATTRIBUTES = 50
 """Obergrenze je Attributsammlung.
 
@@ -132,7 +138,7 @@ class UserCreate(BaseModel):
     password: str | None = Field(default=None, max_length=253)
     credential_type: CredentialType | None = None
     expires_at: dt.datetime | None = None
-    groups: list[MembershipIn] = Field(default_factory=list)
+    groups: list[MembershipIn] = Field(default_factory=list, max_length=MAX_MEMBERSHIPS)
     vlan: str | None = Field(default=None, max_length=64)
     meta: SubjectMeta = Field(default_factory=SubjectMeta)
     reply_attributes: list[AttributeIn] = Field(default_factory=list, max_length=MAX_ATTRIBUTES)
@@ -156,7 +162,7 @@ class UserUpdate(BaseModel):
     credential_type: CredentialType | None = None
     expires_at: dt.datetime | None = None
     clear_expiry: bool = False
-    groups: list[MembershipIn] | None = None
+    groups: list[MembershipIn] | None = Field(default=None, max_length=MAX_MEMBERSHIPS)
     vlan: str | None = Field(default=None, max_length=64)
     clear_vlan: bool = False
     meta: SubjectMeta | None = None
@@ -186,7 +192,7 @@ class DeviceUpdate(BaseModel):
     mac: str | None = Field(default=None, max_length=32)
     expires_at: dt.datetime | None = None
     clear_expiry: bool = False
-    groups: list[MembershipIn] | None = None
+    groups: list[MembershipIn] | None = Field(default=None, max_length=MAX_MEMBERSHIPS)
     vlan: str | None = Field(default=None, max_length=64)
     clear_vlan: bool = False
     meta: SubjectMeta | None = None

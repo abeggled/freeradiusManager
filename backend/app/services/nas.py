@@ -12,7 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings as app_settings
 from app.core.crypto import SecretBox
-from app.core.errors import ConflictError, NotFoundError, PermissionDeniedError
+from app.core.errors import (
+    ConflictError,
+    NotFoundError,
+    PermissionDeniedError,
+    ValidationError,
+)
 from app.core.i18n import translate
 from app.core.security import Principal
 from app.models.mgr import MgrNasExtra
@@ -141,6 +146,14 @@ class NasService:
             secret_enc = ""
         elif payload.coa_secret:
             secret_enc = self._box().encrypt(payload.coa_secret)
+        # CoA laesst sich nur einschalten, wenn ein Secret vorliegt oder mitkommt.
+        if payload.coa_enabled and not payload.coa_secret:
+            current = await self.extra.get(row.nasname)
+            if current is None or not current.coa_secret_enc:
+                raise ValidationError(
+                    code="error.coa_secret_required", details={"nasname": row.nasname}
+                )
+
         await self.extra.upsert(
             row.nasname,
             coa_enabled=payload.coa_enabled,
@@ -156,6 +169,9 @@ class NasService:
             extra = await self.extra.get(row.nasname)
             if extra is not None:
                 extra.coa_secret_enc = None
+                # Ohne Secret ist CoA nicht benutzbar; der Schalter wird
+                # mitgezogen, statt einen wirkungslosen Zustand zu melden.
+                extra.coa_enabled = False
 
         await self.audit.log(
             action="nas.update",

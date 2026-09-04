@@ -14,6 +14,7 @@
   "error.radius_schema": "The FreeRADIUS schema does not match expectations.",
   "error.coa_failed": "The CoA/Disconnect request failed.",
   "error.coa_not_configured": "No CoA secret is configured for this NAS.",
+  "error.coa_secret_required": "CoA can only be enabled once a CoA secret is stored.",
   "error.coa_timeout": "The NAS did not answer within the timeout.",
   "error.coa_nak": "The NAS rejected the request (NAK).",
   "error.invalid_credentials": "Wrong username or password.",

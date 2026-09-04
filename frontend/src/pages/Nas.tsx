@@ -135,7 +135,9 @@ export function NasPage() {
         </>
       )}
 
-      {creating ? <NasDialog onClose={() => setCreating(false)} /> : null}
+      {creating ? (
+        <NasDialog onClose={() => setCreating(false)} onSaved={() => setRevealed(null)} />
+      ) : null}
       {editing ? (
         <NasDialog
           nas={editing}
@@ -149,7 +151,13 @@ export function NasPage() {
           title={t("common.delete")}
           message={`${confirmDelete.nasname}?`}
           onConfirm={() =>
-            remove.mutate(confirmDelete.id, { onSuccess: () => setConfirmDelete(null) })
+            remove.mutate(confirmDelete.id, {
+              onSuccess: () => {
+                setConfirmDelete(null);
+                // Ein gleichnamiger neuer Eintrag darf nicht das alte Secret zeigen.
+                setRevealed(null);
+              },
+            })
           }
           onCancel={() => setConfirmDelete(null)}
           busy={remove.isPending}
@@ -209,7 +217,12 @@ function NasDialog({
         },
       );
     } else {
-      create.mutate(body, { onSuccess: onClose });
+      create.mutate(body, {
+        onSuccess: () => {
+          onSaved?.();
+          onClose();
+        },
+      });
     }
   };
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 MASKED_SECRET = "********"
 
@@ -56,6 +56,13 @@ class NasCreate(BaseModel):
     def _bytes(cls, value: str | None) -> str | None:
         return _check_secret(value)
 
+    @model_validator(mode="after")
+    def _coa_needs_secret(self) -> NasCreate:
+        """CoA ohne Secret waere eingeschaltet, aber nicht benutzbar."""
+        if self.coa_enabled and not self.coa_secret:
+            raise ValueError("coa_enabled setzt ein coa_secret voraus")
+        return self
+
 
 class NasUpdate(BaseModel):
     nasname: str | None = Field(default=None, max_length=128)
@@ -76,6 +83,16 @@ class NasUpdate(BaseModel):
     @classmethod
     def _bytes(cls, value: str | None) -> str | None:
         return _check_secret(value)
+
+    @model_validator(mode="after")
+    def _coa_needs_secret(self) -> NasUpdate:
+        """Ein entferntes Secret schaltet CoA ab, statt es unbenutzbar zu lassen."""
+        if self.clear_coa_secret and self.coa_enabled:
+            raise ValueError("coa_enabled und clear_coa_secret schliessen sich aus")
+        if self.coa_enabled and not self.coa_secret:
+            # Das bestehende Secret kann genuegen; die Pruefung erfolgt im Dienst.
+            return self
+        return self
 
 
 class SecretReveal(BaseModel):

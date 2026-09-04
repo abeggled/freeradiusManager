@@ -24,6 +24,8 @@ services:
       # Legt das RADIUS-Schema beim ersten Start an. In einer bestehenden
       # Installation entfaellt dieser Mount.
       - ./docker/radius-schema.sql:/docker-entrypoint-initdb.d/10-radius-schema.sql:ro
+      # Eigenes, eng berechtigtes Konto fuer FreeRADIUS (NFR-1).
+      - ./docker/radius-grants.sql:/docker-entrypoint-initdb.d/20-radius-grants.sql:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
@@ -71,13 +73,13 @@ services:
         condition: service_healthy
     command: ["radiusd", "-f", "-l", "stdout"]
     environment:
-      # Dieselben Zugangsdaten wie fuer db und manager; die Modulkonfiguration
-      # liest sie ueber $$ENV{...}.
+      # Eigenes Konto mit Rechten nur auf die RADIUS-Tabellen; der Manager nutzt
+      # ein anderes (NFR-1). Die Modulkonfiguration liest sie ueber $$ENV{...}.
       FRM_DB_HOST: db
       FRM_DB_PORT: "3306"
       FRM_DB_NAME: ${DB_NAME:-radius}
-      FRM_DB_USER: ${DB_USER:-radmgr}
-      FRM_DB_PASSWORD: ${DB_PASSWORD:-radmgr}
+      FRM_DB_USER: ${RADIUS_DB_USER:-freeradius}
+      FRM_DB_PASSWORD: ${RADIUS_DB_PASSWORD:-freeradius}
     volumes:
       - ./docker/freeradius/mods-enabled-sql:/etc/raddb/mods-enabled/sql:ro
     ports:

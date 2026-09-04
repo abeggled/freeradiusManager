@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import ClientIp, Language, ReaderUser, SessionDep, WriterUser
+from app.api.deps import AdminUser, ClientIp, Language, ReaderUser, SessionDep, WriterUser
 from app.core import radius_dict
 from app.core.pagination import MAX_PAGE_SIZE, clamp_limit
 from app.schemas.groups import (
@@ -69,11 +69,14 @@ async def group_members(
     )
 
 
+# Gruppendefinitionen wirken auf alle Mitglieder und bleiben deshalb
+# Administratoren vorbehalten (Abschnitt 2); Mitgliedschaften darf ein Operator
+# weiterhin aendern.
 @router.post("", response_model=GroupDetail, status_code=status.HTTP_201_CREATED)
 async def create_group(
     payload: GroupCreate,
     session: SessionDep,
-    actor: WriterUser,
+    actor: AdminUser,
     actor_ip: ClientIp,
     language: Language,
 ) -> GroupDetail:
@@ -87,7 +90,7 @@ async def update_group(
     groupname: str,
     payload: GroupUpdate,
     session: SessionDep,
-    actor: WriterUser,
+    actor: AdminUser,
     actor_ip: ClientIp,
     language: Language,
 ) -> GroupDetail:
@@ -114,7 +117,7 @@ async def change_members(
 async def delete_group(
     groupname: str,
     session: SessionDep,
-    actor: WriterUser,
+    actor: AdminUser,
     actor_ip: ClientIp,
     force: bool = False,
 ) -> dict[str, int]:

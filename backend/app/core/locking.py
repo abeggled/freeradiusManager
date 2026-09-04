@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from app.core.db import get_engine
+from app.core.db import get_lock_engine
 from app.core.errors import ConflictError
 from app.core.logging import get_logger
 
@@ -50,8 +50,9 @@ async def named_lock(session: AsyncSession, name: str) -> AsyncIterator[None]:
     nicht festgeschriebene Aenderung - und beide wuerden schreiben.
     """
     key = _lock_key(name)
-    # Dieselbe Engine wie die Sitzung des Aufrufers, aber eine eigene Verbindung.
-    engine = session.bind if isinstance(session.bind, AsyncEngine) else get_engine()
+    # Eigener Pool, damit Sperrverbindungen nicht mit den Abfragen der Anfragen
+    # um dieselben Plaetze konkurrieren. In Tests zeigt er auf dieselbe Engine.
+    engine = session.bind if isinstance(session.bind, AsyncEngine) else get_lock_engine()
     async with engine.connect() as connection:
         acquired = bool(
             await connection.scalar(

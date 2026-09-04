@@ -4,6 +4,7 @@ import {
   useAccounts,
   useCreateAccount,
   useDeleteAccount,
+  useLinkOidc,
   useUpdateAccount,
 } from "@/api/hooks";
 import type { Account, Role } from "@/api/types";
@@ -22,6 +23,7 @@ export function AccountsPage() {
   const [confirmTotpReset, setConfirmTotpReset] = useState<Account | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState<Account | null>(null);
   const [confirmRole, setConfirmRole] = useState<{ account: Account; role: Role } | null>(null);
+  const [linking, setLinking] = useState<Account | null>(null);
 
   const { data, isLoading, error } = useAccounts({ limit: LIMIT, offset });
   const update = useUpdateAccount();
@@ -50,6 +52,7 @@ export function AccountsPage() {
                   <th>{t("accounts.role")}</th>
                   <th>{t("accounts.active")}</th>
                   <th>{t("accounts.totp")}</th>
+                  <th>{t("accounts.oidc")}</th>
                   <th>{t("accounts.lastLogin")}</th>
                   <th>{t("common.actions")}</th>
                 </tr>
@@ -97,6 +100,11 @@ export function AccountsPage() {
                       />
                     </td>
                     <td>{account.totp_enabled ? t("common.yes") : t("common.no")}</td>
+                    <td>
+                      <button type="button" className="link" onClick={() => setLinking(account)}>
+                        {account.oidc_subject ?? t("accounts.oidcLink")}
+                      </button>
+                    </td>
                     <td>{formatDateTime(account.last_login_at, language)}</td>
                     <td className="row-actions">
                       <button type="button" onClick={() => setConfirmTotpReset(account)}>
@@ -125,6 +133,8 @@ export function AccountsPage() {
       )}
 
       {creating ? <CreateAccountDialog onClose={() => setCreating(false)} /> : null}
+      {linking ? <OidcLinkDialog account={linking} onClose={() => setLinking(null)} /> : null}
+
       {confirmRole ? (
         <ConfirmDialog
           title={t("accounts.role")}
@@ -185,6 +195,55 @@ export function AccountsPage() {
         />
       ) : null}
     </section>
+  );
+}
+
+/** Verknüpft ein bestehendes Konto mit einer OIDC-Identität (FR-10). */
+function OidcLinkDialog({ account, onClose }: { account: Account; onClose: () => void }) {
+  const { t } = useI18n();
+  const link = useLinkOidc();
+  const [subject, setSubject] = useState(account.oidc_subject ?? "");
+
+  return (
+    <Modal
+      title={t("accounts.oidcLink")}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          {account.oidc_subject ? (
+            <button
+              type="button"
+              className="danger"
+              onClick={() =>
+                link.mutate({ id: account.id, subject: null }, { onSuccess: onClose })
+              }
+            >
+              {t("accounts.oidcUnlink")}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="primary"
+            disabled={!subject.trim() || link.isPending}
+            onClick={() =>
+              link.mutate({ id: account.id, subject: subject.trim() }, { onSuccess: onClose })
+            }
+          >
+            {t("common.save")}
+          </button>
+        </>
+      }
+    >
+      <ErrorBox error={link.error} />
+      <Field label={t("accounts.oidcSubject")} hint={t("accounts.oidcHint")}>
+        {(id) => (
+          <input id={id} value={subject} onChange={(event) => setSubject(event.target.value)} />
+        )}
+      </Field>
+    </Modal>
   );
 }
 

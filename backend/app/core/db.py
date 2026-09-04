@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import (
 from app.core.config import Settings, settings
 
 _engine: AsyncEngine | None = None
+_lock_engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
 
@@ -39,6 +40,26 @@ def get_engine() -> AsyncEngine:
     return _engine
 
 
+def get_lock_engine() -> AsyncEngine:
+    """Eigener, kleiner Pool fuer benannte Sperren.
+
+    Wuerden sie sich den Abfragepool teilen, koennten mehrere gleichzeitige
+    Anfragen alle Plaetze mit Sperrverbindungen belegen und keine mehr
+    weiterarbeiten (siehe app/core/locking.py).
+    """
+    global _lock_engine
+    if _lock_engine is None:
+        _lock_engine = create_async_engine(
+            settings.database_url,
+            pool_size=settings.db_pool_size,
+            max_overflow=settings.db_pool_max_overflow,
+            pool_pre_ping=True,
+            pool_recycle=1800,
+            hide_parameters=True,
+        )
+    return _lock_engine
+
+
 def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
     global _sessionmaker
     if _sessionmaker is None:
@@ -48,16 +69,20 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
 
 def configure(engine: AsyncEngine) -> None:
     """Wird von Tests genutzt, um gegen eine Testcontainer-DB zu fahren."""
-    global _engine, _sessionmaker
+    global _engine, _lock_engine, _sessionmaker
     _engine = engine
+    _lock_engine = engine
     _sessionmaker = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
 
 
 async def dispose() -> None:
-    global _engine, _sessionmaker
+    global _engine, _lock_engine, _sessionmaker
     if _engine is not None:
         await _engine.dispose()
+    if _lock_engine is not None and _lock_engine is not _engine:
+        await _lock_engine.dispose()
     _engine = None
+    _lock_engine = None
     _sessionmaker = None
 
 
