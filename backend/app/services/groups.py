@@ -336,7 +336,7 @@ class GroupService:
         # kennt keine Eindeutigkeit, zwei Zeilen desselben Benutzers gaelten
         # sonst als zwei Mitglieder - die Gruppe verschwaende beim Entfernen
         # trotz der Schutzpruefung.
-        members = {fold(name) for name in await self.repo.members(groupname, limit=20, offset=0)}
+        members = {fold(name) for name in await self.repo.distinct_members(groupname, limit=2)}
         if members == {fold(username)}:
             raise ValidationError(code="error.group_last_member", details={"groupname": groupname})
 

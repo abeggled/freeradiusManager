@@ -19,6 +19,7 @@ from app.core.errors import (
     ValidationError,
 )
 from app.core.i18n import translate
+from app.core.locking import named_lock
 from app.core.security import Principal
 from app.models.mgr import MgrNasExtra
 from app.repositories.mgr.nas_extra import NasExtraRepository
@@ -119,6 +120,24 @@ class NasService:
         actor_ip: str | None = None,
         language: str = "de",
     ) -> tuple[NasListItem, list[ApiWarning]]:
+        # Unter derselben Sperre wie das Loeschen: sonst koennte ein
+        # gleichzeitiges Loeschen zwischen Lesen und Schreiben liegen. Eine
+        # reine CoA-Aenderung legte dann eine verwaiste mgr_nas_extra-Zeile an
+        # und meldete Erfolg fuer ein nicht mehr vorhandenes NAS.
+        async with named_lock(self.session, f"nas:{nas_id}"):
+            return await self._update_locked(
+                nas_id, payload, actor=actor, actor_ip=actor_ip, language=language
+            )
+
+    async def _update_locked(
+        self,
+        nas_id: int,
+        payload: NasUpdate,
+        *,
+        actor: Principal,
+        actor_ip: str | None,
+        language: str,
+    ) -> tuple[NasListItem, list[ApiWarning]]:
         row = await self.repo.get(nas_id)
         if row is None:
             raise NotFoundError(code="error.not_found", details={"id": nas_id})
@@ -188,6 +207,12 @@ class NasService:
         ]
 
     async def delete(self, nas_id: int, *, actor: Principal, actor_ip: str | None = None) -> None:
+        async with named_lock(self.session, f"nas:{nas_id}"):
+            await self._delete_locked(nas_id, actor=actor, actor_ip=actor_ip)
+
+    async def _delete_locked(
+        self, nas_id: int, *, actor: Principal, actor_ip: str | None
+    ) -> None:
         row = await self.repo.get(nas_id)
         if row is None:
             raise NotFoundError(code="error.not_found", details={"id": nas_id})

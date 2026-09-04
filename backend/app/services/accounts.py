@@ -8,7 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings as app_settings
 from app.core.constants import MAX_ACCOUNT_USERNAME_LENGTH, MIN_PASSWORD_LENGTH
-from app.core.crypto import SecretBox, hash_password, needs_rehash, verify_password
+from app.core.crypto import (
+    SecretBox,
+    hash_password,
+    hash_password_async,
+    needs_rehash,
+    verify_password_async,
+)
 from app.core.dates import utcnow
 from app.core.errors import (
     AuthenticationError,
@@ -90,8 +96,8 @@ class AccountService:
             account.failed_logins = 0
         if account is None:
             # Gleicher Aufwand wie bei einem vorhandenen Konto.
-            verify_password(password, _DUMMY_HASH)
-        if account is None or not verify_password(password, account.password_hash):
+            await verify_password_async(password, _DUMMY_HASH)
+        if account is None or not await verify_password_async(password, account.password_hash):
             if account is not None:
                 account.failed_logins += 1
                 self._apply_lockout(account)
@@ -117,7 +123,7 @@ class AccountService:
             )
 
         if needs_rehash(account.password_hash or ""):
-            account.password_hash = hash_password(password)
+            account.password_hash = await hash_password_async(password)
         if reset_failures:
             account.failed_logins = 0
             account.locked_until = None
@@ -424,7 +430,7 @@ class AccountService:
             display_name=payload.display_name,
             role=payload.role,
             language=payload.language,
-            password_hash=hash_password(payload.password),
+            password_hash=await hash_password_async(payload.password),
             password_changed_at=utcnow(),
         )
         await self.repo.add(account)
@@ -602,7 +608,7 @@ class AccountService:
                 code="error.account_locked",
                 details={"until": account.locked_until.isoformat()},
             )
-        if account.id == actor.account_id and not verify_password(
+        if account.id == actor.account_id and not await verify_password_async(
             payload.current_password, account.password_hash
         ):
             # Auch mit gueltiger Sitzung darf das aktuelle Passwort nicht
@@ -620,7 +626,7 @@ class AccountService:
             )
             await self.session.commit()
             raise AuthenticationError(code="error.invalid_credentials")
-        account.password_hash = hash_password(payload.new_password)
+        account.password_hash = await hash_password_async(payload.new_password)
         account.password_changed_at = utcnow()
         # Wie nach einer vollstaendigen Anmeldung: das aktuelle Passwort wurde
         # gerade bewiesen. Sonst traegt das Konto die frueheren Fehlversuche in
@@ -666,7 +672,7 @@ class AccountService:
         account = MgrAccount(
             username=username,
             role=Role.ADMINISTRATOR,
-            password_hash=hash_password(password),
+            password_hash=await hash_password_async(password),
             password_changed_at=utcnow(),
         )
         await self.repo.add(account)

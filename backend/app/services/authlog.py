@@ -22,6 +22,7 @@ from app.repositories.radius.users import UserAttributeRepository
 from app.schemas.sessions import AuthLogItem, Diagnosis, DiagnosisHint, SessionItem
 from app.services.sessions import extract_ssid
 from app.services.settings_service import SettingsService
+from app.services.users import is_reject
 
 
 class AuthLogService:
@@ -67,7 +68,7 @@ class AuthLogService:
         # Wie in der Statusberechnung: bewertet wird, ob *irgendeine* Zeile
         # zutrifft. Bestandsdaten koennen dasselbe Attribut mehrfach fuehren.
         rejected = any(
-            row.attribute.lower() == "auth-type" and row.value == "Reject" for row in checks
+            row.attribute.lower() == "auth-type" and is_reject(row.value) for row in checks
         )
         expired_row = next(
             (

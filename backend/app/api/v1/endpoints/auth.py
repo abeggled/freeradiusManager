@@ -18,7 +18,7 @@ from app.api.deps import (
     set_session_cookie,
 )
 from app.core.config import settings
-from app.core.crypto import hash_password
+from app.core.crypto import hash_password_async
 from app.core.errors import AuthenticationError, ValidationError
 from app.core.identifiers import fold
 from app.core.security import TOTP_ENROLL_SCOPE, create_session_token
@@ -284,7 +284,7 @@ async def oidc_callback(
             display_name=_bounded(claims.get("name"), 128),
             role=Role(mapped),
             oidc_subject=subject,
-            password_hash=hash_password(secrets.token_urlsafe(32)),
+            password_hash=await hash_password_async(secrets.token_urlsafe(32)),
         )
         await service.repo.add(account)
         # Auch die automatische Anlage ist eine schreibende Aktion (FR-9).

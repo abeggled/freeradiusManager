@@ -20,8 +20,16 @@ from fastapi.responses import JSONResponse
 
 from app.core.i18n import normalise_language, translate
 
-MAX_BODY_BYTES = 5 * 1024 * 1024
-"""Wie die Importgrenze; groessere Koerper hat der Manager nirgends noetig."""
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+"""Groesste zulaessige Importdatei."""
+
+MULTIPART_OVERHEAD_BYTES = 64 * 1024
+"""Zuschlag fuer Grenzmarken, Kopfzeilen und die uebrigen Formularfelder.
+
+Ohne ihn wiese die Schranke eine Datei ab, die genau der erlaubten Groesse
+entspricht: ``Content-Length`` zaehlt den ganzen Multipart-Koerper."""
+
+MAX_BODY_BYTES = MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD_BYTES
 
 
 def _too_large(request: Request) -> JSONResponse:

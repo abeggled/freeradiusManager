@@ -94,6 +94,23 @@ class GroupRepository:
         )
         return list((await self.session.scalars(stmt)).all())
 
+    async def distinct_members(self, groupname: str, limit: int) -> list[str]:
+        """Verschiedene Mitglieder - unabhaengig von doppelten Zeilen.
+
+        ``radusergroup`` kennt keine Eindeutigkeit. Ein Blick auf die ersten
+        Zeilen zeigte bei vielen Dubletten desselben Benutzers nicht, ob es noch
+        ein weiteres Mitglied gibt; die Unterscheidung gehoert deshalb in die
+        Abfrage.
+        """
+        stmt = (
+            select(RadUserGroup.username)
+            .where(RadUserGroup.groupname == groupname)
+            .distinct()
+            .order_by(RadUserGroup.username)
+            .limit(limit)
+        )
+        return list((await self.session.scalars(stmt)).all())
+
     async def add_check(self, groupname: str, attribute: str, op: str, value: str) -> RadGroupCheck:
         row = RadGroupCheck(groupname=groupname, attribute=attribute, op=op, value=value)
         self.session.add(row)

@@ -1655,3 +1655,87 @@ async def test_oversized_body_is_rejected_before_parsing(client) -> None:
     )
     assert response.status_code == 413
     assert response.json()["code"] == "error.payload_too_large"
+
+
+# --- Dreiundzwanzigste Runde ----------------------------------------------
+
+
+async def test_argon2_runs_off_the_event_loop() -> None:
+    """Direkt in der Ereignisschleife blockierte jede Anmeldung den ganzen Prozess."""
+    import inspect
+
+    from app.core import crypto
+    from app.services import accounts as accounts_module
+
+    assert "asyncio.to_thread" in inspect.getsource(crypto.verify_password_async)
+    source = inspect.getsource(accounts_module.AccountService.authenticate)
+    assert "await verify_password_async(" in source
+    assert "verify_password(" not in source.replace("verify_password_async(", "")
+
+
+async def test_upload_limit_leaves_room_for_multipart_overhead() -> None:
+    """Eine Datei genau in Maximalgroesse ergibt einen groesseren Anfragekoerper."""
+    from app.api.upload_limit import MAX_BODY_BYTES, MAX_UPLOAD_BYTES
+    from app.api.v1.endpoints.imports import MAX_BYTES
+
+    assert MAX_BYTES == MAX_UPLOAD_BYTES
+    assert MAX_BODY_BYTES > MAX_UPLOAD_BYTES
+
+
+async def test_distinct_members_look_past_duplicate_rows(session, admin_principal) -> None:
+    """Viele Dubletten verdeckten sonst ein weiteres Mitglied."""
+    from sqlalchemy import insert
+
+    from app.models.radius import RadUserGroup
+    from app.schemas.groups import MembershipChange
+    from app.services.groups import GroupService
+
+    users = UserService(session)
+    for name in ("anna", "zora"):
+        await users.create(UserCreate(username=name, password="geheim123"), actor=admin_principal)
+    await session.execute(
+        insert(RadUserGroup),
+        [
+            {"username": "anna", "groupname": "nur-mitglieder", "priority": index}
+            for index in range(25)
+        ]
+        + [{"username": "zora", "groupname": "nur-mitglieder", "priority": 1}],
+    )
+    await session.commit()
+
+    # "zora" steht hinter 25 Dubletten von "anna"; das Entfernen ist zulaessig.
+    changed = await GroupService(session).change_membership(
+        "nur-mitglieder",
+        MembershipChange(action="remove", usernames=["anna"]),
+        actor=admin_principal,
+    )
+    assert changed == 25
+
+
+async def test_lowercase_reject_is_recognised(session, admin_principal) -> None:
+    """Der SQL-Statusfilter erkennt die Zeile; Python meldete den Benutzer als aktiv."""
+    users = UserService(session)
+    await users.create(UserCreate(username="anna", password="geheim123"), actor=admin_principal)
+    await users.attrs.add_check("anna", "Auth-Type", ":=", "reject")
+    await session.commit()
+
+    detail = await users.get("anna")
+    assert detail.status == "disabled"
+
+    await users.set_disabled("anna", False, actor=admin_principal)
+    rows = (
+        await session.scalars(
+            select(RadCheck).where(RadCheck.username == "anna", RadCheck.attribute == "Auth-Type")
+        )
+    ).all()
+    assert rows == []
+
+
+async def test_nas_update_and_delete_share_a_lock() -> None:
+    """Ein Loeschen dazwischen liesse eine verwaiste mgr_nas_extra-Zeile zurueck."""
+    import inspect
+
+    from app.services.nas import NasService
+
+    assert 'named_lock(self.session, f"nas:{nas_id}")' in inspect.getsource(NasService.update)
+    assert 'named_lock(self.session, f"nas:{nas_id}")' in inspect.getsource(NasService.delete)

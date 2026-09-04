@@ -7,15 +7,16 @@ from typing import Literal
 from fastapi import APIRouter, File, Form, Response, UploadFile
 
 from app.api.deps import ClientIp, Language, ReaderUser, SessionDep, WriterUser
-from app.api.upload_limit import MAX_BODY_BYTES
+from app.api.upload_limit import MAX_UPLOAD_BYTES
 from app.core.errors import ValidationError
 from app.services.importexport import ImportExportService
 
 router = APIRouter(prefix="/imports", tags=["import-export"])
 
-MAX_BYTES = MAX_BODY_BYTES
-"""Zweite Schranke; die erste greift schon vor dem Multipart-Parser
-(``app/api/upload_limit.py``)."""
+MAX_BYTES = MAX_UPLOAD_BYTES
+"""Genaue Grenze fuer die Datei selbst; die Schranke fuer den ganzen
+Anfragekoerper greift schon vor dem Multipart-Parser
+(``app/api/upload_limit.py``) und laesst Platz fuer dessen Overhead."""
 
 
 @router.get("/template/{kind}")

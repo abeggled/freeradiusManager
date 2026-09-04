@@ -164,8 +164,12 @@ function GroupDialog({ groupname, onClose }: { groupname?: string; onClose: () =
     event.preventDefault();
     const body = {
       groupname: name,
-      vlan: currentVlan || null,
-      clear_vlan: currentVlan === "",
+      // Nur wenn das VLAN-Feld tatsächlich bearbeitet wurde: sonst schriebe
+      // jedes andere Speichern den abgeleiteten Wert zurück oder löschte ihn.
+      // Bestehende Policies mit nur einem Teil der drei Attribute oder mit
+      // abweichenden Operatoren gingen dabei verloren; ein ausgelassenes Feld
+      // lässt das Backend unverändert.
+      ...(vlan === null ? {} : { vlan: vlan || null, clear_vlan: vlan === "" }),
       check_attributes: expert ? currentChecks : undefined,
       reply_attributes: expert ? currentReplies : undefined,
     };

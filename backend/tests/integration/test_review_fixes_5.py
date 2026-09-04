@@ -87,18 +87,20 @@ async def test_unknown_username_performs_the_same_work(session) -> None:
     from app.services import accounts as accounts_module
 
     calls: list[str | None] = []
-    original = accounts_module.verify_password
+    # Argon2 laeuft in einem Worker-Thread (``verify_password_async``); geprueft
+    # wird weiterhin, dass ueberhaupt gegen einen Hash verglichen wird.
+    original = accounts_module.verify_password_async
 
-    def counting(password: str, password_hash: str | None) -> bool:
+    async def counting(password: str, password_hash: str | None) -> bool:
         calls.append(password_hash)
-        return original(password, password_hash)
+        return await original(password, password_hash)
 
-    accounts_module.verify_password = counting  # type: ignore[assignment]
+    accounts_module.verify_password_async = counting  # type: ignore[assignment]
     try:
         with pytest.raises(AuthenticationError):
             await AccountService(session).authenticate("gibtsnicht", "egal")
     finally:
-        accounts_module.verify_password = original  # type: ignore[assignment]
+        accounts_module.verify_password_async = original  # type: ignore[assignment]
 
     assert calls and calls[0] is not None
     assert calls[0].startswith("$argon2id$")

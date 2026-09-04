@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import os
@@ -32,6 +33,22 @@ def verify_password(password: str, password_hash: str | None) -> bool:
         return _hasher.verify(password_hash, password)
     except (VerifyMismatchError, InvalidHashError, ValueError):
         return False
+
+
+async def hash_password_async(password: str) -> str:
+    """Argon2id in einem Worker-Thread.
+
+    Der Algorithmus ist absichtlich rechen- und speicherintensiv. Direkt im
+    Ereignisschleifen-Thread ausgefuehrt blockierte jede Anmeldung den ganzen
+    Prozess - auch Health-Checks und fremde Anfragen (NFR-2). ``to_thread``
+    verwendet den beschraenkten Standard-Executor.
+    """
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(password: str, password_hash: str | None) -> bool:
+    """Siehe ``hash_password_async``."""
+    return await asyncio.to_thread(verify_password, password, password_hash)
 
 
 def needs_rehash(password_hash: str) -> bool:

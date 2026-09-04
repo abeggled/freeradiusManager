@@ -53,6 +53,17 @@ AUTH_TYPE = "Auth-Type"
 EXPIRATION = "Expiration"
 REJECT = "Reject"
 
+
+def is_reject(value: str) -> bool:
+    """Ob eine ``Auth-Type``-Zeile den Zugang sperrt.
+
+    Ohne Ruecksicht auf die Schreibweise, wie die Kollation: ein Bestandseintrag
+    ``Auth-Type := reject`` erfuellt den SQL-Statusfilter, ein exakter Vergleich
+    in Python meldete denselben Benutzer aber als aktiv - und das Entsperren
+    liess die Zeile stehen.
+    """
+    return value.strip().casefold() == REJECT.casefold()
+
 CREDENTIAL_ATTRIBUTES = {
     CredentialType.CLEARTEXT: ("Cleartext-Password",),
     CredentialType.NT: ("NT-Password",),
@@ -486,7 +497,7 @@ class UserService:
             for row in await self.attrs.check_attributes(username)
             if row.attribute.lower() == AUTH_TYPE.lower()
         ]
-        others = [row for row in rows if row.value != REJECT]
+        others = [row for row in rows if not is_reject(row.value)]
         if disabled:
             # Eine vorhandene Auth-Type-Vorgabe (etwa "PAP") wird gemerkt und
             # beim Entsperren zurueckgeschrieben; sonst waere die Sperre eine
@@ -506,7 +517,7 @@ class UserService:
             # keine Zeile uebrig bleibt, wird der gemerkte Zustand
             # zurueckgeschrieben.
             for row in rows:
-                if row.value == REJECT:
+                if is_reject(row.value):
                     await self.attrs.delete_check_row(row.id)
             if not others:
                 for previous in self._previous_auth_types(subject.disabled_state):
@@ -656,7 +667,7 @@ class UserService:
                 raise ConflictError(code="error.busy", details={"groupname": name})
             if await self.groups.check_attributes(name) or await self.groups.reply_attributes(name):
                 continue
-            members = {fold(m) for m in await self.groups.members(name, limit=20, offset=0)}
+            members = {fold(m) for m in await self.groups.distinct_members(name, limit=2)}
             if members == {fold(username)}:
                 vanishing.append(name)
         return vanishing
@@ -743,7 +754,7 @@ class UserService:
             return
         # Wie in ``GroupService``: der Vergleich folgt der Kollation und zaehlt
         # verschiedene Benutzer, nicht Zeilen.
-        members = {fold(name) for name in await self.groups.members(groupname, limit=20, offset=0)}
+        members = {fold(name) for name in await self.groups.distinct_members(groupname, limit=2)}
         if members == {fold(username)}:
             raise ValidationError(code="error.group_last_member", details={"groupname": groupname})
 
@@ -960,7 +971,8 @@ class UserService:
         eine Sammelaktion mit demselben Filter das Objekt erfasst.
         """
         if any(
-            row.attribute.lower() == AUTH_TYPE.lower() and row.value == REJECT for row in checks
+            row.attribute.lower() == AUTH_TYPE.lower() and is_reject(row.value)
+            for row in checks
         ):
             return "disabled"
         now = utcnow()

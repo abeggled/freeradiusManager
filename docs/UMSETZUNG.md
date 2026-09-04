@@ -940,6 +940,28 @@ Die fünfundzwanzigste Runde:
 * Die Anmeldemaske bietet einen Weg zurück, wenn die Challenge abgelaufen ist –
   sonst wiederholte jeder Versuch dieselbe abgelaufene Challenge.
 
+### Dreiundzwanzigste Runde
+
+* **Argon2 läuft in einem Worker-Thread.** Die absichtlich rechen- und
+  speicherintensive Prüfung lief direkt in der Ereignisschleife; während einer
+  Anmeldung konnte der Prozess keine andere Anfrage beantworten – auch keine
+  Health-Checks (NFR-2).
+* **NAS-Änderung und -Löschung teilen eine Sperre.** Ein gleichzeitiges Löschen
+  zwischen Lesen und Schreiben liess sonst eine verwaiste `mgr_nas_extra`-Zeile
+  zurück und meldete Erfolg für ein nicht mehr vorhandenes NAS.
+* **Die Zahl verschiedener Mitglieder kommt aus der Datenbank** (`DISTINCT …
+  LIMIT 2`). Viele doppelte Zeilen desselben Benutzers verdeckten sonst ein
+  weiteres Mitglied und das Entfernen wurde fälschlich abgewiesen.
+* **`Auth-Type := reject` wird unabhängig von der Schreibweise erkannt.** Der
+  SQL-Statusfilter erfasste die Zeile, die Prüfung in Python nicht – die Liste
+  zeigte gesperrt, die Detailansicht aktiv, und das Entsperren liess die Zeile
+  stehen.
+* **Die Schranke für den Anfragekörper lässt Platz für den Multipart-Overhead.**
+  Eine Datei genau in Maximalgrösse wurde sonst mit 413 abgewiesen, obwohl der
+  Endpunkt sie akzeptiert hätte.
+* Der Gruppendialog sendet VLAN-Felder nur, wenn der Assistent bearbeitet wurde;
+  sonst überschrieb jedes andere Speichern die vorhandenen Tunnel-Attribute.
+
 ## Prüfschritte
 
 ```bash
