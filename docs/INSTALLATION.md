@@ -258,7 +258,7 @@ Session gesendet.
 
 WLAN verknüpfen: *Settings → WiFi → \<Netz\> → Security → WPA Enterprise*, dort
 das Profil auswählen. Für kabelgebundenes NAC ein Port-Profil mit 802.1X-Control
-verwenden.
+verwenden. Am selben Ort sitzt der Schalter für CoA – siehe Abschnitt 7.
 
 ### 6.3 MAC-Authentifizierung (MAB)
 
@@ -312,12 +312,51 @@ Vorbedingungen auf UniFi-Seite:
 * Ohne eingeschaltetes *RADIUS Assigned VLAN Support* landet der Client im VLAN
   des Netzes, nicht im zugewiesenen.
 
-### CoA: VLAN im Betrieb wechseln
+### CoA: laufende Sessions trennen oder umhängen
 
 Der Manager kann eine laufende Session trennen oder ihr ein neues VLAN zuweisen
-(RFC 5176). Dafür beim NAS-Eintrag *CoA aktivieren*, Port `3799` (UniFi-Vorgabe)
+(RFC 5176). Dafür sind drei Stellen zu konfigurieren – zwei in UniFi, eine im
+Manager.
+
+**1. Im UniFi-RADIUS-Profil** muss ein **Accounting Server** eingetragen sein,
+mit kurzem Interim-Intervall (~300 s). Das ist hier nicht optional: der Manager
+schlägt die Session in `radacct` nach und entnimmt ihr die Adresse des NAS, an
+die er sendet, sowie die `Acct-Session-Id`, die das Paket identifiziert. Ohne
+Accounting gibt es keine Session – und damit kein Ziel.
+
+**2. Am WLAN** – *Settings → WiFi → \<Netz\>*, Security Protocol auf WPA2/WPA3
+Enterprise, RADIUS-Profil auswählen, dann *Enable RADIUS DAS/DAC (CoA)*
+einschalten. Der Schalter sitzt am WLAN, nicht am RADIUS-Profil; das wird
+regelmässig übersehen.
+
+**3. Im Manager** beim NAS-Eintrag *CoA aktivieren*, Port `3799` (UniFi-Vorgabe)
 und das CoA-Secret hinterlegen – der Manager legt es AES-GCM-verschlüsselt ab.
-Der Manager muss den AP bzw. Switch auf UDP 3799 erreichen.
+UniFi kennt kein eigenes CoA-Secret: hier gehört dasselbe Shared Secret hinein
+wie im RADIUS-Profil.
+
+Der Manager muss den AP bzw. Switch auf **UDP 3799** erreichen. Access Points
+nehmen dynamische Autorisierung zudem nur von der Adresse an, die als
+RADIUS-Server konfiguriert ist – läuft der Manager auf einem anderen Host als
+FreeRADIUS, verwerfen sie seine Pakete stillschweigend.
+
+Prüfen lässt sich der Weg mit einem Mitschnitt auf dem Manager-Host, während in
+der Sessions-Ansicht *Trennen* ausgelöst wird:
+
+```bash
+tcpdump -ni any udp port 3799 -vv
+```
+
+Erwartet werden ein `CoA/Disconnect-Request` hinaus und ein `-ACK` zurück. Ein
+`-NAK` heisst: Secret und Erreichbarkeit stimmen, der Sitzungsbezug nicht.
+Bleibt es still, ist DAS/DAC aus, der Port blockiert oder der Absender wird
+nicht akzeptiert.
+
+> Zwei gemeldete Eigenheiten von UniFi: nach einem Neustart des Access Points
+> antwortet CoA mitunter nicht mehr, bis DAS/DAC am WLAN einmal aus- und wieder
+> eingeschaltet wurde. Und `Session-Context-Not-Found` deutet auf eine veraltete
+> `Acct-Session-Id` – der Client hat sich neu verbunden, ohne dass ein
+> Accounting-Update das in `radacct` nachgezogen hätte. Dagegen hilft das kurze
+> Interim-Intervall aus Schritt 1.
 
 ## 8. Prüfen
 
@@ -352,3 +391,4 @@ Danach im Manager:
 | `Illegal mix of collations for operation 'UNION'` | `mgr_`- und RADIUS-Tabellen haben verschiedene Kollationen; Migration `0010` gleicht sie an (`alembic upgrade head`) |
 | Manager startet nicht, meldet Schemaabweichung | Datenbank enthält ein abweichendes `rlm_sql`-Schema – Version von FreeRADIUS prüfen |
 | CoA ohne Wirkung | CoA am NAS nicht aktiviert, falsches Secret, oder UDP 3799 auf dem Weg blockiert |
+| CoA: keine Antwort auf UDP 3799 | *Enable RADIUS DAS/DAC (CoA)* ist am WLAN nicht gesetzt, oder der Manager sendet von einer Adresse, die der AP nicht als RADIUS-Server kennt |
