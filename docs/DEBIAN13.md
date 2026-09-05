@@ -628,19 +628,82 @@ Danach in der Oberfläche:
 
 ## 16. Betrieb
 
-**Aktualisieren:**
+### Aktualisieren
+
+**1. Sichern.** Die Datenbank und die Konfiguration – vor jedem Update, und
+besonders, wenn eine Migration dabei ist:
 
 ```bash
-cd /opt/freeradius-manager
-git pull
-cd frontend && npm ci && npm run build
-/opt/freeradius-manager/.venv/bin/pip install -e /opt/freeradius-manager/backend
-chown -R frm:frm /opt/freeradius-manager
-# Migration wie in Schritt 10, mit einem temporaeren DDL-Konto
-systemctl restart freeradius-manager
+mariadb-dump --single-transaction --routines radius > /var/backups/radius-$(date +%F-%H%M).sql
+cp -a /etc/freeradius-manager.env /var/backups/
 ```
 
-**Sichern** – die Datenbank enthält Benutzer, Shared Secrets und das Audit-Log:
+**2. Sehen, was kommt:**
+
+```bash
+cd /opt/freeradius-manager && git fetch origin && git log --oneline HEAD..origin/main
+```
+
+**3. Dienst anhalten.** Eine Migration ändert Tabellen; der laufende Manager
+soll dabei nicht darauf zugreifen:
+
+```bash
+systemctl stop freeradius-manager
+```
+
+**4. Code holen, Oberfläche bauen, Abhängigkeiten nachziehen:**
+
+```bash
+cd /opt/freeradius-manager && git pull
+cd /opt/freeradius-manager/frontend && npm ci && npm run build
+/opt/freeradius-manager/.venv/bin/pip install -e /opt/freeradius-manager/backend
+```
+
+**5. Migrieren.** Das Betriebskonto hat dauerhaft keine DDL-Rechte, das
+Migrationskonto aus Schritt 10 wurde gelöscht – es entsteht deshalb für diesen
+einen Schritt neu:
+
+```bash
+mariadb -e "CREATE USER 'radmgr_migrate'@'localhost' IDENTIFIED BY 'EinmalPasswort'; \
+            GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP, REFERENCES \
+              ON radius.* TO 'radmgr_migrate'@'localhost';"
+```
+
+```bash
+cd /opt/freeradius-manager/backend
+set -a; . /etc/freeradius-manager.env; set +a
+FRM_DB_USER=radmgr_migrate FRM_DB_PASSWORD=EinmalPasswort \
+  /opt/freeradius-manager/.venv/bin/alembic upgrade head
+```
+
+```bash
+mariadb -e "DROP USER 'radmgr_migrate'@'localhost';"
+```
+
+Bringt eine Migration eine **neue** `mgr_`-Tabelle mit, braucht das
+Betriebskonto darauf noch die Rechte – wie in Schritt 10. Ob eine dazugekommen
+ist, zeigt die Ausgabe von `alembic upgrade`.
+
+**6. Eigentümer richten und starten:**
+
+```bash
+chown -R frm:frm /opt/freeradius-manager
+systemctl start freeradius-manager
+```
+
+**7. Prüfen:**
+
+```bash
+systemctl status freeradius-manager --no-pager
+curl -fsS --retry 10 --retry-delay 1 --retry-connrefused http://127.0.0.1:8000/readyz && echo
+```
+
+Schlägt etwas fehl, führt der Weg zurück über den Dump aus Schritt 1 und
+`git checkout <vorheriger Commit>`.
+
+### Sichern
+
+Die Datenbank enthält Benutzer, Shared Secrets und das Audit-Log:
 
 ```bash
 mariadb-dump --single-transaction --routines radius > /var/backups/radius-$(date +%F).sql
@@ -650,11 +713,12 @@ Mitzusichern sind ausserdem `/etc/freeradius-manager.env` (ohne
 `FRM_COA_SECRET_KEY` sind die gespeicherten CoA-Secrets nicht mehr
 entschlüsselbar) und `/etc/freeradius/3.0`.
 
-**Verschlüsselung auf Speicherebene** ist empfohlen: `Cleartext-Password` und
-Shared Secrets können anwendungsseitig nicht verschlüsselt werden, weil
-FreeRADIUS sie im Klartext lesen muss. Der Schutz liegt bei den DB-Rechten aus
-den Schritten 3 und 5, der Plattenverschlüsselung und der restriktiven Anzeige
-in der Oberfläche.
+### Verschlüsselung auf Speicherebene
+
+Empfohlen, denn `Cleartext-Password` und Shared Secrets können
+anwendungsseitig nicht verschlüsselt werden – FreeRADIUS muss sie im Klartext
+lesen. Der Schutz liegt bei den DB-Rechten aus den Schritten 3 und 5, der
+Plattenverschlüsselung und der restriktiven Anzeige in der Oberfläche.
 
 ---
 
