@@ -2,7 +2,6 @@ import type { TranslationKey } from "./de";
 
 export const en: Record<TranslationKey, string> = {
   "app.title": "freeradiusManager",
-  "app.subtitle": "Managing an existing FreeRADIUS server",
 
   "nav.dashboard": "Overview",
   "nav.users": "Users",

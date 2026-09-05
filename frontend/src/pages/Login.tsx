@@ -81,7 +81,6 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
     <div className="login">
       <div className="login-card">
         <h1>{t("app.title")}</h1>
-        <p className="muted">{t("app.subtitle")}</p>
         <ErrorBox error={error} />
 
         {stage === "credentials" ? (

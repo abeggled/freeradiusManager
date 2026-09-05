@@ -1,6 +1,5 @@
 export const de = {
   "app.title": "freeradiusManager",
-  "app.subtitle": "Verwaltung eines bestehenden FreeRADIUS-Servers",
 
   "nav.dashboard": "Übersicht",
   "nav.users": "Benutzer",

@@ -35,7 +35,6 @@ export function Layout({ account }: { account: Account }) {
       <aside>
         <div className="brand">
           <strong>{t("app.title")}</strong>
-          <small>{t("app.subtitle")}</small>
         </div>
         <nav>
           {entries.map((entry) => (
