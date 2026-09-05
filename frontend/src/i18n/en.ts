@@ -64,6 +64,8 @@ export const en: Record<TranslationKey, string> = {
   "login.totpSetupTitle": "Set up two-factor authentication",
   "login.totpSetupHint":
     "TOTP is mandatory for administrators. Scan the code in your authenticator app or enter the secret manually.",
+  "login.totpScan": "Scan with your authenticator app.",
+  "login.totpManual": "If the app cannot scan, enter the secret manually:",
   "login.totpSecret": "Secret",
   "login.oidc": "Sign in with company account",
 
