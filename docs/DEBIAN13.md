@@ -468,13 +468,27 @@ DDL-Rechte. Nach einem Update wird Schritt 10 wiederholt.
 ```bash
 systemctl daemon-reload
 systemctl enable --now freeradius-manager
-systemctl status freeradius-manager
-curl -fsS http://127.0.0.1:8000/healthz && echo
+systemctl status freeradius-manager --no-pager
+```
+
+`Type=exec` meldet den Dienst als gestartet, sobald der Prozess läuft – nicht
+erst, wenn uvicorn den Port gebunden hat. Ein `curl` direkt danach liefe ins
+Leere. Deshalb mit Wiederholung prüfen:
+
+```bash
+curl -fsS --retry 10 --retry-delay 1 --retry-connrefused http://127.0.0.1:8000/healthz && echo
 curl -fsS http://127.0.0.1:8000/readyz && echo
 ```
 
-`readyz` prüft zusätzlich die Datenbankverbindung. Logs: `journalctl -u
-freeradius-manager -f`.
+Beide müssen `{"status":"ok"}` liefern; `readyz` prüft zusätzlich die
+Datenbankverbindung. Antwortet der Port gar nicht, nennt das Journal den Grund:
+
+```bash
+ss -lntp | grep 8000
+journalctl -u freeradius-manager -n 60 --no-pager
+```
+
+Laufende Ausgabe: `journalctl -u freeradius-manager -f`.
 
 ---
 
@@ -639,6 +653,7 @@ in der Oberfläche.
 | `freeradius -X` meldet `Connection refused` bei SQL | falsche Zugangsdaten in `mods-available/sql`, oder das Modul ist mit `-sql` eingebunden und verschluckt den Fehler |
 | `Ignoring request … unknown client` | Gerät fehlt in der `nas`-Tabelle, oder nach der Änderung kein `systemctl reload freeradius` |
 | `Access-Reject` trotz vorhandenem Benutzer | Passwort-Attribut passt nicht zur Methode: PEAP/MSCHAPv2 verlangt `Cleartext-Password` oder `NT-Password` |
+| `curl` auf Port 8000 scheitert, der Dienst ist aber `active (running)` | zu früh gemessen: uvicorn bindet den Port erst nach dem Start. Mit `--retry-connrefused` prüfen; bleibt es dabei, `journalctl -u freeradius-manager` lesen |
 | Manager startet nicht, `FRM_SECRET_KEY` wird verlangt | Schlüssel fehlt in `/etc/freeradius-manager.env`, oder die Datei ist für `frm` nicht lesbar |
 | Manager startet nicht, meldet Schemaabweichung | in der Datenbank liegt ein abweichendes `rlm_sql`-Schema – FreeRADIUS-Version prüfen |
 | Oberfläche bleibt weiss, API antwortet | `npm run build` fehlte, oder das Backend wurde ohne `-e` installiert und findet `backend/static` nicht |
