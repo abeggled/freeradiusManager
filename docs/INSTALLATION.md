@@ -311,6 +311,7 @@ Danach im Manager:
 
 | Symptom | Ursache |
 | --- | --- |
+| `Access denied for user … to database 'radius'` | Tabellenrechte fehlen; ein `GRANT` auf eine noch nicht existierende Tabelle wird mit `ERROR 1146` abgewiesen – Schema vor den Rechten einspielen |
 | `Instantiation failed for module "sql"`, davor `Unable to check file … my_ca.crt` | der `tls`-Block in `mysql { … }` ist aktiv; bei lokaler Datenbank auskommentieren |
 | `Ignoring request … unknown client` | AP/Switch fehlt in `nas`, oder `radiusd` wurde nach der Änderung nicht neu geladen |
 | `Access-Reject`, obwohl Benutzer existiert | Passwort-Attribut passt nicht zur Methode: PEAP/MSCHAPv2 verlangt `Cleartext-Password` oder `NT-Password` |
