@@ -56,14 +56,21 @@ mariadb
 ```
 
 ```sql
-CREATE DATABASE radius
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE radius CHARACTER SET utf8mb4;
 ```
 
-Die Kollation ohne Rücksicht auf Gross- und Kleinschreibung entspricht dem
-Verhalten, das der Manager erwartet: `Staff` und `staff` bezeichnen dieselbe
-Gruppe, `Max` und `max` denselben Benutzer.
+**Hier bewusst keine Kollation vorgeben.** `schema.sql` von FreeRADIUS setzt an
+seinen Tabellen `DEFAULT CHARSET=utf8mb4` ohne `COLLATE`; sie bekommen dadurch
+die Standard-Kollation des Servers für utf8mb4, nicht die der Datenbank. Eine
+abweichende Vorgabe hier führte dazu, dass die `mgr_`-Tabellen aus Schritt 10
+eine andere Kollation bekämen als die RADIUS-Tabellen – jede Abfrage über beide
+scheiterte dann mit `Illegal mix of collations`. Schritt 5 gleicht die Vorgabe
+an das an, was der Schema-Import tatsächlich erzeugt hat.
+
+Der Manager erwartet eine Kollation ohne Rücksicht auf Gross- und
+Kleinschreibung (Endung `_ci`): `Staff` und `staff` bezeichnen dieselbe Gruppe,
+`Max` und `max` denselben Benutzer. Alle utf8mb4-Vorgaben aktueller
+MariaDB-Versionen erfüllen das; Schritt 5 prüft es.
 
 Drei getrennte Konten – der Manager darf nicht das Konto von FreeRADIUS
 verwenden (Spezifikation, NFR-1):
@@ -127,7 +134,23 @@ Erwartet werden `nas`, `radacct`, `radcheck`, `radgroupcheck`, `radgroupreply`,
 > Entwicklung und Tests. Gegen eine echte Installation gilt das Schema des
 > Servers.
 
-Jetzt – und erst jetzt – die Rechte auf die einzelnen Tabellen. MariaDB kennt
+Jetzt die Kollation der Datenbank an die der importierten Tabellen angleichen –
+sonst bekämen die `mgr_`-Tabellen aus Schritt 10 eine andere und jede Abfrage
+über beide Seiten scheiterte mit `Illegal mix of collations`:
+
+```bash
+mariadb -N -B -e "SELECT TABLE_COLLATION FROM information_schema.TABLES \
+                  WHERE TABLE_SCHEMA='radius' AND TABLE_NAME='radcheck';"
+```
+
+Der ausgegebene Wert muss auf `_ci` enden (z. B. `utf8mb4_uca1400_ai_ci`). Ihn
+zur Vorgabe der Datenbank machen:
+
+```bash
+mariadb -e "ALTER DATABASE radius CHARACTER SET utf8mb4 COLLATE utf8mb4_uca1400_ai_ci;"
+```
+
+Danach – und erst jetzt – die Rechte auf die einzelnen Tabellen. MariaDB kennt
 keine Tabellen-Wildcards, deshalb die lange Liste:
 
 ```bash
@@ -468,13 +491,27 @@ DDL-Rechte. Nach einem Update wird Schritt 10 wiederholt.
 ```bash
 systemctl daemon-reload
 systemctl enable --now freeradius-manager
-systemctl status freeradius-manager
-curl -fsS http://127.0.0.1:8000/healthz && echo
+systemctl status freeradius-manager --no-pager
+```
+
+`Type=exec` meldet den Dienst als gestartet, sobald der Prozess läuft – nicht
+erst, wenn uvicorn den Port gebunden hat. Ein `curl` direkt danach liefe ins
+Leere. Deshalb mit Wiederholung prüfen:
+
+```bash
+curl -fsS --retry 10 --retry-delay 1 --retry-connrefused http://127.0.0.1:8000/healthz && echo
 curl -fsS http://127.0.0.1:8000/readyz && echo
 ```
 
-`readyz` prüft zusätzlich die Datenbankverbindung. Logs: `journalctl -u
-freeradius-manager -f`.
+Beide müssen `{"status":"ok"}` liefern; `readyz` prüft zusätzlich die
+Datenbankverbindung. Antwortet der Port gar nicht, nennt das Journal den Grund:
+
+```bash
+ss -lntp | grep 8000
+journalctl -u freeradius-manager -n 60 --no-pager
+```
+
+Laufende Ausgabe: `journalctl -u freeradius-manager -f`.
 
 ---
 
@@ -639,6 +676,9 @@ in der Oberfläche.
 | `freeradius -X` meldet `Connection refused` bei SQL | falsche Zugangsdaten in `mods-available/sql`, oder das Modul ist mit `-sql` eingebunden und verschluckt den Fehler |
 | `Ignoring request … unknown client` | Gerät fehlt in der `nas`-Tabelle, oder nach der Änderung kein `systemctl reload freeradius` |
 | `Access-Reject` trotz vorhandenem Benutzer | Passwort-Attribut passt nicht zur Methode: PEAP/MSCHAPv2 verlangt `Cleartext-Password` oder `NT-Password` |
+| `curl` auf Port 8000 scheitert, der Dienst ist aber `active (running)` | zu früh gemessen: uvicorn bindet den Port erst nach dem Start. Mit `--retry-connrefused` prüfen; bleibt es dabei, `journalctl -u freeradius-manager` lesen |
+| `Illegal mix of collations for operation 'UNION'` | `mgr_`- und RADIUS-Tabellen haben verschiedene Kollationen. Die `mgr_`-Seite angleichen (`ALTER TABLE … CONVERT TO CHARACTER SET utf8mb4 COLLATE <die der RADIUS-Tabellen>`) und die Vorgabe der Datenbank nachziehen |
+| `radius_schema_missing_indexes` im Log | nur ein Hinweis; der Betrieb läuft. Die genannten Indizes beschleunigen Sessions- und Diagnose-Ansicht bei grossen Datenmengen |
 | Manager startet nicht, `FRM_SECRET_KEY` wird verlangt | Schlüssel fehlt in `/etc/freeradius-manager.env`, oder die Datei ist für `frm` nicht lesbar |
 | Manager startet nicht, meldet Schemaabweichung | in der Datenbank liegt ein abweichendes `rlm_sql`-Schema – FreeRADIUS-Version prüfen |
 | Oberfläche bleibt weiss, API antwortet | `npm run build` fehlte, oder das Backend wurde ohne `-e` installiert und findet `backend/static` nicht |

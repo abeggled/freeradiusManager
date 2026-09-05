@@ -50,15 +50,26 @@ sudo apt install mariadb-server
 sudo mariadb-secure-installation
 ```
 
-Datenbank anlegen. `utf8mb4` mit einer Kollation ohne Rücksicht auf Gross- und
-Kleinschreibung entspricht dem Verhalten, das der Manager erwartet
-(Benutzernamen und Gruppen werden so verglichen):
+Datenbank anlegen:
 
 ```sql
-CREATE DATABASE radius
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE radius CHARACTER SET utf8mb4;
 ```
+
+Bewusst ohne `COLLATE`: `schema.sql` von FreeRADIUS setzt an seinen Tabellen
+`DEFAULT CHARSET=utf8mb4` ohne Kollation, sie erhalten damit die Vorgabe des
+Servers. Weicht die Vorgabe der Datenbank davon ab, bekämen die
+`mgr_`-Tabellen eine andere – Abfragen über beide Seiten scheiterten mit
+`Illegal mix of collations`. Nach dem Schema-Import die Vorgabe angleichen:
+
+```bash
+mariadb -N -B -e "SELECT TABLE_COLLATION FROM information_schema.TABLES \
+                  WHERE TABLE_SCHEMA='radius' AND TABLE_NAME='radcheck';"
+mariadb -e "ALTER DATABASE radius CHARACTER SET utf8mb4 COLLATE <ausgegebener Wert>;"
+```
+
+Der Wert muss auf `_ci` enden – der Manager vergleicht Benutzer- und
+Gruppennamen ohne Rücksicht auf Gross- und Kleinschreibung.
 
 Soll die Datenbank auf einem anderen Host laufen als FreeRADIUS, in
 `/etc/mysql/mariadb.conf.d/50-server.cnf` `bind-address` anpassen und den
@@ -318,5 +329,6 @@ Danach im Manager:
 | MAB schlägt fehl, Benutzer sichtbar | MAC-Format in UniFi und `FRM_DEFAULT_MAC_FORMAT` weichen ab |
 | Client authentifiziert, landet im falschen VLAN | *RADIUS Assigned VLAN Support* aus, VLAN am Port nicht getaggt, oder VLAN-Name statt ID |
 | Sessions-Ansicht bleibt leer | kein Accounting-Server im UniFi-Profil, oder `sql` fehlt im Abschnitt `accounting` |
+| `Illegal mix of collations for operation 'UNION'` | `mgr_`- und RADIUS-Tabellen haben verschiedene Kollationen; die `mgr_`-Seite mit `ALTER TABLE … CONVERT TO CHARACTER SET utf8mb4 COLLATE …` angleichen |
 | Manager startet nicht, meldet Schemaabweichung | Datenbank enthält ein abweichendes `rlm_sql`-Schema – Version von FreeRADIUS prüfen |
 | CoA ohne Wirkung | CoA am NAS nicht aktiviert, falsches Secret, oder UDP 3799 auf dem Weg blockiert |
