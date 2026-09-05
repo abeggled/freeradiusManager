@@ -7,7 +7,8 @@ import {
   useOwnTotpEnroll,
 } from "@/api/hooks";
 import { endSession } from "@/api/client";
-import { Copyable, ErrorBox, Field, Spinner, TotpCodeInput } from "@/components/ui";
+import { TotpEnrollment } from "@/components/TotpEnrollment";
+import { ErrorBox, Field, Spinner, TotpCodeInput } from "@/components/ui";
 import { useI18n, type Language, type TranslationKey } from "@/i18n";
 
 export function ProfilePage() {
@@ -115,10 +116,10 @@ export function ProfilePage() {
           <ErrorBox error={enroll.error ?? confirm.error} />
           {enroll.data ? (
             <>
-              <p>
-                <strong>{t("login.totpSecret")}:</strong> <Copyable value={enroll.data.secret} />
-              </p>
-              <p className="hint">{enroll.data.provisioning_uri}</p>
+              <TotpEnrollment
+                secret={enroll.data.secret}
+                provisioningUri={enroll.data.provisioning_uri}
+              />
               <Field label={t("login.totpCode")} required>
                 {(id) => <TotpCodeInput id={id} value={code} onChange={setCode} />}
               </Field>

@@ -62,6 +62,8 @@ export const de = {
   "login.totpSetupTitle": "Zwei-Faktor-Authentisierung einrichten",
   "login.totpSetupHint":
     "Für Administratoren ist TOTP verpflichtend. Scannen Sie den Code in Ihrer Authenticator-App oder geben Sie das Geheimnis manuell ein.",
+  "login.totpScan": "Mit der Authenticator-App scannen.",
+  "login.totpManual": "Kann die App nicht scannen, lässt sich das Geheimnis eintippen:",
   "login.totpSecret": "Geheimnis",
   "login.oidc": "Mit Unternehmenskonto anmelden",
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { API_BASE } from "@/api/client";
 import { useLogin, useLoginTotp, useOidcStatus, useTotpConfirm, useTotpEnroll } from "@/api/hooks";
+import { TotpEnrollment } from "@/components/TotpEnrollment";
 import { ErrorBox, Field, TotpCodeInput } from "@/components/ui";
 import { useI18n } from "@/i18n";
 
@@ -127,12 +128,7 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
               {stage === "totp" ? t("login.totpHint") : t("login.totpSetupHint")}
             </p>
             {stage === "totp-setup" ? (
-              <div className="totp-setup">
-                <p>
-                  <strong>{t("login.totpSecret")}:</strong> <code>{secret}</code>
-                </p>
-                <p className="hint">{uri}</p>
-              </div>
+              <TotpEnrollment secret={secret} provisioningUri={uri} />
             ) : null}
             <Field label={t("login.totpCode")} required>
               {(id) => <TotpCodeInput id={id} value={code} onChange={setCode} />}
