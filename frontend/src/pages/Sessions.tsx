@@ -154,6 +154,7 @@ export function SessionsPage() {
               <thead>
                 <tr>
                   <th>{t("users.username")}</th>
+                  <th>{t("common.displayName")}</th>
                   <th>{t("sessions.mac")}</th>
                   <th>{t("sessions.nas")}</th>
                   <th>{t("sessions.ssid")}</th>
@@ -173,6 +174,7 @@ export function SessionsPage() {
                     onClick={() => setDetailId(session.radacctid)}
                   >
                     <td>{session.username}</td>
+                    <td>{session.subject_name ?? "–"}</td>
                     <td>{session.callingstationid}</td>
                     <td>{session.nas_shortname ?? session.nasipaddress}</td>
                     <td>{session.ssid ?? "–"}</td>

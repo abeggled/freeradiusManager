@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.identifiers import fold
 from app.models.mgr import MgrSubject, SubjectType
 from app.repositories._result import rowcount
 
@@ -25,6 +26,27 @@ class SubjectRepository:
             select(MgrSubject).where(MgrSubject.username.in_(usernames))
         )
         return {row.username: row for row in rows.all()}
+
+    async def display_names_for(self, usernames: Sequence[str]) -> dict[str, str]:
+        """Bezeichnungen zu Benutzernamen, Schluessel in Vergleichsform.
+
+        ``radacct`` und ``radpostauth`` fuehren den Namen so, wie das NAS ihn
+        gesendet hat; in ``mgr_subject`` kann die Schreibweise abweichen. Die
+        Kollation der Datenbank vergleicht ohne Ruecksicht darauf, ein
+        Zeichenkettenvergleich in Python nicht - deshalb die Vergleichsform.
+
+        Eine Abfrage je Zeile waere bei 200 Sitzungen je Seite der teuerste
+        Teil des Requests (NFR-2).
+        """
+        if not usernames:
+            return {}
+        rows = await self.session.execute(
+            select(MgrSubject.username, MgrSubject.display_name).where(
+                MgrSubject.username.in_(set(usernames)),
+                MgrSubject.display_name.is_not(None),
+            )
+        )
+        return {fold(name): value for name, value in rows.all() if value}
 
     async def add(self, subject: MgrSubject) -> MgrSubject:
         self.session.add(subject)

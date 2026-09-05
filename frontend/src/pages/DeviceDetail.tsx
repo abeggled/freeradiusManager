@@ -52,6 +52,7 @@ export function DeviceDetailPage() {
         // Mitgliedschaften löschen.
         groups: memberships ?? undefined,
         meta: {
+          display_name: draft.display_name ?? undefined,
           device_type: draft.device_type ?? undefined,
           location: draft.location ?? undefined,
           inventory_no: draft.inventory_no ?? undefined,
@@ -138,6 +139,15 @@ export function DeviceDetailPage() {
                 id={id}
                 value={value("mac", data.username)}
                 onChange={(event) => setDraft({ ...draft, mac: event.target.value })}
+              />
+            )}
+          </Field>
+          <Field label={t("common.displayName")} hint={t("devices.displayNameHint")}>
+            {(id) => (
+              <input
+                id={id}
+                value={value("display_name", data.display_name)}
+                onChange={(event) => setDraft({ ...draft, display_name: event.target.value })}
               />
             )}
           </Field>

@@ -173,6 +173,8 @@ export interface SessionItem {
   active: boolean;
   ssid: string | null;
   nas_shortname: string | null;
+  /** Bezeichnung aus mgr_subject; bei MAB-Geräten die einzige lesbare Angabe. */
+  subject_name: string | null;
 }
 
 export interface AuthLogItem {
@@ -182,6 +184,7 @@ export interface AuthLogItem {
   reply: string;
   authdate: string;
   accepted: boolean;
+  subject_name: string | null;
 }
 
 export interface DiagnosisHint {
@@ -192,6 +195,7 @@ export interface DiagnosisHint {
 
 export interface Diagnosis {
   subject: string;
+  subject_name: string | null;
   exists: boolean;
   status: string;
   hints: DiagnosisHint[];

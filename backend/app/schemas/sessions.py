@@ -40,6 +40,10 @@ class SessionItem(BaseModel):
     active: bool = False
     ssid: str | None = None
     nas_shortname: str | None = None
+    subject_name: str | None = None
+    """Bezeichnung aus ``mgr_subject`` - bei MAB-Geraeten die einzige Angabe,
+    die einen Menschen erkennen laesst, worum es geht (``radacct`` kennt nur die
+    MAC-Adresse)."""
 
     @field_validator("radacctid", mode="before")
     @classmethod
@@ -62,6 +66,8 @@ class AuthLogItem(BaseModel):
     reply: str
     authdate: dt.datetime
     accepted: bool = False
+    subject_name: str | None = None
+    """Bezeichnung aus ``mgr_subject``; siehe ``SessionItem.subject_name``."""
 
     @field_validator("id", mode="before")
     @classmethod
@@ -77,6 +83,8 @@ class DiagnosisHint(BaseModel):
 
 class Diagnosis(BaseModel):
     subject: str
+    subject_name: str | None = None
+    """Bezeichnung aus ``mgr_subject``; siehe ``SessionItem.subject_name``."""
     exists: bool
     status: str
     hints: list[DiagnosisHint] = Field(default_factory=list)

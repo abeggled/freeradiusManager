@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import radius_dict
 from app.core.dates import from_expiration, utcnow
 from app.core.i18n import translate
+from app.core.identifiers import fold
 from app.core.mac import is_mac, matches_format
 from app.models.mgr import SubjectType
 from app.repositories.mgr.subjects import SubjectRepository
@@ -39,10 +40,12 @@ class AuthLogService:
         self, flt: AuthLogFilter, limit: int | None = None, cursor: str | None = None
     ) -> tuple[list[AuthLogItem], str | None]:
         page = await self.repo.search(flt, limit=limit, cursor=cursor)
+        names = await self.subjects.display_names_for([row.username for row in page.items])
         items = []
         for row in page.items:
             item = AuthLogItem.model_validate(row)
             item.accepted = is_accept(row.reply)
+            item.subject_name = names.get(fold(row.username))
             items.append(item)
         return items, page.next_cursor
 
@@ -243,10 +246,17 @@ class AuthLogService:
         for row in recent:
             item = AuthLogItem.model_validate(row)
             item.accepted = is_accept(row.reply)
+            # Die Versuche betreffen alle dasselbe Subjekt; die Bezeichnung
+            # steht einmal im Kopf und nicht in jeder Zeile.
             attempt_items.append(item)
+
+        display_name = meta.display_name if meta is not None else None
+        if last_session is not None:
+            last_session.subject_name = display_name
 
         return Diagnosis(
             subject=subject,
+            subject_name=display_name,
             exists=exists,
             status=status,
             hints=hints,

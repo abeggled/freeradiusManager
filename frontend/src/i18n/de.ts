@@ -35,6 +35,7 @@ export const de = {
   "common.of": "von",
   "common.actions": "Aktionen",
   "common.details": "Details",
+  "common.displayName": "Bezeichnung",
   "common.note": "Notiz",
   "common.owner": "Verantwortlicher",
   "common.location": "Standort",
@@ -124,6 +125,8 @@ export const de = {
   "devices.title": "Geräte (MAC Authentication Bypass)",
   "devices.new": "Gerät anlegen",
   "devices.mac": "MAC-Adresse",
+  "devices.displayNameHint":
+    "Frei wählbarer Name, z. B. „Drucker 2. OG Nord“. Erscheint in Sessions und Diagnose.",
   "devices.type": "Gerätetyp",
   "devices.inventory": "Inventarnummer",
   "devices.macFormat": "MAC-Format",

@@ -11,9 +11,11 @@ import re
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
+from app.core.identifiers import fold
 from app.core.mac import is_mac
 from app.core.pagination import KeysetPage
 from app.models.radius import RadAcct
+from app.repositories.mgr.subjects import SubjectRepository
 from app.repositories.radius.acct import AccountingRepository, SessionFilter
 from app.repositories.radius.nas import NasRepository
 from app.schemas.sessions import SessionItem
@@ -48,6 +50,7 @@ class SessionService:
     def __init__(self, session: AsyncSession) -> None:
         self.repo = AccountingRepository(session)
         self.nas = NasRepository(session)
+        self.subjects = SubjectRepository(session)
 
     async def _decorate(self, page: KeysetPage[RadAcct]) -> list[SessionItem]:
         addresses = [row.nasipaddress for row in page.items]
@@ -62,12 +65,16 @@ class SessionService:
                 match = self.nas.match_network(address, networks)
                 if match is not None:
                     shortnames[address] = match.shortname
+        # Bezeichnungen in einer Abfrage: bei MAB-Geraeten steht in ``radacct``
+        # nur die MAC, die Liste bliebe sonst unlesbar (FR-3, FR-5).
+        names = await self.subjects.display_names_for([row.username for row in page.items])
         items: list[SessionItem] = []
         for row in page.items:
             item = SessionItem.model_validate(row)
             item.active = row.acctstoptime is None
             item.ssid = extract_ssid(row.calledstationid)
             item.nas_shortname = shortnames.get(row.nasipaddress)
+            item.subject_name = names.get(fold(row.username))
             items.append(item)
         return items
 

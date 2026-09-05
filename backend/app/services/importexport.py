@@ -57,6 +57,7 @@ DEVICE_COLUMNS = (
     "groups",
     "vlan",
     "expires_at",
+    "display_name",
     "device_type",
     "location",
     "inventory_no",

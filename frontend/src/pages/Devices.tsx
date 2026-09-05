@@ -44,6 +44,11 @@ export function DevicesPage() {
     () => [
       { accessorKey: "username", header: () => t("devices.mac") },
       {
+        accessorKey: "display_name",
+        header: () => t("common.displayName"),
+        cell: (info) => (info.getValue() as string | null) ?? "–",
+      },
+      {
         accessorKey: "device_type",
         header: () => t("devices.type"),
         cell: ({ getValue }) => (getValue() as string | null) ?? "–",
@@ -168,6 +173,7 @@ function CreateDeviceDialog({ onClose }: { onClose: () => void }) {
   const groups = useGroups();
 
   const [mac, setMac] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [deviceType, setDeviceType] = useState("");
   const [location, setLocation] = useState("");
   const [inventory, setInventory] = useState("");
@@ -209,6 +215,7 @@ function CreateDeviceDialog({ onClose }: { onClose: () => void }) {
               expires_at: toIso(expires),
               groups: group ? [{ groupname: group, priority }] : [],
               meta: {
+                display_name: displayName || null,
                 device_type: deviceType || null,
                 location: location || null,
                 inventory_no: inventory || null,
@@ -229,6 +236,15 @@ function CreateDeviceDialog({ onClose }: { onClose: () => void }) {
               placeholder="aa:bb:cc:dd:ee:ff"
               onChange={(event) => setMac(event.target.value)}
               required
+            />
+          )}
+        </Field>
+        <Field label={t("common.displayName")} hint={t("devices.displayNameHint")}>
+          {(id) => (
+            <input
+              id={id}
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
             />
           )}
         </Field>
