@@ -232,3 +232,47 @@ async def test_wrong_password_is_rejected(radius_stack, manager_session, actor) 
         UserCreate(username="e2e-carla", password="geheim123"), actor=actor
     )
     assert "Access-Reject" in radtest(radius, "e2e-carla", "falsch")
+
+
+async def test_own_vlan_applies_without_group(radius_stack, manager_session, actor) -> None:
+    """Ein VLAN am Benutzer selbst wirkt - das ist der Zweck des Feldes (FR-1, FR-3)."""
+    _, radius = radius_stack
+
+    await UserService(manager_session).create(
+        UserCreate(username="e2e-dora", password="geheim123", vlan="45"),
+        actor=actor,
+    )
+
+    output = radtest(radius, "e2e-dora", "geheim123")
+    assert "Access-Accept" in output
+    assert 'Tunnel-Private-Group-Id:0 = "45"' in output
+
+
+async def test_group_vlan_wins_over_own_vlan(radius_stack, manager_session, actor) -> None:
+    """Bei doppelter Zuweisung setzt sich die Gruppe durch, nicht der Benutzer.
+
+    FreeRADIUS wertet ``radreply`` vor den Gruppen aus, haengt danach aber
+    ``radgroupreply`` an - und beide Ebenen schreiben das VLAN mit ``:=``, das
+    einen vorhandenen Wert ersetzt. Die naheliegende Erwartung "das speziellere
+    gewinnt" trifft hier also nicht zu. Der Test haelt das fest, weil die
+    Anleitung genau dies zusicherte, ohne es zu pruefen.
+    """
+    _, radius = radius_stack
+
+    await GroupService(manager_session).create(
+        GroupCreate(groupname="vlan-gruppe-20", vlan="20"), actor=actor
+    )
+    await UserService(manager_session).create(
+        UserCreate(
+            username="e2e-clara",
+            password="geheim123",
+            groups=[MembershipIn(groupname="vlan-gruppe-20")],
+            vlan="45",
+        ),
+        actor=actor,
+    )
+
+    output = radtest(radius, "e2e-clara", "geheim123")
+    assert "Access-Accept" in output
+    assert 'Tunnel-Private-Group-Id:0 = "20"' in output
+    assert '"45"' not in output
