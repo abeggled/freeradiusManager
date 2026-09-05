@@ -55,6 +55,11 @@ def upgrade() -> None:
         sa.UniqueConstraint("username", name="uq_mgr_account_username"),
         sa.UniqueConstraint("oidc_subject", name="uq_mgr_account_oidc_subject"),
         mysql_engine="InnoDB",
+        # Nur der Zeichensatz, keine Kollation: welche gilt, haengt an der
+        # bestehenden Datenbank. MariaDB nimmt hier seine eigene Vorgabe, die
+        # von der des RADIUS-Schemas abweichen kann - Migration 0010 gleicht
+        # das an. Neue Tabellen bitte ebenso: die Angleichung dort ergaenzen,
+        # statt hier eine Kollation zu erraten.
         mysql_charset="utf8mb4",
     )
 
