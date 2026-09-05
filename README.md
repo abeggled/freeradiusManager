@@ -11,6 +11,7 @@ Aufbau einer Umgebung von Grund auf – MariaDB, FreeRADIUS, VLAN-Zuweisung und
 UniFi als NAS – beschreibt [docs/INSTALLATION.md](docs/INSTALLATION.md);
 eine Schritt-für-Schritt-Installation ohne Container steht in
 [docs/DEBIAN13.md](docs/DEBIAN13.md).
+Die Änderungen je Version stehen im [Änderungsprotokoll](CHANGELOG.md).
 
 ## Funktionsumfang
 
