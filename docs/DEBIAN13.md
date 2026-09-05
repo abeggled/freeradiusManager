@@ -173,6 +173,27 @@ Datei enthält die Einträge bereits, teils auskommentiert):
 	read_groups = yes
 ```
 
+> **Den `tls`-Block in `mysql { … }` auskommentiert lassen.** Die Datei enthält
+> einen Beispielblock mit Pfaden wie `/etc/ssl/certs/my_ca.crt`. Sobald darin
+> eine Datei gesetzt ist, schaltet FreeRADIUS TLS zur Datenbank ein und bricht
+> mit `Unable to check file … No such file or directory` und
+> `Instantiation failed for module "sql"` ab. Bei einer lokalen MariaDB wird
+> TLS nicht gebraucht:
+>
+> ```
+> 	mysql {
+> 		#tls {
+> 		#	ca_file = "/etc/ssl/certs/my_ca.crt"
+> 		#	...
+> 		#}
+> 		warnings = auto
+> 	}
+> ```
+>
+> Liegt die Datenbank auf einem anderen Host und soll TLS verwenden, `ca_file`
+> auf das echte CA-Zertifikat zeigen lassen und die Zeilen für
+> Client-Zertifikate auskommentiert lassen.
+
 Die Datei enthält jetzt ein Passwort:
 
 ```bash
@@ -595,6 +616,7 @@ Oberfläche.
 
 | Symptom | Ursache |
 | --- | --- |
+| `Instantiation failed for module "sql"`, davor `Unable to check file … my_ca.crt` | der `tls`-Block in `mysql { … }` ist aktiv; bei lokaler Datenbank auskommentieren |
 | `freeradius -X` meldet `Connection refused` bei SQL | falsche Zugangsdaten in `mods-available/sql`, oder das Modul ist mit `-sql` eingebunden und verschluckt den Fehler |
 | `Ignoring request … unknown client` | Gerät fehlt in der `nas`-Tabelle, oder nach der Änderung kein `systemctl reload freeradius` |
 | `Access-Reject` trotz vorhandenem Benutzer | Passwort-Attribut passt nicht zur Methode: PEAP/MSCHAPv2 verlangt `Cleartext-Password` oder `NT-Password` |
