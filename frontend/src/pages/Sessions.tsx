@@ -293,6 +293,8 @@ function SessionDetailDialog({
         <dl>
           <dt>{t("users.username")}</dt>
           <dd>{data.username}</dd>
+          <dt>{t("common.displayName")}</dt>
+          <dd>{data.subject_name ?? "–"}</dd>
           <dt>{t("sessions.mac")}</dt>
           <dd>{data.callingstationid || "–"}</dd>
           <dt>{t("sessions.ssid")}</dt>
