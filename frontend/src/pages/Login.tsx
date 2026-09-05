@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { API_BASE } from "@/api/client";
 import { useLogin, useLoginTotp, useOidcStatus, useTotpConfirm, useTotpEnroll } from "@/api/hooks";
-import { ErrorBox, Field } from "@/components/ui";
+import { ErrorBox, Field, TotpCodeInput } from "@/components/ui";
 import { useI18n } from "@/i18n";
 
 type Stage = "credentials" | "totp" | "totp-setup";
@@ -91,6 +91,7 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
               {(id) => (
                 <input
                   id={id}
+                  name="username"
                   autoComplete="username"
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
@@ -102,6 +103,7 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
               {(id) => (
                 <input
                   id={id}
+                  name="password"
                   type="password"
                   autoComplete="current-password"
                   value={password}
@@ -134,16 +136,7 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
               </div>
             ) : null}
             <Field label={t("login.totpCode")} required>
-              {(id) => (
-                <input
-                  id={id}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={code}
-                  onChange={(event) => setCode(event.target.value)}
-                  required
-                />
-              )}
+              {(id) => <TotpCodeInput id={id} value={code} onChange={setCode} />}
             </Field>
             <button
               type="submit"

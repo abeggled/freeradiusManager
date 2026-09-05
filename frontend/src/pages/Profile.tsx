@@ -7,7 +7,7 @@ import {
   useOwnTotpEnroll,
 } from "@/api/hooks";
 import { endSession } from "@/api/client";
-import { Copyable, ErrorBox, Field, Spinner } from "@/components/ui";
+import { Copyable, ErrorBox, Field, Spinner, TotpCodeInput } from "@/components/ui";
 import { useI18n, type Language, type TranslationKey } from "@/i18n";
 
 export function ProfilePage() {
@@ -81,7 +81,9 @@ export function ProfilePage() {
               {(id) => (
                 <input
                   id={id}
+                  name="current-password"
                   type="password"
+                  autoComplete="current-password"
                   value={current}
                   onChange={(event) => setCurrent(event.target.value)}
                   required
@@ -92,7 +94,9 @@ export function ProfilePage() {
               {(id) => (
                 <input
                   id={id}
+                  name="new-password"
                   type="password"
+                  autoComplete="new-password"
                   minLength={12}
                   value={next}
                   onChange={(event) => setNext(event.target.value)}
@@ -116,9 +120,7 @@ export function ProfilePage() {
               </p>
               <p className="hint">{enroll.data.provisioning_uri}</p>
               <Field label={t("login.totpCode")} required>
-                {(id) => (
-                  <input id={id} value={code} onChange={(event) => setCode(event.target.value)} />
-                )}
+                {(id) => <TotpCodeInput id={id} value={code} onChange={setCode} />}
               </Field>
               <button
                 type="button"
@@ -149,6 +151,7 @@ export function ProfilePage() {
                 {(id) => (
                   <input
                     id={id}
+                    name="current-password"
                     type="password"
                     autoComplete="current-password"
                     value={totpPassword}
