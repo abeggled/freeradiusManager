@@ -80,7 +80,6 @@ aside {
 }
 
 .brand { display: flex; flex-direction: column; }
-.brand small { color: var(--muted); }
 
 aside nav { display: flex; flex-direction: column; gap: 0.15rem; }
 
