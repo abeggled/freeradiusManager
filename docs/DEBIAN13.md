@@ -92,6 +92,55 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP, REFERENCES
 
 `\q` beendet den Client.
 
+
+### Zeitzone: die Datenschicht läuft in UTC
+
+Der Manager schreibt seine eigenen Zeitstempel in UTC und liefert alle
+Zeitangaben ohne Zonenangabe aus; die Oberfläche rechnet sie in die Zone des
+Browsers um. Die Spalten von FreeRADIUS entstehen aber woanders, und beide
+Stellen nehmen ihre jeweilige **Ortszeit**:
+
+| Spalte | geschrieben von | Zone |
+| --- | --- | --- |
+| `radpostauth.authdate` | FreeRADIUS selbst (`%S` in `queries.conf`) | Ortszeit des `radiusd`-Prozesses |
+| `radacct.acct*time` | MariaDB über `FROM_UNIXTIME(…)` | Ortszeit der Datenbanksitzung |
+
+Steht eine davon nicht auf UTC, sind Diagnose und Sessions um den Zonenversatz
+verschoben – ohne Fehlermeldung. Deshalb beide auf UTC stellen.
+
+MariaDB, in `/etc/mysql/mariadb.conf.d/50-server.cnf` unter `[mysqld]`:
+
+```
+default-time-zone = '+00:00'
+```
+
+```bash
+systemctl restart mariadb
+mariadb -e "SELECT NOW(), UTC_TIMESTAMP();"
+```
+
+Beide Werte müssen übereinstimmen.
+
+FreeRADIUS formatiert `%S` selbst und braucht die Umgebung – `systemctl edit
+freeradius`, dann:
+
+```
+[Service]
+Environment=TZ=UTC
+```
+
+```bash
+systemctl restart freeradius
+```
+
+Damit stehen auch die Journal-Einträge von FreeRADIUS in UTC.
+
+> **Vor dem ersten Betrieb umstellen.** Bereits geschriebene Zeilen behalten
+> ihre Ortszeit; nach einer späteren Umstellung liegen in derselben Tabelle
+> zwei Zonen nebeneinander. Der Manager prüft die Zone beim Start und schreibt
+> bei Abweichung `database_timezone_not_utc` bzw.
+> `radius_timestamps_ahead_of_utc` ins Log.
+
 ---
 
 ## 4. FreeRADIUS installieren
@@ -756,6 +805,8 @@ Plattenverschlüsselung und der restriktiven Anzeige in der Oberfläche.
 | `git` meldet `detected dubious ownership` | das Verzeichnis gehört `frm` statt `root`; Rechte wie in Schritt 9 setzen (`chown -R root:frm`) |
 | Oberfläche bleibt weiss, API antwortet | `npm run build` fehlte, oder das Backend wurde ohne `-e` installiert und findet `backend/static` nicht |
 | Anmeldung schlägt mit CSRF-Fehler fehl | `FRM_ALLOWED_ORIGINS` passt nicht zur aufgerufenen Adresse |
+| Zeiten in Diagnose und Sessions sind um den Zonenversatz verschoben | Datenbank oder `radiusd` laufen nicht in UTC – siehe Schritt 3, „Zeitzone“ |
+| Log meldet `database_timezone_not_utc` oder `radius_timestamps_ahead_of_utc` | dieselbe Ursache; der Manager weist beim Start darauf hin |
 | Audit-Log zeigt immer `127.0.0.1` | `FRM_TRUSTED_PROXIES` fehlt, oder nginx setzt `X-Forwarded-For` nicht |
 | CSV-Import bricht bei grossen Dateien ab | `client_max_body_size` in nginx zu klein |
 | CoA ohne Wirkung | am NAS nicht aktiviert, falsches CoA-Secret, oder UDP 3799 ausgehend blockiert |

@@ -27,6 +27,7 @@ from app.core.config import settings
 from app.core.db import dispose, get_engine, get_sessionmaker
 from app.core.logging import configure_logging, get_logger
 from app.repositories.radius.schema import inspect_schema
+from app.repositories.radius.timecheck import inspect_time
 from app.services.accounts import AccountService
 from app.services.audit import retention_worker
 from app.services.stats import stats_worker
@@ -48,6 +49,26 @@ async def check_schema() -> None:
         log.warning("radius_schema_missing_indexes", **report.as_details())
 
 
+async def check_time_configuration() -> None:
+    """Warnt, wenn Zeitstempel nicht in UTC entstehen (FR-5, FR-6).
+
+    Der Betrieb wird davon nicht abhaengig gemacht: eine abweichende Zone macht
+    die Anwendung nicht unbrauchbar, sondern ihre Zeitangaben um den Versatz
+    falsch. Das soll auffallen, aber keine bestehende Installation beim
+    Aktualisieren stillsetzen.
+    """
+    try:
+        async with get_engine().connect() as connection:
+            report = await inspect_time(connection)
+    except Exception as exc:  # noqa: BLE001 - eine Warnung darf den Start nie verhindern
+        log.warning("time_check_failed", error=str(exc))
+        return
+    if not report.database_is_utc:
+        log.warning("database_timezone_not_utc", **report.as_details())
+    if report.authdate_in_future:
+        log.warning("radius_timestamps_ahead_of_utc", **report.as_details())
+
+
 async def bootstrap_admin() -> None:
     if not settings.bootstrap_admin_password:
         return
@@ -64,6 +85,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     if settings.schema_check_on_startup:
         await check_schema()
+        await check_time_configuration()
     await bootstrap_admin()
     tasks = [
         asyncio.create_task(stats_worker(get_sessionmaker(), settings.stats_refresh_seconds)),

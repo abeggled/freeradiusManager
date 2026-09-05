@@ -67,6 +67,23 @@ Zugriff über die Firewall auf die beteiligten Hosts begrenzen. Verschlüsselung
 auf Speicherebene ist empfohlen: `Cleartext-Password` und Shared Secrets liegen
 technisch bedingt unverschlüsselt in der Datenbank.
 
+
+### Zeitzone
+
+Alle Zeitstempel gehören in UTC. Der Manager schreibt seine eigenen so und
+liefert Zeitangaben ohne Zonenangabe aus; die Oberfläche rechnet sie in die
+Zone des Browsers um. FreeRADIUS schreibt dagegen Ortszeit – `authdate` über
+`%S` in der Zone des `radiusd`-Prozesses, die Zeiten in `radacct` über
+`FROM_UNIXTIME(…)` in der Zone der Datenbanksitzung. Beides muss deshalb auf
+UTC stehen:
+
+* MariaDB: `default-time-zone = '+00:00'` unter `[mysqld]`
+* FreeRADIUS: `Environment=TZ=UTC` im Dienst
+
+Sonst sind Diagnose und Sessions um den Zonenversatz verschoben, ohne dass
+etwas fehlschlägt. Der Manager prüft das beim Start und warnt mit
+`database_timezone_not_utc` bzw. `radius_timestamps_ahead_of_utc`.
+
 ## 4. FreeRADIUS installieren und an SQL binden
 
 ```bash
@@ -330,6 +347,7 @@ Danach im Manager:
 | `Access-Reject`, obwohl Benutzer existiert | Passwort-Attribut passt nicht zur Methode: PEAP/MSCHAPv2 verlangt `Cleartext-Password` oder `NT-Password` |
 | MAB schlägt fehl, Benutzer sichtbar | MAC-Format in UniFi und `FRM_DEFAULT_MAC_FORMAT` weichen ab |
 | Client authentifiziert, landet im falschen VLAN | *RADIUS Assigned VLAN Support* aus, VLAN am Port nicht getaggt, oder VLAN-Name statt ID |
+| Zeiten in Diagnose und Sessions sind verschoben | Datenbank oder `radiusd` laufen nicht in UTC; siehe „Zeitzone“ |
 | Sessions-Ansicht bleibt leer | kein Accounting-Server im UniFi-Profil, oder `sql` fehlt im Abschnitt `accounting` |
 | `Illegal mix of collations for operation 'UNION'` | `mgr_`- und RADIUS-Tabellen haben verschiedene Kollationen; Migration `0010` gleicht sie an (`alembic upgrade head`) |
 | Manager startet nicht, meldet Schemaabweichung | Datenbank enthält ein abweichendes `rlm_sql`-Schema – Version von FreeRADIUS prüfen |
