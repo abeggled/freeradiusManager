@@ -69,29 +69,11 @@ Drei getrennte Konten – der Manager darf nicht das Konto von FreeRADIUS
 verwenden (Spezifikation, NFR-1):
 
 ```sql
--- 1) FreeRADIUS: nur die RADIUS-Tabellen, Schreibrecht nur wo nötig
+-- 1) FreeRADIUS: liest zur Autorisierung, schreibt Accounting und Post-Auth
 CREATE USER 'freeradius'@'localhost' IDENTIFIED BY 'GEHEIM-1';
-
-GRANT SELECT ON radius.radcheck      TO 'freeradius'@'localhost';
-GRANT SELECT ON radius.radreply      TO 'freeradius'@'localhost';
-GRANT SELECT ON radius.radgroupcheck TO 'freeradius'@'localhost';
-GRANT SELECT ON radius.radgroupreply TO 'freeradius'@'localhost';
-GRANT SELECT ON radius.radusergroup  TO 'freeradius'@'localhost';
-GRANT SELECT ON radius.nas           TO 'freeradius'@'localhost';
-GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radacct     TO 'freeradius'@'localhost';
-GRANT SELECT, INSERT                 ON radius.radpostauth TO 'freeradius'@'localhost';
 
 -- 2) Manager im Betrieb: kein DDL, Accounting und Auth-Log nur lesend
 CREATE USER 'radmgr'@'localhost' IDENTIFIED BY 'GEHEIM-2';
-
-GRANT SELECT ON radius.radacct     TO 'radmgr'@'localhost';
-GRANT SELECT ON radius.radpostauth TO 'radmgr'@'localhost';
-GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radcheck      TO 'radmgr'@'localhost';
-GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radreply      TO 'radmgr'@'localhost';
-GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radgroupcheck TO 'radmgr'@'localhost';
-GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radgroupreply TO 'radmgr'@'localhost';
-GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radusergroup  TO 'radmgr'@'localhost';
-GRANT SELECT, INSERT, UPDATE, DELETE ON radius.nas           TO 'radmgr'@'localhost';
 
 -- 3) Nur für die Migration; wird in Schritt 10 wieder gelöscht
 CREATE USER 'radmgr_migrate'@'localhost' IDENTIFIED BY 'GEHEIM-3';
@@ -99,9 +81,11 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP, REFERENCES
   ON radius.* TO 'radmgr_migrate'@'localhost';
 ```
 
-Die `mgr_`-Tabellen kann `radmgr` noch nicht sehen – sie existieren erst nach
-Schritt 10 und werden dort freigegeben. MariaDB kennt keine Tabellen-Wildcards,
-deshalb die lange Liste.
+> **Die Rechte auf die einzelnen Tabellen folgen erst in Schritt 5.** MariaDB
+> weist ein `GRANT` auf eine Tabelle, die es noch nicht gibt, mit
+> `ERROR 1146 … doesn't exist` ab – die RADIUS-Tabellen entstehen aber erst mit
+> dem Schema-Import. Nur `radmgr_migrate` bekommt sein Recht schon hier, weil es
+> auf der ganzen Datenbank (`radius.*`) liegt und keine Tabelle voraussetzt.
 
 `\q` beendet den Client.
 
@@ -122,7 +106,7 @@ auch bei FreeRADIUS 3.2 so). Der Dienst läuft als Benutzer `freerad`.
 
 ---
 
-## 5. RADIUS-Schema einspielen
+## 5. RADIUS-Schema einspielen und Rechte vergeben
 
 Das Schema stammt aus der Installation selbst, nicht aus diesem Projekt:
 
@@ -142,6 +126,40 @@ Erwartet werden `nas`, `radacct`, `radcheck`, `radgroupcheck`, `radgroupreply`,
 > `docker/radius-schema.sql` aus diesem Repository ist nur eine Nachbildung für
 > Entwicklung und Tests. Gegen eine echte Installation gilt das Schema des
 > Servers.
+
+Jetzt – und erst jetzt – die Rechte auf die einzelnen Tabellen. MariaDB kennt
+keine Tabellen-Wildcards, deshalb die lange Liste:
+
+```bash
+mariadb radius <<'SQL'
+GRANT SELECT ON radius.radcheck      TO 'freeradius'@'localhost';
+GRANT SELECT ON radius.radreply      TO 'freeradius'@'localhost';
+GRANT SELECT ON radius.radgroupcheck TO 'freeradius'@'localhost';
+GRANT SELECT ON radius.radgroupreply TO 'freeradius'@'localhost';
+GRANT SELECT ON radius.radusergroup  TO 'freeradius'@'localhost';
+GRANT SELECT ON radius.nas           TO 'freeradius'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radacct     TO 'freeradius'@'localhost';
+GRANT SELECT, INSERT                 ON radius.radpostauth TO 'freeradius'@'localhost';
+
+GRANT SELECT ON radius.radacct     TO 'radmgr'@'localhost';
+GRANT SELECT ON radius.radpostauth TO 'radmgr'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radcheck      TO 'radmgr'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radreply      TO 'radmgr'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radgroupcheck TO 'radmgr'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radgroupreply TO 'radmgr'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON radius.radusergroup  TO 'radmgr'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON radius.nas           TO 'radmgr'@'localhost';
+SQL
+```
+
+Kontrollieren – die Ausgabe muss mehr als nur `GRANT USAGE ON *.*` enthalten:
+
+```bash
+mariadb -e "SHOW GRANTS FOR 'freeradius'@'localhost';"
+```
+
+Die `mgr_`-Tabellen fehlen hier bewusst: sie entstehen erst in Schritt 10 und
+werden dort freigegeben.
 
 ---
 
@@ -607,8 +625,8 @@ entschlüsselbar) und `/etc/freeradius/3.0`.
 **Verschlüsselung auf Speicherebene** ist empfohlen: `Cleartext-Password` und
 Shared Secrets können anwendungsseitig nicht verschlüsselt werden, weil
 FreeRADIUS sie im Klartext lesen muss. Der Schutz liegt bei den DB-Rechten aus
-Schritt 3, der Plattenverschlüsselung und der restriktiven Anzeige in der
-Oberfläche.
+den Schritten 3 und 5, der Plattenverschlüsselung und der restriktiven Anzeige
+in der Oberfläche.
 
 ---
 
@@ -616,6 +634,7 @@ Oberfläche.
 
 | Symptom | Ursache |
 | --- | --- |
+| `Access denied for user 'freeradius'@'localhost' to database 'radius'` | Tabellenrechte fehlen – das Passwort stimmt (sonst stuende dort `using password: YES`). Die `GRANT`-Zeilen aus Schritt 5 nachholen |
 | `Instantiation failed for module "sql"`, davor `Unable to check file … my_ca.crt` | der `tls`-Block in `mysql { … }` ist aktiv; bei lokaler Datenbank auskommentieren |
 | `freeradius -X` meldet `Connection refused` bei SQL | falsche Zugangsdaten in `mods-available/sql`, oder das Modul ist mit `-sql` eingebunden und verschluckt den Fehler |
 | `Ignoring request … unknown client` | Gerät fehlt in der `nas`-Tabelle, oder nach der Änderung kein `systemctl reload freeradius` |
