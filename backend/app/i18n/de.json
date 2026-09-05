@@ -66,5 +66,6 @@
   "warn.cleartext_stored": "Das Passwort wird im Klartext gespeichert – dies ist für EAP-TTLS/PAP erforderlich.",
   "warn.mab_not_authentication": "MAC Authentication Bypass ist keine echte Authentifizierung; MAC-Adressen sind fälschbar.",
   "warn.nas_reload": "Änderungen an NAS-Clients werden erst nach einem Neustart bzw. clients-Reload von radiusd wirksam.",
+  "warn.vlan_overridden_by_group": "Das VLAN {vlan} an diesem Datensatz bleibt wirkungslos: die Gruppe \"{groupname}\" weist VLAN {group_vlan} zu und wird von FreeRADIUS zuletzt ausgewertet. Entweder die Gruppenzuordnung entfernen oder das eigene VLAN leeren.",
   "error.disabled_by_group": "Die Sperre stammt aus der Gruppe {groups}; sie muss dort aufgehoben werden."
 }

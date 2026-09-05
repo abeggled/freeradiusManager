@@ -353,6 +353,7 @@ class UserService:
             await self.attrs.set_check(payload.username, AUTH_TYPE, ":=", REJECT)
 
         await self._set_memberships(payload.username, payload.groups, locked)
+        warnings += await self._warn_group_vlan_overrides(payload.username, language)
 
         subject = MgrSubject(
             username=payload.username,
@@ -456,6 +457,7 @@ class UserService:
 
         if payload.groups is not None:
             await self._set_memberships(username, payload.groups, locked)
+        warnings += await self._warn_group_vlan_overrides(username, language)
 
         if payload.meta is not None:
             for key, value in payload.meta.model_dump(exclude_unset=True).items():
@@ -978,6 +980,42 @@ class UserService:
                 warnings.append(ApiWarning(code=w.code, message=w.message, attribute=w.attribute))
             await self.attrs.add_check(username, item.attribute, item.op, item.value)
         return warnings
+
+    async def _warn_group_vlan_overrides(self, username: str, language: str) -> list[ApiWarning]:
+        """Warnt, wenn ein eigenes VLAN von dem einer Gruppe verdeckt wird.
+
+        FreeRADIUS wertet ``radreply`` vor den Gruppen aus, haengt
+        ``radgroupreply`` aber danach an - und beide Ebenen schreiben das VLAN
+        mit ``:=``, das einen vorhandenen Wert ersetzt. Das VLAN am Datensatz
+        bleibt damit wirkungslos, sobald eine seiner Gruppen ebenfalls eines
+        setzt. Ohne diesen Hinweis waere die Zuweisung eine stille Falle: die
+        Oberflaeche zeigt beide Werte an, wirksam ist nur einer
+        (``test_group_vlan_wins_over_own_vlan``).
+        """
+        own = _vlan_of(await self.attrs.reply_attributes(username))
+        if own is None:
+            return []
+        memberships = await self.groups.memberships(username)
+        if not memberships:
+            return []
+        replies = await self.groups.reply_attributes_for([m.groupname for m in memberships])
+        for groupname, rows in replies.items():
+            group_vlan = _vlan_of(rows)
+            if group_vlan is None or group_vlan == own:
+                continue
+            return [
+                ApiWarning(
+                    code="warn.vlan_overridden_by_group",
+                    message=translate(
+                        "warn.vlan_overridden_by_group",
+                        language,
+                        vlan=own,
+                        groupname=groupname,
+                        group_vlan=group_vlan,
+                    ),
+                )
+            ]
+        return []
 
     async def _apply_reply_attributes(
         self,

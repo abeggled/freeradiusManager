@@ -85,6 +85,40 @@ export function Field({
   );
 }
 
+/** Wie ``TotpLoginRequest.totp_code`` im Backend. */
+export const MAX_TOTP_CODE_LENGTH = 10;
+
+export function TotpCodeInput({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  // Gemeinsame Auszeichnung aller Einmalcode-Felder. Passwortmanager erkennen
+  // das Feld an "one-time-code"; Bitwarden zieht zusaetzlich den Namen heran -
+  // die von ``useId`` erzeugte Kennung sagt ihm nichts. Ohne beides muesste der
+  // Code von Hand uebertragen werden.
+  return (
+    <input
+      id={id}
+      name="totp"
+      type="text"
+      inputMode="numeric"
+      autoComplete="one-time-code"
+      autoCorrect="off"
+      autoCapitalize="off"
+      spellCheck={false}
+      maxLength={MAX_TOTP_CODE_LENGTH}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      required
+    />
+  );
+}
+
 export function Modal({
   title,
   onClose,
