@@ -350,8 +350,23 @@ Kopie nach `site-packages` bliebe die Weboberfläche leer.
 python3 -m venv /opt/freeradius-manager/.venv
 /opt/freeradius-manager/.venv/bin/pip install --upgrade pip
 /opt/freeradius-manager/.venv/bin/pip install -e /opt/freeradius-manager/backend
-chown -R frm:frm /opt/freeradius-manager
 ```
+
+Rechte: das Dienstkonto liest den Code nur. Die Unit setzt
+`ProtectSystem=strict` und `PYTHONDONTWRITEBYTECODE=1`, der Prozess schreibt
+also nirgends ins Verzeichnis. Es gehört deshalb `root`, und `frm` bekommt
+Lesezugriff über die Gruppe:
+
+```bash
+chown -R root:frm /opt/freeradius-manager
+chmod -R g+rX,o-rwx /opt/freeradius-manager
+```
+
+`g+rX` erlaubt Lesen und das Betreten von Verzeichnissen und behält das
+Ausführungsrecht der Programme im venv; `o-rwx` nimmt allen übrigen den
+Zugriff. Gehörte das Verzeichnis `frm`, könnte das Dienstkonto seinen eigenen
+Code ändern – und `git` verweigerte als `root` die Arbeit darin
+(`detected dubious ownership`).
 
 ---
 
@@ -684,10 +699,12 @@ Bringt eine Migration eine **neue** `mgr_`-Tabelle mit, braucht das
 Betriebskonto darauf noch die Rechte – wie in Schritt 10. Ob eine dazugekommen
 ist, zeigt die Ausgabe von `alembic upgrade`.
 
-**6. Eigentümer richten und starten:**
+**6. Rechte richten und starten.** Neue Dateien aus `git pull` und `npm ci`
+gehören zunächst dem aufrufenden Benutzer:
 
 ```bash
-chown -R frm:frm /opt/freeradius-manager
+chown -R root:frm /opt/freeradius-manager
+chmod -R g+rX,o-rwx /opt/freeradius-manager
 systemctl start freeradius-manager
 ```
 
@@ -736,6 +753,7 @@ Plattenverschlüsselung und der restriktiven Anzeige in der Oberfläche.
 | `radius_schema_missing_indexes` im Log | nur ein Hinweis; der Betrieb läuft. Die genannten Indizes beschleunigen Sessions- und Diagnose-Ansicht bei grossen Datenmengen |
 | Manager startet nicht, `FRM_SECRET_KEY` wird verlangt | Schlüssel fehlt in `/etc/freeradius-manager.env`, oder die Datei ist für `frm` nicht lesbar |
 | Manager startet nicht, meldet Schemaabweichung | in der Datenbank liegt ein abweichendes `rlm_sql`-Schema – FreeRADIUS-Version prüfen |
+| `git` meldet `detected dubious ownership` | das Verzeichnis gehört `frm` statt `root`; Rechte wie in Schritt 9 setzen (`chown -R root:frm`) |
 | Oberfläche bleibt weiss, API antwortet | `npm run build` fehlte, oder das Backend wurde ohne `-e` installiert und findet `backend/static` nicht |
 | Anmeldung schlägt mit CSRF-Fehler fehl | `FRM_ALLOWED_ORIGINS` passt nicht zur aufgerufenen Adresse |
 | Audit-Log zeigt immer `127.0.0.1` | `FRM_TRUSTED_PROXIES` fehlt, oder nginx setzt `X-Forwarded-For` nicht |
