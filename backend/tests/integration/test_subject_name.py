@@ -122,3 +122,18 @@ async def test_lookup_returns_folded_keys(session, admin_principal) -> None:
 async def test_lookup_without_names_is_empty(session) -> None:
     """Kein Datensatz, keine Abfrage - und kein leerer IN-Ausdruck."""
     assert await SubjectRepository(session).display_names_for([]) == {}
+
+
+async def test_session_detail_carries_the_label(session, admin_principal) -> None:
+    """Der Detaildialog holt die Sitzung ueber einen eigenen Endpunkt.
+
+    Er teilt sich die Anreicherung mit der Liste; der Test haelt das fest,
+    damit die Bezeichnung nicht an einer der beiden Stellen verschwindet.
+    """
+    await _device(session, admin_principal)
+    await _session_row(session)
+    radacctid = await session.scalar(text("SELECT MAX(radacctid) FROM radacct"))
+
+    item = await SessionService(session).get(int(radacctid))
+
+    assert item.subject_name == LABEL
