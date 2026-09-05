@@ -279,10 +279,22 @@ Der Manager setzt alle drei gemeinsam: im geführten Dialog einer Gruppe oder
 eines Benutzers genügt die Eingabe der VLAN-ID.
 
 **Empfohlen ist die Zuweisung über Gruppen** (`radgroupreply`): Benutzer werden
-Mitglied, das VLAN steht an einer Stelle. Eine Zuweisung direkt am Benutzer
-(`radreply`) gewinnt gegenüber der Gruppe und ist als Ausnahme gedacht. Bei
-mehreren Gruppen entscheidet die Priorität der Mitgliedschaft – der kleinere
-Wert wird zuerst ausgewertet.
+Mitglied, das VLAN steht an einer Stelle. Bei mehreren Gruppen entscheidet die
+Priorität der Mitgliedschaft – der kleinere Wert wird zuerst ausgewertet.
+
+Das VLAN-Feld am Benutzer oder Gerät schreibt dieselben drei Attribute nach
+`radreply`, für genau diesen einen Datensatz. Es ist als Ausnahme gedacht: das
+eine Gerät, das nicht dorthin gehört, wo seine Gruppe hinführt – ohne dass dafür
+eine Gruppe mit einem einzigen Mitglied entstehen muss.
+
+> **Beides zusammen setzen bringt nicht das erwartete Ergebnis: die Gruppe
+> gewinnt.** FreeRADIUS wertet `radreply` vor den Gruppen aus, hängt danach aber
+> `radgroupreply` an – und beide Ebenen schreiben das VLAN mit `:=`, das einen
+> vorhandenen Wert ersetzt. Ein Gerät mit eigenem VLAN 45 in einer Gruppe mit
+> VLAN 20 bekommt 20. Das Feld wirkt also nur, wenn keine Gruppe des Datensatzes
+> ebenfalls ein VLAN setzt. Belegt durch
+> `test_group_vlan_wins_over_own_vlan` in `backend/tests/e2e/test_freeradius.py`,
+> gemessen gegen `freeradius-server:3.2.7`.
 
 Vorbedingungen auf UniFi-Seite:
 
