@@ -135,6 +135,27 @@ sql {
 }
 ```
 
+> **Den `tls`-Block in `mysql { … }` auskommentiert lassen.** Die Datei enthält
+> einen Beispielblock mit Pfaden wie `/etc/ssl/certs/my_ca.crt`. Sobald darin
+> eine Datei gesetzt ist, schaltet FreeRADIUS TLS zur Datenbank ein und bricht
+> mit `Unable to check file … No such file or directory` und
+> `Instantiation failed for module "sql"` ab. Bei einer lokalen MariaDB wird
+> TLS nicht gebraucht:
+>
+> ```
+> 	mysql {
+> 		#tls {
+> 		#	ca_file = "/etc/ssl/certs/my_ca.crt"
+> 		#	...
+> 		#}
+> 		warnings = auto
+> 	}
+> ```
+>
+> Liegt die Datenbank auf einem anderen Host und soll TLS verwenden, `ca_file`
+> auf das echte CA-Zertifikat zeigen lassen und die Zeilen für
+> Client-Zertifikate auskommentiert lassen.
+
 Die Datei enthält ein Passwort:
 
 ```bash
@@ -290,6 +311,7 @@ Danach im Manager:
 
 | Symptom | Ursache |
 | --- | --- |
+| `Instantiation failed for module "sql"`, davor `Unable to check file … my_ca.crt` | der `tls`-Block in `mysql { … }` ist aktiv; bei lokaler Datenbank auskommentieren |
 | `Ignoring request … unknown client` | AP/Switch fehlt in `nas`, oder `radiusd` wurde nach der Änderung nicht neu geladen |
 | `Access-Reject`, obwohl Benutzer existiert | Passwort-Attribut passt nicht zur Methode: PEAP/MSCHAPv2 verlangt `Cleartext-Password` oder `NT-Password` |
 | MAB schlägt fehl, Benutzer sichtbar | MAC-Format in UniFi und `FRM_DEFAULT_MAC_FORMAT` weichen ab |
