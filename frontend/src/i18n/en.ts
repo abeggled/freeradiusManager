@@ -37,6 +37,7 @@ export const en: Record<TranslationKey, string> = {
   "common.of": "of",
   "common.actions": "Actions",
   "common.details": "Details",
+  "common.displayName": "Label",
   "common.note": "Note",
   "common.owner": "Owner",
   "common.location": "Location",
@@ -126,6 +127,8 @@ export const en: Record<TranslationKey, string> = {
   "devices.title": "Devices (MAC Authentication Bypass)",
   "devices.new": "Create device",
   "devices.mac": "MAC address",
+  "devices.displayNameHint":
+    "Free-form name, e.g. \"Printer 2nd floor north\". Shown in sessions and diagnosis.",
   "devices.type": "Device type",
   "devices.inventory": "Inventory number",
   "devices.macFormat": "MAC format",

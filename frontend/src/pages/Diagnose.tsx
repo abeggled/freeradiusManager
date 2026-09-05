@@ -59,6 +59,8 @@ export function DiagnosePage() {
               ))}
             </ul>
             <dl>
+              <dt>{t("common.displayName")}</dt>
+              <dd>{data.subject_name ?? "–"}</dd>
               <dt>{t("users.status")}</dt>
               <dd>{data.status}</dd>
               <dt>{t("users.groups")}</dt>
