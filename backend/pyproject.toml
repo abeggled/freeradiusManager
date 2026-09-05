@@ -1,6 +1,6 @@
 [project]
 name = "freeradius-manager"
-version = "2026.9.0"
+version = "2026.9.1"
 description = "Web-Verwaltung fuer einen bestehenden FreeRADIUS-Server (rlm_sql)"
 requires-python = ">=3.12"
 dependencies = [

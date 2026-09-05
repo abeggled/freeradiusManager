@@ -3,6 +3,33 @@
 Das Format folgt lose [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Die Versionsnummern sind kalenderbasiert: `JJJJ.M.PATCH`.
 
+## 2026.9.1 – 2026-09-05
+
+### Hinzugefügt
+
+* **Bezeichnung für MAB-Geräte.** `mgr_subject.display_name` liess sich bisher
+  nur über den CSV-Import befüllen; die Geräteoberfläche bot das Feld nicht an.
+  Es ist jetzt beim Anlegen und Bearbeiten pflegbar und erscheint in der
+  Geräteliste, in den Sessions samt Detaildialog, im Auth-Log und im Kopf der
+  Diagnose. In `radacct` und `radpostauth` steht bei einem MAB-Gerät nur die
+  MAC-Adresse – ohne die Bezeichnung war dort nicht erkennbar, um welches
+  Gerät es geht.
+
+  Die Zuordnung erfolgt über die Vergleichsform des Namens: das NAS meldet die
+  MAC in eigener Schreibweise, die von der gespeicherten abweichen kann.
+  Geladen wird je Seite einmal, nicht je Zeile.
+
+* Der CSV-Vorlage für Geräte fehlte die Spalte `display_name`. Gelesen wurde
+  sie bereits.
+
+### Dokumentation
+
+* [docs/INSTALLATION.md](docs/INSTALLATION.md) beschreibt jetzt die
+  CoA-Einrichtung auf der UniFi-Seite: der Accounting-Server als Voraussetzung,
+  *Enable RADIUS DAS/DAC (CoA)* am WLAN statt am RADIUS-Profil, die Herkunft
+  des CoA-Secrets, die Einschränkung auf die Absenderadresse sowie ein
+  `tcpdump` zur Prüfung.
+
 ## 2026.9.0 – 2026-09-05
 
 Erste Veröffentlichung. Der Manager verwaltet einen **bestehenden**
