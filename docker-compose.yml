@@ -70,7 +70,7 @@ services:
       - "${MANAGER_PORT:-8000}:8000"
 
   freeradius:
-    image: freeradius/freeradius-server:3.2.7
+    image: freeradius/freeradius-server:3.2.10
     restart: unless-stopped
     depends_on:
       db:
